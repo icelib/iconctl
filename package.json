@@ -1,0 +1,78 @@
+{
+  "name": "figma-iconify-monorepo",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.4.2",
+  "description": "Fetch Figma icons, convert them to Iconify JSON, and distribute them",
+  "author": "ice breaker <hi@sonofmagic.top>",
+  "license": "MIT",
+  "homepage": "https://github.com/sonofmagic/figma-iconify#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sonofmagic/figma-iconify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sonofmagic/figma-iconify/issues"
+  },
+  "keywords": [
+    "figma",
+    "iconify",
+    "icons",
+    "svg",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "test": "vitest run --passWithNoTests",
+    "test:dev": "vitest",
+    "lint": "turbo run lint",
+    "tsd": "turbo run tsd",
+    "audit": "pnpm audit --audit-level=moderate",
+    "audit:fix": "pnpm audit --fix",
+    "typecheck": "turbo run typecheck",
+    "format": "eslint . --fix",
+    "validate": "pnpm run build && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "release": "pnpm change",
+    "publish-packages": "repo release stable publish",
+    "release:pre": "repo release pre publish",
+    "preinstall": "npx only-allow pnpm",
+    "prepare": "husky",
+    "commit": "commit",
+    "commitlint": "commitlint --edit",
+    "repo:init": "repo init",
+    "repo:new": "repo new",
+    "repo:check": "repo check",
+    "repo:doctor": "repo doctor",
+    "pr:alpha": "repo release pre enter alpha",
+    "pr:beta": "repo release pre enter beta",
+    "pr:rc": "repo release pre enter rc",
+    "pr:next": "repo release pre enter next",
+    "pr:exit": "repo release pre exit"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@types/node": "^26.6.1",
+    "@vitest/coverage-v8": "~5.0.1",
+    "eslint": "^10.10.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
+    "only-allow": "^1.2.2",
+    "repoctl": "^5.5.4",
+    "stylelint": "^17.15.0",
+    "tsd": "^0.33.0",
+    "tsdown": "0.23.0",
+    "turbo": "^2.10.13",
+    "typescript": "^6.0.3",
+    "vitest": "~5.0.1",
+    "yaml": "^2.9.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

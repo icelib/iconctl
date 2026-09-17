@@ -1,0 +1,48 @@
+name: figma-iconify
+description: Fetch Figma icons, convert them to Iconify JSON, and optionally commit the result
+author: ice breaker
+branding:
+  icon: triangle
+  color: gray-dark
+inputs:
+  token:
+    description: Figma personal access token
+    required: true
+  commit:
+    description: Commit changed files back to the current branch
+    required: false
+    default: 'false'
+  config:
+    description: Optional path to figma-iconify.config.ts
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Sync icons
+      shell: bash
+      env:
+        FIGMA_TOKEN: ${{ inputs.token }}
+      run: |
+        extra=()
+        if [ -n "${{ inputs.config }}" ]; then
+          extra+=(--config "${{ inputs.config }}")
+        fi
+        npx --yes figma-iconify sync --json "${extra[@]}"
+    - name: Commit changes
+      if: ${{ inputs.commit == 'true' }}
+      shell: bash
+      run: |
+        git add -A
+        if git diff --cached --quiet; then
+          echo "No icon changes"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -m "chore: sync figma icons"
+        git push

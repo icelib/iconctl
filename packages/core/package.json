@@ -1,0 +1,67 @@
+{
+  "name": "@icebreakers/figma-iconify",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Fetch Figma icons and convert them to Iconify JSON",
+  "author": "ice breaker <hi@sonofmagic.top>",
+  "license": "MIT",
+  "homepage": "https://github.com/sonofmagic/figma-iconify#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sonofmagic/figma-iconify.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/sonofmagic/figma-iconify/issues"
+  },
+  "keywords": [
+    "figma",
+    "iconify",
+    "icons",
+    "svg"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "tsdown -w",
+    "build": "tsdown",
+    "test": "vitest run",
+    "test:dev": "vitest",
+    "release": "pnpm publish",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -p tsconfig.json",
+    "tsd": "pnpm build && tsd --files test-d/**/*.test-d.ts"
+  },
+  "dependencies": {
+    "@iconify/tools": "^5.0.14",
+    "@iconify/types": "^2.0.0",
+    "c12": "^3.3.1",
+    "pathe": "^2.0.3"
+  }
+}
