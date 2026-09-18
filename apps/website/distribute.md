@@ -15,7 +15,7 @@ output: {
 }
 ```
 
-Worked example: [`examples/app-json`](https://github.com/sonofmagic/iconctl/tree/main/examples/app-json). This site’s [demo gallery](/demo) is the same pattern.
+Worked example: [`examples/app-json`](https://github.com/icelib/iconctl/tree/main/examples/app-json). This site’s [demo gallery](/demo) is the same pattern.
 
 Tailwind (`@iconify/tailwind4`):
 
@@ -90,7 +90,7 @@ In a changesets monorepo, the icon sync PR should include a patch changeset so r
 ## GitHub Action
 
 ```yaml
-- uses: sonofmagic/iconctl@v1
+- uses: icelib/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
     pr: true

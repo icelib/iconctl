@@ -15,7 +15,7 @@ output: {
 }
 ```
 
-完整示例：[`examples/app-json`](https://github.com/sonofmagic/iconctl/tree/main/examples/app-json)。本站[演示画廊](/zh/demo)也是这种。
+完整示例：[`examples/app-json`](https://github.com/icelib/iconctl/tree/main/examples/app-json)。本站[演示画廊](/zh/demo)也是这种。
 
 Tailwind（`@iconify/tailwind4`）：
 
@@ -90,7 +90,7 @@ class：`i-iconctl-arrow-left`。
 ## GitHub Action
 
 ```yaml
-- uses: sonofmagic/iconctl@v1
+- uses: icelib/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
     pr: true

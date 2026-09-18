@@ -6,14 +6,14 @@
   "description": "Documentation website for iconctl",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
-  "homepage": "https://repoctl.icebreaker.top",
+  "homepage": "https://iconctl.icebreaker.top",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "url": "git+https://github.com/icelib/iconctl.git",
     "directory": "apps/website"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/repoctl/issues"
+    "url": "https://github.com/icelib/iconctl/issues"
   },
   "keywords": [
     "repoctl",

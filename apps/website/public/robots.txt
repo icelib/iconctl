@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /_headers
 
-Sitemap: https://repoctl.icebreaker.top/sitemap.xml
+Sitemap: https://iconctl.icebreaker.top/sitemap.xml

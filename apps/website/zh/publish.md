@@ -46,4 +46,4 @@ merge 之后，开发要么 **git pull**（JSON 在应用仓），要么 **`pnpm
 pnpm --filter @iconctl/icons sync
 ```
 
-`.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR。Figma 插件可以指向 `sonofmagic/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。
+`.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR。Figma 插件可以指向 `icelib/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。

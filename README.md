@@ -4,6 +4,8 @@
 
 Load icons from Figma, a local SVG folder, or later other design tools, clean them into [Iconify](https://iconify.design/) JSON, and distribute them to every app that already understands Iconify, UnoCSS, or Tailwind.
 
+Docs: https://iconctl.icebreaker.top
+
 ```bash
 pnpm add -D iconctl
 pnpm exec iconctl init
@@ -82,7 +84,7 @@ Tokens stay in the environment: `FIGMA_TOKEN`, `MASTERGO_TOKEN`. Directory, icon
 ## GitHub Action
 
 ```yaml
-- uses: sonofmagic/iconctl@v1
+- uses: icelib/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
     mastergo-token: ${{ secrets.MASTERGO_TOKEN }}

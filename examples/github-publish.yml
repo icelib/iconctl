@@ -19,7 +19,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: sonofmagic/iconctl@v1
+      - uses: icelib/iconctl@v1
         with:
           token: ${{ secrets.FIGMA_TOKEN }}
           pr: true

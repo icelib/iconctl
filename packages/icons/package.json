@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "url": "git+https://github.com/icelib/iconctl.git",
     "directory": "packages/icons"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/iconctl/issues"
+    "url": "https://github.com/icelib/iconctl/issues"
   },
   "keywords": [
     "iconctl",

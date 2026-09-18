@@ -4,6 +4,8 @@
 
 从 Figma、本地 SVG 目录，以及以后更多设计平台拉取图标，清洗成 [Iconify](https://iconify.design/) JSON，再发到所有已经会用 Iconify、UnoCSS 或 Tailwind 的系统。
 
+文档：https://iconctl.icebreaker.top
+
 ```bash
 pnpm add -D iconctl
 pnpm exec iconctl init
@@ -82,7 +84,7 @@ Token 只放环境变量：`FIGMA_TOKEN`、`MASTERGO_TOKEN`。目录、iconfont 
 ## GitHub Action
 
 ```yaml
-- uses: sonofmagic/iconctl@v1
+- uses: icelib/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
     mastergo-token: ${{ secrets.MASTERGO_TOKEN }}

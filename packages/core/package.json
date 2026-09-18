@@ -5,14 +5,14 @@
   "description": "Load icons from Figma, SVG directories, and more, then export Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
-  "homepage": "https://github.com/sonofmagic/iconctl#readme",
+  "homepage": "https://github.com/icelib/iconctl#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "url": "git+https://github.com/icelib/iconctl.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/iconctl/issues"
+    "url": "https://github.com/icelib/iconctl/issues"
   },
   "keywords": [
     "iconify",

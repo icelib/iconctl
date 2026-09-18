@@ -46,4 +46,4 @@ After merge, developers get icons either from **git pull** (JSON in the app) or 
 pnpm --filter @iconctl/icons sync
 ```
 
-`.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`. Point the Figma plugin at `sonofmagic/iconctl` to exercise the same event (the workflow still will not call Figma).
+`.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`. Point the Figma plugin at `icelib/iconctl` to exercise the same event (the workflow still will not call Figma).

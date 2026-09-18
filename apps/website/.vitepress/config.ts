@@ -2,7 +2,7 @@ import Tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitepress'
 import { createNav, createSidebars } from './navigation/routes'
 
-const github = 'https://github.com/sonofmagic/iconctl'
+const github = 'https://github.com/icelib/iconctl'
 
 export default defineConfig({
   outDir: '.vitepress/dist',
@@ -11,6 +11,9 @@ export default defineConfig({
   description: 'Load icons from Figma, SVG directories, and more, then distribute Iconify JSON.',
   lastUpdated: true,
   cleanUrls: true,
+  sitemap: {
+    hostname: 'https://iconctl.icebreaker.top',
+  },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/brand/repoctl-mark.svg' }],
   ],
