@@ -6,7 +6,7 @@ export const JSDESIGN_REMOTE_HELP = '即时设计没有可供 CLI/CI 使用的�
 
 export async function loadJsdesignSource(
   source: ResolvedJsdesignSourceConfig,
-  options: { cwd: string, prefix: string },
+  options: { cwd: string, prefix: string, skipPrefix?: string[] },
 ): Promise<LoadedSource> {
   if (source.dir) {
     const loaded = await loadDirectorySource({ type: 'directory', dir: source.dir }, options)

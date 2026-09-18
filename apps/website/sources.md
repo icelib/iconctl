@@ -1,6 +1,21 @@
 # Other sources
 
-`iconctl` treats Figma as one input. MasterGo, iconfont, and 即时设计 use the same `sources` list.
+`iconctl` treats Figma as one input. A local SVG folder, MasterGo, iconfont, and 即时设计 use the same `sources` list.
+
+## Local SVG
+
+No token. Put one `.svg` per icon in a folder:
+
+```ts
+{
+  type: 'directory',
+  dir: './raw-svg',
+}
+```
+
+Same conventions as Figma: kebab-case names (`arrow-left`, `userFilled.svg` becomes `user-filled`), `_` or `.` prefixes are drafts and skipped, monochrome fills become `currentColor`. Set `validate.width` / `validate.height` if you want a fixed canvas.
+
+`iconctl sync` writes Iconify JSON the same way as a Figma source.
 
 ## MasterGo
 

@@ -38,7 +38,7 @@ export default defineConfig({
 })
 ```
 
-A local folder works the same way:
+A local folder is the zero-token path and produces the same Iconify JSON:
 
 ```ts
 sources: [{ type: 'directory', dir: './raw-svg' }]

@@ -1,6 +1,21 @@
 # 其他来源
 
-Figma 只是一种输入。MasterGo、iconfont、即时设计走同一份 `sources`。
+Figma 只是一种输入。本地 SVG 目录、MasterGo、iconfont、即时设计走同一份 `sources`。
+
+## 本地 SVG
+
+不需要 token。一个图标一个 `.svg`，放进文件夹：
+
+```ts
+{
+  type: 'directory',
+  dir: './raw-svg',
+}
+```
+
+约定和 Figma 一样：kebab-case 名称（`arrow-left`，`userFilled.svg` 会变成 `user-filled`），`_` 或 `.` 开头当草稿跳过，单色填充写成 `currentColor`。要固定画板就设 `validate.width` / `validate.height`。
+
+`iconctl sync` 写出的 Iconify JSON 和 Figma 来源同一条流水线。
 
 ## MasterGo
 

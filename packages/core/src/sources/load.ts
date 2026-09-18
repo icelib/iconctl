@@ -42,6 +42,7 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
       return await loadDirectorySource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        skipPrefix: options.config.validate.skipPrefix,
       })
     case 'iconfont':
       return await loadIconfontSource(source, {
@@ -52,6 +53,7 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
       return await loadJsdesignSource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        skipPrefix: options.config.validate.skipPrefix,
       })
     case 'mastergo':
       return await loadMastergoSource(source, {

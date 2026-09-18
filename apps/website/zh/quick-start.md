@@ -38,7 +38,7 @@ export default defineConfig({
 })
 ```
 
-本地目录同样可以：
+本地目录不需要 token，产出同一份 Iconify JSON：
 
 ```ts
 sources: [{ type: 'directory', dir: './raw-svg' }]
