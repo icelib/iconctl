@@ -1,14 +1,11 @@
-# figma-iconify
+# iconctl
 
-Fetch icons from a Figma file, clean them into Iconify JSON, and publish them to every app that already speaks Iconify, UnoCSS, or Tailwind.
-
-Figma stays the design source. Iconify JSON is the engineering source. Designers keep drawing; frontend never copies zip files or iconfont projects.
+Load icons from Figma, a local SVG folder, or later other design tools. Clean them into Iconify JSON. Publish them to every app that already speaks Iconify, UnoCSS, or Tailwind.
 
 ```bash
-pnpm add -D figma-iconify
-pnpm exec figma-iconify init
-export FIGMA_TOKEN=figu_xxx
-pnpm exec figma-iconify sync
+pnpm add -D iconctl
+pnpm exec iconctl init
+pnpm exec iconctl sync
 ```
 
 Then consume the generated set:

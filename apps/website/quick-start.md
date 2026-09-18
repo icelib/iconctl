@@ -3,24 +3,29 @@
 ## 1. Install
 
 ```bash
-pnpm add -D figma-iconify
+pnpm add -D iconctl
 ```
 
 ## 2. Create a config
 
 ```bash
-pnpm exec figma-iconify init
+pnpm exec iconctl init
 ```
 
-Or write `figma-iconify.config.ts` yourself:
+Or write `iconctl.config.ts` yourself:
 
 ```ts
-import { defineConfig } from 'figma-iconify'
+import { defineConfig } from 'iconctl'
 
 export default defineConfig({
-  file: 'https://www.figma.com/design/<fileKey>/Icons',
   prefix: 'brand',
-  pages: ['Icons'],
+  sources: [
+    {
+      type: 'figma',
+      file: 'https://www.figma.com/design/<fileKey>/Icons',
+      pages: ['Icons'],
+    },
+  ],
   output: {
     json: 'icons.json',
     svg: 'svg',
@@ -33,9 +38,15 @@ export default defineConfig({
 })
 ```
 
+A local folder works the same way:
+
+```ts
+sources: [{ type: 'directory', dir: './raw-svg' }]
+```
+
 ## 3. Token
 
-Create a Figma personal access token and export it. Never commit it.
+Figma sources need a personal access token in `FIGMA_TOKEN`. Directory sources do not.
 
 ```bash
 export FIGMA_TOKEN=figu_xxx
@@ -44,13 +55,13 @@ export FIGMA_TOKEN=figu_xxx
 ## 4. Sync
 
 ```bash
-pnpm exec figma-iconify sync
+pnpm exec iconctl sync
 ```
 
 CI:
 
 ```bash
-pnpm exec figma-iconify sync --json
+pnpm exec iconctl sync --json
 ```
 
 `--dry-run` validates without writing. Validation errors exit non-zero and do not write a partial set.

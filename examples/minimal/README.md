@@ -2,7 +2,7 @@
 
 ```bash
 export FIGMA_TOKEN=figu_xxx
-pnpm exec figma-iconify sync --config ./figma-iconify.config.ts
+pnpm exec iconctl sync --config ./iconctl.config.ts
 ```
 
-Replace `file` with your Figma file URL. This directory is a config sample; it does not call Figma in CI.
+Replace the Figma `file` with your own, or switch the source to `{ type: 'directory', dir: './svg' }`. This directory is a config sample; CI does not call Figma.

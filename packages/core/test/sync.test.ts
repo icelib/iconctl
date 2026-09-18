@@ -6,11 +6,11 @@ import { importLocalSvgDirectory, resolveConfig, sync } from '../src'
 const fixtureDir = path.resolve(import.meta.dirname, 'fixtures/svg')
 
 describe('sync', () => {
-  it('exports json from a local icon set without calling Figma', async () => {
-    const cwd = await mkdtemp(path.join(os.tmpdir(), 'figma-iconify-'))
+  it('exports json from a directory source without calling Figma', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-'))
     const config = resolveConfig({
-      file: 'AbCdEfGhIjKlMnOpQrStUv',
       prefix: 'brand',
+      sources: [{ type: 'directory', dir: fixtureDir }],
       output: {
         json: 'icons.json',
         svg: 'svg',
@@ -18,15 +18,27 @@ describe('sync', () => {
         preview: 'preview.html',
       },
     })
-    const iconSet = await importLocalSvgDirectory(fixtureDir, 'brand')
-    const result = await sync({ cwd, config, iconSet })
+    const result = await sync({ cwd, config })
     const json = JSON.parse(await readFile(path.join(cwd, 'icons.json'), 'utf8')) as { prefix: string, icons: Record<string, { body: string }> }
 
     expect(result.notModified).toBe(false)
+    expect(result.sources).toEqual([{ type: 'directory', notModified: false }])
     expect(result.diff.added.sort()).toEqual(['arrow-left', 'user'])
     expect(json.prefix).toBe('brand')
     expect(json.icons['arrow-left']?.body).toContain('currentColor')
     expect(await readFile(path.join(cwd, 'icon-names.d.ts'), 'utf8')).toContain('\'arrow-left\'')
     expect(await readFile(path.join(cwd, 'preview.html'), 'utf8')).toContain('brand:arrow-left')
+  })
+
+  it('still accepts a preloaded icon set', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-'))
+    const config = resolveConfig({
+      prefix: 'brand',
+      sources: [{ type: 'directory', dir: fixtureDir }],
+      output: { json: 'icons.json' },
+    })
+    const iconSet = await importLocalSvgDirectory(fixtureDir, 'brand')
+    const result = await sync({ cwd, config, iconSet })
+    expect(result.diff.added.sort()).toEqual(['arrow-left', 'user'])
   })
 })

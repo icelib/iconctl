@@ -41,6 +41,6 @@ config.ts.timestamp-*.mjs
 # local AI task artifacts
 /.qoder/
 
-# figma-iconify
-.figma-iconify-cache
+# iconctl
+.iconctl-cache
 preview.html

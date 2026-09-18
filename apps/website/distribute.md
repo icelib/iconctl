@@ -1,6 +1,6 @@
 # Distribute
 
-`figma-iconify` publishes the **tool**. Your product icons are generated into your own repo.
+`iconctl` publishes the **tool**. Your product icons are generated into your own repo.
 
 ## 1. JSON in the app repo
 
@@ -18,30 +18,30 @@ output: {
 }
 ```
 
-This uses Iconify's `@iconify-json/<prefix>` layout. Publish that package and depend on it from every app.
+This uses Iconify's `@iconify-json/<prefix>` layout.
 
 ## 3. GitHub Action
 
 ```yaml
-- uses: sonofmagic/figma-iconify@v1
+- uses: sonofmagic/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
     commit: true
 ```
 
-The action runs `figma-iconify sync --json`. If the Figma file is unchanged, it exits 0 and writes nothing.
+The action runs `iconctl sync --json`. If sources are unchanged, it exits 0 and writes nothing.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `figma-iconify init` | Write `figma-iconify.config.ts` |
-| `figma-iconify sync` | Fetch, clean, validate, export |
-| `figma-iconify check` | Validate existing SVG/JSON, no Figma call |
-| `figma-iconify preview` | Write `preview.html` |
+| `iconctl init` | Write `iconctl.config.ts` |
+| `iconctl sync` | Load sources, clean, validate, export |
+| `iconctl check` | Validate existing SVG/JSON |
+| `iconctl preview` | Write `preview.html` |
 
 Library API:
 
 ```ts
-import { defineConfig, sync, loadConfig } from 'figma-iconify'
+import { defineConfig, loadConfig, sync } from 'iconctl'
 ```

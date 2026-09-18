@@ -1,19 +1,20 @@
-name: figma-iconify
-description: Fetch Figma icons, convert them to Iconify JSON, and optionally commit the result
+name: iconctl
+description: Load icons from Figma, SVG directories, and more, then export Iconify JSON
 author: ice breaker
 branding:
   icon: triangle
   color: gray-dark
 inputs:
   token:
-    description: Figma personal access token
-    required: true
+    description: Figma personal access token. Required when a Figma source is configured.
+    required: false
+    default: ''
   commit:
     description: Commit changed files back to the current branch
     required: false
     default: 'false'
   config:
-    description: Optional path to figma-iconify.config.ts
+    description: Optional path to iconctl.config.ts
     required: false
     default: ''
 runs:
@@ -32,7 +33,7 @@ runs:
         if [ -n "${{ inputs.config }}" ]; then
           extra+=(--config "${{ inputs.config }}")
         fi
-        npx --yes figma-iconify sync --json "${extra[@]}"
+        npx --yes iconctl sync --json "${extra[@]}"
     - name: Commit changes
       if: ${{ inputs.commit == 'true' }}
       shell: bash
@@ -44,5 +45,5 @@ runs:
         fi
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git commit -m "chore: sync figma icons"
+        git commit -m "chore: sync icons"
         git push

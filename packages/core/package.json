@@ -1,24 +1,25 @@
 {
-  "name": "@icebreakers/figma-iconify",
+  "name": "@icebreakers/iconctl",
   "type": "module",
   "version": "0.0.0",
-  "description": "Fetch Figma icons and convert them to Iconify JSON",
+  "description": "Load icons from Figma, SVG directories, and more, then export Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
-  "homepage": "https://github.com/sonofmagic/figma-iconify#readme",
+  "homepage": "https://github.com/sonofmagic/iconctl#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/figma-iconify.git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/figma-iconify/issues"
+    "url": "https://github.com/sonofmagic/iconctl/issues"
   },
   "keywords": [
-    "figma",
     "iconify",
     "icons",
-    "svg"
+    "svg",
+    "figma",
+    "cli"
   ],
   "sideEffects": false,
   "exports": {

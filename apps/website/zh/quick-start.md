@@ -3,24 +3,29 @@
 ## 1. 安装
 
 ```bash
-pnpm add -D figma-iconify
+pnpm add -D iconctl
 ```
 
 ## 2. 写配置
 
 ```bash
-pnpm exec figma-iconify init
+pnpm exec iconctl init
 ```
 
-或手写 `figma-iconify.config.ts`：
+或手写 `iconctl.config.ts`：
 
 ```ts
-import { defineConfig } from 'figma-iconify'
+import { defineConfig } from 'iconctl'
 
 export default defineConfig({
-  file: 'https://www.figma.com/design/<fileKey>/Icons',
   prefix: 'brand',
-  pages: ['Icons'],
+  sources: [
+    {
+      type: 'figma',
+      file: 'https://www.figma.com/design/<fileKey>/Icons',
+      pages: ['Icons'],
+    },
+  ],
   output: {
     json: 'icons.json',
     svg: 'svg',
@@ -33,9 +38,15 @@ export default defineConfig({
 })
 ```
 
+本地目录同样可以：
+
+```ts
+sources: [{ type: 'directory', dir: './raw-svg' }]
+```
+
 ## 3. Token
 
-申请 Figma Personal Access Token，放到环境变量，不要提交进仓库。
+Figma 来源需要 `FIGMA_TOKEN`。目录来源不需要。
 
 ```bash
 export FIGMA_TOKEN=figu_xxx
@@ -44,13 +55,13 @@ export FIGMA_TOKEN=figu_xxx
 ## 4. 同步
 
 ```bash
-pnpm exec figma-iconify sync
+pnpm exec iconctl sync
 ```
 
 CI：
 
 ```bash
-pnpm exec figma-iconify sync --json
+pnpm exec iconctl sync --json
 ```
 
 `--dry-run` 只校验不写盘。校验失败默认非 0 退出，并且不写半成品。

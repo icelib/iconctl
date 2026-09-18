@@ -1,15 +1,15 @@
-import type { ResolvedFigmaIconifyConfig } from './config'
+import type { ResolvedIconctlConfig } from './config'
 import process from 'node:process'
 import { importDirectory } from '@iconify/tools'
 import { join } from 'pathe'
-import { FigmaIconifyError } from './errors'
+import { IconctlError } from './errors'
 import { readPreviousIconJson } from './export'
 import { processIconSet } from './process'
 import { formatValidationIssues, validateIconSet } from './validate'
 
 export interface CheckOptions {
   cwd?: string
-  config: ResolvedFigmaIconifyConfig
+  config: ResolvedIconctlConfig
 }
 
 export async function check(options: CheckOptions) {
@@ -25,7 +25,7 @@ export async function check(options: CheckOptions) {
     processIconSet(iconSet, config)
     const { issues } = validateIconSet(iconSet, config)
     if (issues.length) {
-      throw new FigmaIconifyError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
+      throw new IconctlError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
     }
     return {
       prefix: config.prefix,
@@ -36,7 +36,7 @@ export async function check(options: CheckOptions) {
 
   const json = await readPreviousIconJson(join(cwd, config.output.json))
   if (!json) {
-    throw new FigmaIconifyError(`Nothing to check. Missing ${config.output.json} and svg output.`)
+    throw new IconctlError(`Nothing to check. Missing ${config.output.json} and svg output.`)
   }
 
   const names = Object.keys(json.icons)
@@ -44,7 +44,7 @@ export async function check(options: CheckOptions) {
     .filter(name => !config.validate.name.test(name))
     .map(name => ({ name, message: `Icon name "${name}" does not match ${config.validate.name}` }))
   if (issues.length) {
-    throw new FigmaIconifyError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
+    throw new IconctlError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
   }
 
   return {

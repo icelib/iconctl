@@ -1,4 +1,4 @@
-import { FigmaIconifyError } from '../src/errors'
+import { IconctlError } from '../src/errors'
 import { parseFigmaFileKey } from '../src/file-key'
 
 describe('parseFigmaFileKey', () => {
@@ -15,7 +15,7 @@ describe('parseFigmaFileKey', () => {
   })
 
   it('rejects empty or invalid values', () => {
-    expect(() => parseFigmaFileKey('')).toThrow(FigmaIconifyError)
-    expect(() => parseFigmaFileKey('https://example.com/x')).toThrow(FigmaIconifyError)
+    expect(() => parseFigmaFileKey('')).toThrow(IconctlError)
+    expect(() => parseFigmaFileKey('https://example.com/x')).toThrow(IconctlError)
   })
 })

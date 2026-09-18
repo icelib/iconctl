@@ -1,24 +1,21 @@
 import type { IconSet } from '@iconify/tools'
 import type { IconifyJSON } from '@iconify/types'
-import type { ResolvedFigmaIconifyConfig } from './config'
+import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { blankIconSet, importDirectory, importFromFigma } from '@iconify/tools'
 import { dirname, join } from 'pathe'
 import { diffIconSets } from './diff'
-import { FigmaIconifyError } from './errors'
+import { IconctlError } from './errors'
 import { exportOutputs, readPreviousIconJson } from './export'
-import { parseFigmaFileKey } from './file-key'
-import { defaultIconNameForNode } from './naming'
 import { writePreviewHtml } from './preview'
 import { processIconSet } from './process'
-import { resolveFigmaToken } from './token'
+import { loadSources, mergeIconSets } from './sources/load'
 import { formatValidationIssues, validateIconSet } from './validate'
 
 export interface SyncOptions {
   cwd?: string
-  config: ResolvedFigmaIconifyConfig
+  config: ResolvedIconctlConfig
   env?: NodeJS.Dict<string>
   dryRun?: boolean
   continueOnError?: boolean
@@ -27,12 +24,13 @@ export interface SyncOptions {
 
 export interface SyncResult {
   prefix: string
-  fileKey: string
+  fileKey?: string
   fileVersion?: string
   notModified: boolean
   processed: number
   failed: string[]
   issues: { name: string, message: string }[]
+  sources: { type: string, notModified: boolean, fileKey?: string }[]
   diff: IconDiff
   files: string[]
   json: IconifyJSON
@@ -57,54 +55,41 @@ async function writeCacheMeta(file: string, meta: CacheMeta) {
   await writeFile(file, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
 }
 
-export async function importLocalSvgDirectory(dir: string, prefix: string): Promise<IconSet> {
-  return await importDirectory(dir, { prefix })
-}
-
-export function emptyIconSet(prefix: string): IconSet {
-  return blankIconSet(prefix)
-}
-
 export async function sync(options: SyncOptions): Promise<SyncResult> {
   const cwd = options.cwd ?? process.cwd()
   const config = options.config
-  const fileKey = parseFigmaFileKey(config.file)
   const previous = await readPreviousIconJson(join(cwd, config.output.json))
   const cacheMetaFile = join(cwd, config.cacheDir, 'meta.json')
   const previousMeta = await readCacheMeta(cacheMetaFile)
 
   let iconSet = options.iconSet
   let fileVersion: string | undefined
+  let fileKey: string | undefined
   let notModified = false
+  const sourceSummaries: SyncResult['sources'] = []
 
   if (!iconSet) {
-    const token = resolveFigmaToken(config.token, options.env ?? process.env)
-    const figmaOptions = {
-      token,
-      file: fileKey,
-      prefix: config.prefix,
-      depth: config.depth,
-      cacheDir: join(cwd, config.cacheDir),
-      iconNameForNode: config.iconNameForNode ?? (node => defaultIconNameForNode(node, {
-        skipPrefix: config.validate.skipPrefix,
-      })),
-      ...(config.pages ? { pages: config.pages } : {}),
-      ...(config.ids ? { ids: config.ids } : {}),
-    }
-    const imported = previousMeta?.lastModified
-      ? await importFromFigma({ ...figmaOptions, ifModifiedSince: previousMeta.lastModified })
-      : await importFromFigma(figmaOptions)
+    const loaded = await loadSources({
+      cwd,
+      config,
+      ...(options.env ? { env: options.env } : {}),
+      ...(previousMeta?.lastModified ? { figmaIfModifiedSince: previousMeta.lastModified } : {}),
+    })
 
-    if (imported === 'not_modified') {
-      notModified = true
+    notModified = loaded.length > 0 && loaded.every(item => item.notModified)
+    if (notModified) {
       const json = previous ?? { prefix: config.prefix, icons: {} }
       const result: SyncResult = {
         prefix: config.prefix,
-        fileKey,
         notModified,
         processed: 0,
         failed: [],
         issues: [],
+        sources: loaded.map(item => ({
+          type: item.type,
+          notModified: item.notModified,
+          ...(item.fileKey ? { fileKey: item.fileKey } : {}),
+        })),
         diff: diffIconSets(json, json),
         files: [],
         json,
@@ -112,15 +97,29 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (previousMeta?.version) {
         result.fileVersion = previousMeta.version
       }
+      if (loaded[0]?.fileKey) {
+        result.fileKey = loaded[0].fileKey
+      }
       return result
     }
 
-    iconSet = imported.iconSet
-    fileVersion = imported.version
-    if (!options.dryRun) {
+    const sets = loaded.flatMap(item => item.iconSet ? [item.iconSet] : [])
+    iconSet = mergeIconSets(config.prefix, sets)
+    fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
+    fileKey = loaded.find(item => item.fileKey)?.fileKey
+    for (const item of loaded) {
+      sourceSummaries.push({
+        type: item.type,
+        notModified: item.notModified,
+        ...(item.fileKey ? { fileKey: item.fileKey } : {}),
+      })
+    }
+
+    const figma = loaded.find(item => item.type === 'figma' && item.lastModified)
+    if (!options.dryRun && figma?.lastModified) {
       await writeCacheMeta(cacheMetaFile, {
-        lastModified: imported.lastModified,
-        version: imported.version,
+        lastModified: figma.lastModified,
+        ...(figma.fileVersion ? { version: figma.fileVersion } : {}),
       })
     }
   }
@@ -129,7 +128,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const { issues } = validateIconSet(iconSet, config)
 
   if (issues.length && !options.continueOnError) {
-    throw new FigmaIconifyError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
+    throw new IconctlError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
   }
 
   const exported = await exportOutputs(iconSet, config, {
@@ -145,11 +144,11 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
 
   const result: SyncResult = {
     prefix: config.prefix,
-    fileKey,
     notModified,
     processed: processed.processed,
     failed: processed.failed,
     issues,
+    sources: sourceSummaries,
     diff: diffIconSets(previous, exported.json),
     files: exported.files,
     json: exported.json,
@@ -157,5 +156,11 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   if (fileVersion) {
     result.fileVersion = fileVersion
   }
+  if (fileKey) {
+    result.fileKey = fileKey
+  }
   return result
 }
+
+export { importLocalSvgDirectory } from './sources/directory'
+export { emptyIconSet, mergeIconSets } from './sources/load'

@@ -1,6 +1,6 @@
 # Figma conventions
 
-Designers do not need a special figma-iconify publish button in v1. They maintain a Figma library; engineering syncs it.
+Figma is one `iconctl` source. Designers do not need a special publish button in v1. They maintain a Figma library; engineering syncs it.
 
 ## File
 
@@ -16,18 +16,16 @@ Keep icons in a dedicated library file, not inside product screens.
 
 ## Color
 
-Monochrome icons only. Fills and strokes should be a single color. The pipeline rewrites them to `currentColor` so Web and mini programs can color icons with text classes.
+Monochrome icons only. The pipeline rewrites fills to `currentColor`.
 
-Multicolor brand marks and illustrations stay out of this pipeline.
+## Config
 
-## Outline strokes
+```ts
+{
+  type: 'figma',
+  file: 'https://www.figma.com/design/<fileKey>/Icons',
+  pages: ['Icons'],
+}
+```
 
-Convert strokes to outlines before you expect a stable SVG. Hidden layers, raster images, and live text are rejected.
-
-## Variants
-
-A Component Set named `user` with a `Filled` variant becomes `user-style-filled` (or similar, after keyword cleanup). Prefer names that already read well in class form.
-
-## Figma Library publish
-
-Publishing the Figma library is for other design files. It does not push icons into git. Engineering runs `figma-iconify sync` or the GitHub Action after the library is ready.
+Publishing the Figma library is for other design files. Engineering runs `iconctl sync` or the GitHub Action after the library is ready.

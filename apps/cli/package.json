@@ -1,24 +1,24 @@
 {
-  "name": "figma-iconify",
+  "name": "iconctl",
   "type": "module",
   "version": "0.0.0",
-  "description": "CLI to fetch Figma icons, convert them to Iconify JSON, and distribute them",
+  "description": "CLI to load icons from Figma, SVG directories, and more, then distribute Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
-  "homepage": "https://github.com/sonofmagic/figma-iconify#readme",
+  "homepage": "https://github.com/sonofmagic/iconctl#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/figma-iconify.git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
     "directory": "apps/cli"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/figma-iconify/issues"
+    "url": "https://github.com/sonofmagic/iconctl/issues"
   },
   "keywords": [
-    "figma",
     "iconify",
     "icons",
     "svg",
+    "figma",
     "cli"
   ],
   "exports": {
@@ -38,7 +38,7 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "bin": {
-    "figma-iconify": "./dev/index.ts"
+    "iconctl": "./dev/index.ts"
   },
   "files": [
     "bin",
@@ -57,7 +57,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@icebreakers/figma-iconify": "workspace:*",
+    "@icebreakers/iconctl": "workspace:*",
     "cac": "^7.0.0",
     "consola": "^3.4.2"
   },
@@ -68,7 +68,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org",
     "bin": {
-      "figma-iconify": "./bin/index.js"
+      "iconctl": "./bin/index.js"
     }
   }
 }

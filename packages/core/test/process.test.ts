@@ -6,8 +6,8 @@ const fixtureDir = path.resolve(import.meta.dirname, 'fixtures/svg')
 describe('processIconSet', () => {
   it('rewrites fills to currentColor and keeps valid names', async () => {
     const config = resolveConfig({
-      file: 'AbCdEfGhIjKlMnOpQrStUv',
       prefix: 'brand',
+      sources: [{ type: 'directory', dir: fixtureDir }],
       validate: { width: 24, height: 24 },
     })
     const iconSet = await importLocalSvgDirectory(fixtureDir, 'brand')

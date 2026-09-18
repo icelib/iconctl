@@ -3,14 +3,15 @@ export {
   check,
   defineConfig,
   diffIconSets,
-  FigmaIconifyError,
+  IconctlError,
   loadConfig,
   parseFigmaFileKey,
   resolveConfig,
   sync,
-} from '@icebreakers/figma-iconify'
+} from '@icebreakers/iconctl'
 export type {
-  FigmaIconifyConfig,
+  IconctlConfig,
+  SourceConfig,
   SyncOptions,
   SyncResult,
-} from '@icebreakers/figma-iconify'
+} from '@icebreakers/iconctl'

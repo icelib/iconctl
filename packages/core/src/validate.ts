@@ -1,5 +1,5 @@
 import type { IconSet } from '@iconify/tools'
-import type { ResolvedFigmaIconifyConfig } from './config'
+import type { ResolvedIconctlConfig } from './config'
 
 export interface ValidationIssue {
   name: string
@@ -10,7 +10,7 @@ export interface ValidationResult {
   issues: ValidationIssue[]
 }
 
-export function validateIconSet(iconSet: IconSet, config: ResolvedFigmaIconifyConfig): ValidationResult {
+export function validateIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ValidationResult {
   const issues: ValidationIssue[] = []
   const names = new Set<string>()
 

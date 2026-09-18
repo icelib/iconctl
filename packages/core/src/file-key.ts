@@ -1,4 +1,4 @@
-import { FigmaIconifyError } from './errors'
+import { IconctlError } from './errors'
 
 const fileUrlPattern = /figma\.com\/(?:file|design|board|proto)\/([a-z0-9]+)/i
 const fileKeyPattern = /^[a-z0-9]{10,}$/i
@@ -6,7 +6,7 @@ const fileKeyPattern = /^[a-z0-9]{10,}$/i
 export function parseFigmaFileKey(input: string): string {
   const value = input.trim()
   if (!value) {
-    throw new FigmaIconifyError('Figma file is empty')
+    throw new IconctlError('Figma file is empty')
   }
 
   const fromUrl = value.match(fileUrlPattern)
@@ -18,5 +18,5 @@ export function parseFigmaFileKey(input: string): string {
     return value
   }
 
-  throw new FigmaIconifyError(`Invalid Figma file or URL: ${input}`)
+  throw new IconctlError(`Invalid Figma file or URL: ${input}`)
 }

@@ -3,10 +3,10 @@ import { join } from 'node:path'
 import process from 'node:process'
 import {
   check,
-  FigmaIconifyError,
+  IconctlError,
   loadConfig,
   sync,
-} from '@icebreakers/figma-iconify'
+} from '@icebreakers/iconctl'
 import { cac } from 'cac'
 import { consola } from 'consola'
 
@@ -26,7 +26,7 @@ function loadOptions(options: GlobalOptions) {
 
 function printError(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error)
-  if (error instanceof FigmaIconifyError) {
+  if (error instanceof IconctlError) {
     consola.error(message)
   }
   else {
@@ -43,6 +43,7 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
       fileKey: result.fileKey,
       fileVersion: result.fileVersion,
       notModified: result.notModified,
+      sources: result.sources,
       added: result.diff.added,
       removed: result.diff.removed,
       changed: result.diff.changed,
@@ -54,7 +55,7 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
 
   if (result.notModified) {
-    consola.success('Figma file was not modified. Nothing to write.')
+    consola.success('Sources were not modified. Nothing to write.')
     return
   }
 
@@ -70,16 +71,37 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
 }
 
-export async function runCli(argv: string[] = process.argv) {
-  const cli = cac('figma-iconify')
+function configTemplate(input: { prefix: string, json: string, sourceBlock: string }) {
+  return `import { defineConfig } from 'iconctl'
 
-  cli.option('--config <path>', 'Path to figma-iconify config')
+export default defineConfig({
+  prefix: ${JSON.stringify(input.prefix)},
+  sources: [
+    ${input.sourceBlock}
+  ],
+  output: {
+    json: ${JSON.stringify(input.json)},
+    svg: 'svg',
+    preview: 'preview.html',
+  },
+  validate: {
+    width: 24,
+    height: 24,
+  },
+})
+`
+}
+
+export async function runCli(argv: string[] = process.argv) {
+  const cli = cac('iconctl')
+
+  cli.option('--config <path>', 'Path to iconctl config')
   cli.option('--dry-run', 'Validate and print the plan without writing files')
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Write files even when validation fails')
 
   cli
-    .command('sync', 'Fetch icons from Figma and export Iconify JSON')
+    .command('sync', 'Load icon sources and export Iconify JSON')
     .action(async (options: GlobalOptions) => {
       try {
         const config = await loadOptions(options)
@@ -97,7 +119,7 @@ export async function runCli(argv: string[] = process.argv) {
     })
 
   cli
-    .command('check', 'Validate generated SVG or JSON without calling Figma')
+    .command('check', 'Validate generated SVG or JSON without loading remote sources')
     .action(async (options: GlobalOptions) => {
       try {
         const config = await loadOptions(options)
@@ -134,33 +156,38 @@ export async function runCli(argv: string[] = process.argv) {
     })
 
   cli
-    .command('init', 'Write a figma-iconify.config.ts in the current directory')
+    .command('init', 'Write an iconctl.config.ts in the current directory')
     .action(async () => {
       try {
-        const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
+        const sourceType = await consola.prompt('Icon source', {
+          type: 'select',
+          options: [
+            { label: 'Figma file', value: 'figma' },
+            { label: 'Local SVG directory', value: 'directory' },
+          ],
+        })
         const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
         const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
-        const contents = `import { defineConfig } from 'figma-iconify'
-
-export default defineConfig({
-  file: ${JSON.stringify(file)},
-  prefix: ${JSON.stringify(prefix || 'brand')},
-  pages: ['Icons'],
-  output: {
-    json: ${JSON.stringify(json || 'icons.json')},
-    svg: 'svg',
-    preview: 'preview.html',
-  },
-  validate: {
-    width: 24,
-    height: 24,
-  },
-})
-`
-        const target = join(process.cwd(), 'figma-iconify.config.ts')
+        let sourceBlock = `{ type: 'directory', dir: './svg' }`
+        let hint = 'Put SVGs in ./svg, then run `iconctl sync`.'
+        if (sourceType === 'figma') {
+          const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
+          sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
+          hint = 'Set FIGMA_TOKEN, then run `iconctl sync`.'
+        }
+        else {
+          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './svg', default: './svg' })
+          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './svg')} }`
+        }
+        const contents = configTemplate({
+          prefix: prefix || 'brand',
+          json: json || 'icons.json',
+          sourceBlock,
+        })
+        const target = join(process.cwd(), 'iconctl.config.ts')
         await writeFile(target, contents, 'utf8')
         consola.success(`Wrote ${target}`)
-        consola.info('Set FIGMA_TOKEN, then run `figma-iconify sync`.')
+        consola.info(hint)
       }
       catch (error) {
         printError(error)

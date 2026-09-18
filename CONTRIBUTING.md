@@ -1,4 +1,4 @@
-# Contributing to figma-iconify
+# Contributing to iconctl
 
 English | [简体中文](README.zh-CN.md)
 
@@ -11,11 +11,11 @@ English | [简体中文](README.zh-CN.md)
 
 ## Layout
 
-- `packages/core` — `@icebreakers/figma-iconify` pipeline
-- `apps/cli` — `figma-iconify` CLI
+- `packages/core` — `@icebreakers/iconctl` pipeline
+- `apps/cli` — `iconctl` CLI
 - `apps/website` — VitePress docs
 - `examples/minimal` — sample config
 
-Do not call the live Figma API in CI. Use SVG fixtures under `packages/core/test/fixtures`.
+Do not call the live Figma API in CI. Use SVG fixtures under `packages/core/test/fixtures`. New platforms should land as another `sources[].type` adapter.
 
 Publishable package changes need `pnpm change` and Conventional Commits.

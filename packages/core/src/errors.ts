@@ -1,6 +1,6 @@
-export class FigmaIconifyError extends Error {
+export class IconctlError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
-    this.name = 'FigmaIconifyError'
+    this.name = 'IconctlError'
   }
 }

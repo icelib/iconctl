@@ -1,9 +1,14 @@
-import { defineConfig } from 'figma-iconify'
+import { defineConfig } from 'iconctl'
 
 export default defineConfig({
-  file: 'https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Icons',
   prefix: 'brand',
-  pages: ['Icons'],
+  sources: [
+    {
+      type: 'figma',
+      file: 'https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Icons',
+      pages: ['Icons'],
+    },
+  ],
   output: {
     json: 'icons.json',
     svg: 'svg',

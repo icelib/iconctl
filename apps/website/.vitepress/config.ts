@@ -2,13 +2,13 @@ import Tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitepress'
 import { createNav, createSidebars } from './navigation/routes'
 
-const github = 'https://github.com/sonofmagic/figma-iconify'
+const github = 'https://github.com/sonofmagic/iconctl'
 
 export default defineConfig({
   outDir: '.vitepress/dist',
-  title: 'figma-iconify',
-  titleTemplate: ':title — Figma to Iconify',
-  description: 'Fetch Figma icons, convert them to Iconify JSON, and distribute them.',
+  title: 'iconctl',
+  titleTemplate: ':title — Icons to Iconify',
+  description: 'Load icons from Figma, SVG directories, and more, then distribute Iconify JSON.',
   lastUpdated: true,
   cleanUrls: true,
   head: [
@@ -22,8 +22,8 @@ export default defineConfig({
     root: {
       label: 'English',
       lang: 'en-US',
-      title: 'figma-iconify',
-      description: 'Fetch Figma icons, convert them to Iconify JSON, and distribute them.',
+      title: 'iconctl',
+      description: 'Load icons from Figma, SVG directories, and more, then distribute Iconify JSON.',
       themeConfig: {
         nav: createNav('en'),
         sidebar: createSidebars('en'),
@@ -37,8 +37,8 @@ export default defineConfig({
       label: '简体中文',
       lang: 'zh-CN',
       link: '/zh/',
-      title: 'figma-iconify',
-      description: '从 Figma 拉取图标，转成 Iconify JSON，再分发到各个系统。',
+      title: 'iconctl',
+      description: '从 Figma、本地 SVG 以及更多来源拉取图标，转成 Iconify JSON 再分发。',
       themeConfig: {
         nav: createNav('zh'),
         sidebar: createSidebars('zh'),

@@ -228,7 +228,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@icebreakers/figma-iconify':
+      '@icebreakers/iconctl':
         specifier: workspace:*
         version: link:../../packages/core
       cac:

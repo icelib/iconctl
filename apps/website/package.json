@@ -3,13 +3,13 @@
   "type": "module",
   "version": "0.0.1",
   "private": true,
-  "description": "Documentation website for figma-iconify",
+  "description": "Documentation website for iconctl",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
   "homepage": "https://repoctl.icebreaker.top",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/figma-iconify.git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
     "directory": "apps/website"
   },
   "bugs": {

@@ -1,5 +1,5 @@
 import type { IconSet } from '@iconify/tools'
-import type { ResolvedFigmaIconifyConfig } from './config'
+import type { ResolvedIconctlConfig } from './config'
 import {
   cleanupSVG,
   isEmptyColor,
@@ -13,7 +13,7 @@ export interface ProcessResult {
   failed: string[]
 }
 
-export function processIconSet(iconSet: IconSet, config: ResolvedFigmaIconifyConfig): ProcessResult {
+export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ProcessResult {
   const failed: string[] = []
   let processed = 0
 

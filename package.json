@@ -1,19 +1,19 @@
 {
-  "name": "figma-iconify-monorepo",
+  "name": "iconctl-monorepo",
   "type": "module",
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@12.4.2",
-  "description": "Fetch Figma icons, convert them to Iconify JSON, and distribute them",
+  "description": "Load icons from Figma, SVG directories, and more, then distribute Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
-  "homepage": "https://github.com/sonofmagic/figma-iconify#readme",
+  "homepage": "https://github.com/sonofmagic/iconctl#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sonofmagic/figma-iconify.git"
+    "url": "git+https://github.com/sonofmagic/iconctl.git"
   },
   "bugs": {
-    "url": "https://github.com/sonofmagic/figma-iconify/issues"
+    "url": "https://github.com/sonofmagic/iconctl/issues"
   },
   "keywords": [
     "figma",

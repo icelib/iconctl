@@ -1,14 +1,11 @@
-# figma-iconify
+# iconctl
 
-从 Figma 文件拉取图标，清洗成 Iconify JSON，再发到所有已经会用 Iconify、UnoCSS 或 Tailwind 的系统。
-
-Figma 只当设计源。Iconify JSON 当工程源。设计师继续画，前端不再收 zip，也不再维护 iconfont。
+从 Figma、本地 SVG 目录，以及以后更多设计平台拉取图标，清洗成 Iconify JSON，再发到所有已经会用 Iconify、UnoCSS 或 Tailwind 的系统。
 
 ```bash
-pnpm add -D figma-iconify
-pnpm exec figma-iconify init
-export FIGMA_TOKEN=figu_xxx
-pnpm exec figma-iconify sync
+pnpm add -D iconctl
+pnpm exec iconctl init
+pnpm exec iconctl sync
 ```
 
 消费：
