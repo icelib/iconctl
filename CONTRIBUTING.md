@@ -11,7 +11,7 @@ English | [简体中文](README.zh-CN.md)
 
 ## Layout
 
-- `packages/core` — `@icebreakers/iconctl` pipeline
+- `packages/core` — `@iconctl/core` pipeline
 - `apps/cli` — `iconctl` CLI
 - `apps/website` — VitePress docs
 - `examples/minimal` — sample config

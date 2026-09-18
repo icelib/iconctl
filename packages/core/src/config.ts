@@ -1,5 +1,6 @@
 import type { ResolvedSourceConfig, SourceConfig } from './sources/types'
 import { IconctlError } from './errors'
+import { parseMastergoRef } from './sources/mastergo'
 
 export interface IconctlOutputConfig {
   json?: string
@@ -46,21 +47,10 @@ export function defineConfig<T extends IconctlConfig>(config: T): T {
   return config
 }
 
-function resolveSource(source: SourceConfig): ResolvedSourceConfig {
-  if (source.type === 'directory') {
-    if (!source.dir?.trim()) {
-      throw new IconctlError('iconctl directory source is missing `dir`')
-    }
-    return {
-      type: 'directory',
-      dir: source.dir.trim(),
-    }
-  }
-
+function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): Extract<ResolvedSourceConfig, { type: 'figma' }> {
   if (!source.file?.trim()) {
     throw new IconctlError('iconctl figma source is missing `file`')
   }
-
   const resolved: Extract<ResolvedSourceConfig, { type: 'figma' }> = {
     type: 'figma',
     file: source.file.trim(),
@@ -79,6 +69,64 @@ function resolveSource(source: SourceConfig): ResolvedSourceConfig {
     resolved.iconNameForNode = source.iconNameForNode
   }
   return resolved
+}
+
+function resolveSource(source: SourceConfig): ResolvedSourceConfig {
+  switch (source.type) {
+    case 'directory': {
+      if (!source.dir?.trim()) {
+        throw new IconctlError('iconctl directory source is missing `dir`')
+      }
+      return { type: 'directory', dir: source.dir.trim() }
+    }
+    case 'figma':
+      return resolveFigmaSource(source)
+    case 'mastergo': {
+      const ref = parseMastergoRef(source)
+      const resolved: Extract<ResolvedSourceConfig, { type: 'mastergo' }> = {
+        type: 'mastergo',
+        fileId: ref.fileId,
+        layerId: ref.layerId,
+        baseUrl: source.baseUrl?.trim() || 'https://mastergo.com',
+      }
+      if (source.token) {
+        resolved.token = source.token
+      }
+      return resolved
+    }
+    case 'jsdesign': {
+      if (!source.dir?.trim() && !source.file?.trim()) {
+        throw new IconctlError('iconctl jsdesign source needs `dir` (exported SVG folder) or `file`')
+      }
+      const resolved: Extract<ResolvedSourceConfig, { type: 'jsdesign' }> = { type: 'jsdesign' }
+      if (source.dir?.trim()) {
+        resolved.dir = source.dir.trim()
+      }
+      if (source.file?.trim()) {
+        resolved.file = source.file.trim()
+      }
+      if (source.token) {
+        resolved.token = source.token
+      }
+      return resolved
+    }
+    case 'iconfont': {
+      if (!source.url?.trim() && !source.dir?.trim()) {
+        throw new IconctlError('iconctl iconfont source needs `url` or `dir`')
+      }
+      const resolved: Extract<ResolvedSourceConfig, { type: 'iconfont' }> = {
+        type: 'iconfont',
+        stripPrefix: source.stripPrefix ?? 'icon-',
+      }
+      if (source.url?.trim()) {
+        resolved.url = source.url.trim()
+      }
+      if (source.dir?.trim()) {
+        resolved.dir = source.dir.trim()
+      }
+      return resolved
+    }
+  }
 }
 
 export function resolveConfig(config: IconctlConfig, configFile?: string): ResolvedIconctlConfig {

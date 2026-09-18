@@ -21,7 +21,7 @@ pnpm exec iconctl sync
 | 包 | 作用 |
 | --- | --- |
 | [`iconctl`](apps/cli) | CLI + 公开 API |
-| [`@icebreakers/iconctl`](packages/core) | 转换管线 |
+| [`@iconctl/core`](packages/core) | 转换管线 |
 
 ## 命令
 
@@ -51,6 +51,18 @@ export default defineConfig({
       type: 'directory',
       dir: './raw-svg',
     },
+    {
+      type: 'mastergo',
+      file: 'https://mastergo.com/file/<fileId>?layer_id=<pageId>',
+    },
+    {
+      type: 'iconfont',
+      url: 'https://at.alicdn.com/t/c/font_123456_abcdef.js',
+    },
+    {
+      type: 'jsdesign',
+      dir: './jsdesign-svg',
+    },
   ],
   output: {
     json: 'icons.json',
@@ -65,7 +77,7 @@ export default defineConfig({
 })
 ```
 
-Figma 来源读 `FIGMA_TOKEN`。目录来源不需要 token。
+Token 只放环境变量：`FIGMA_TOKEN`、`MASTERGO_TOKEN`。目录、iconfont Symbol URL、即时设计导出文件夹不需要 token。MasterGo 需要团队版和团队项目文件。即时设计没有给 CLI 用的公开 REST，先导出 SVG。
 
 ## GitHub Action
 
@@ -73,6 +85,7 @@ Figma 来源读 `FIGMA_TOKEN`。目录来源不需要 token。
 - uses: sonofmagic/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
+    mastergo-token: ${{ secrets.MASTERGO_TOKEN }}
     commit: true
 ```
 

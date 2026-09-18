@@ -1,0 +1,1 @@
+!(function () { const t = '<svg><symbol id="icon-arrow-left" viewBox="0 0 1024 1024"><path fill="#000" d="M200 512l312-312v200h312v224H512v200z"></path></symbol><symbol id="icon-user" viewBox="0 0 1024 1024"><path fill="#111111" d="M512 512a160 160 0 1 0-160-160 160 160 0 0 0 160 160z"></path></symbol></svg>' }())

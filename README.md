@@ -21,7 +21,7 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | Package | Role |
 | --- | --- |
 | [`iconctl`](apps/cli) | CLI + public API |
-| [`@icebreakers/iconctl`](packages/core) | Pipeline library |
+| [`@iconctl/core`](packages/core) | Pipeline library |
 
 ## Commands
 
@@ -51,6 +51,18 @@ export default defineConfig({
       type: 'directory',
       dir: './raw-svg',
     },
+    {
+      type: 'mastergo',
+      file: 'https://mastergo.com/file/<fileId>?layer_id=<pageId>',
+    },
+    {
+      type: 'iconfont',
+      url: 'https://at.alicdn.com/t/c/font_123456_abcdef.js',
+    },
+    {
+      type: 'jsdesign',
+      dir: './jsdesign-svg',
+    },
   ],
   output: {
     json: 'icons.json',
@@ -65,7 +77,7 @@ export default defineConfig({
 })
 ```
 
-Figma sources read `FIGMA_TOKEN`. Directory sources need no token.
+Tokens stay in the environment: `FIGMA_TOKEN`, `MASTERGO_TOKEN`. Directory, iconfont Symbol URLs, and 即时设计 export folders need no token. MasterGo requires Team edition and a team-project file. 即时设计 has no public REST for CLI — export SVG first.
 
 ## GitHub Action
 
@@ -73,6 +85,7 @@ Figma sources read `FIGMA_TOKEN`. Directory sources need no token.
 - uses: sonofmagic/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
+    mastergo-token: ${{ secrets.MASTERGO_TOKEN }}
     commit: true
 ```
 

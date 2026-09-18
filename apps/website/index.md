@@ -26,5 +26,6 @@ Then consume the generated set:
 
 - [Quick start](/quick-start)
 - [Figma conventions](/figma)
+- [Other sources](/sources)
 - [Distribute](/distribute)
 - [Mini programs](/miniprogram)

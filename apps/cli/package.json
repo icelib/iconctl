@@ -57,7 +57,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@icebreakers/iconctl": "workspace:*",
+    "@iconctl/core": "workspace:*",
     "cac": "^7.0.0",
     "consola": "^3.4.2"
   },

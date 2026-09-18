@@ -6,7 +6,7 @@ import {
   IconctlError,
   loadConfig,
   sync,
-} from '@icebreakers/iconctl'
+} from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
 
@@ -164,6 +164,9 @@ export async function runCli(argv: string[] = process.argv) {
           options: [
             { label: 'Figma file', value: 'figma' },
             { label: 'Local SVG directory', value: 'directory' },
+            { label: 'MasterGo file', value: 'mastergo' },
+            { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
+            { label: '即时设计 exported SVG folder', value: 'jsdesign' },
           ],
         })
         const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
@@ -174,6 +177,27 @@ export async function runCli(argv: string[] = process.argv) {
           const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
           sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
           hint = 'Set FIGMA_TOKEN, then run `iconctl sync`.'
+        }
+        else if (sourceType === 'mastergo') {
+          const file = await consola.prompt('MasterGo file URL (include layer_id)', { type: 'text' })
+          sourceBlock = `{ type: 'mastergo', file: ${JSON.stringify(file)} }`
+          hint = 'Set MASTERGO_TOKEN, then run `iconctl sync`. Team edition and a team-project file are required.'
+        }
+        else if (sourceType === 'iconfont') {
+          const url = await consola.prompt('iconfont Symbol JS URL (or leave empty for a folder)', { type: 'text' })
+          if (url) {
+            sourceBlock = `{ type: 'iconfont', url: ${JSON.stringify(url)}, stripPrefix: 'icon-' }`
+            hint = 'No token needed for a public Symbol URL. Run `iconctl sync`.'
+          }
+          else {
+            const dir = await consola.prompt('iconfont download folder', { type: 'text', placeholder: './iconfont', default: './iconfont' })
+            sourceBlock = `{ type: 'iconfont', dir: ${JSON.stringify(dir || './iconfont')}, stripPrefix: 'icon-' }`
+          }
+        }
+        else if (sourceType === 'jsdesign') {
+          const dir = await consola.prompt('Exported SVG folder from 即时设计', { type: 'text', placeholder: './jsdesign-svg', default: './jsdesign-svg' })
+          sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
+          hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
         }
         else {
           const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './svg', default: './svg' })

@@ -16,7 +16,35 @@ export interface DirectorySourceConfig {
   dir: string
 }
 
-export type SourceConfig = FigmaSourceConfig | DirectorySourceConfig
+export interface MastergoSourceConfig {
+  type: 'mastergo'
+  file?: string
+  fileId?: string
+  layerId?: string
+  token?: string
+  baseUrl?: string
+}
+
+export interface JsdesignSourceConfig {
+  type: 'jsdesign'
+  file?: string
+  dir?: string
+  token?: string
+}
+
+export interface IconfontSourceConfig {
+  type: 'iconfont'
+  url?: string
+  dir?: string
+  stripPrefix?: string
+}
+
+export type SourceConfig
+  = | FigmaSourceConfig
+    | DirectorySourceConfig
+    | MastergoSourceConfig
+    | JsdesignSourceConfig
+    | IconfontSourceConfig
 
 export interface ResolvedFigmaSourceConfig {
   type: 'figma'
@@ -33,7 +61,34 @@ export interface ResolvedDirectorySourceConfig {
   dir: string
 }
 
-export type ResolvedSourceConfig = ResolvedFigmaSourceConfig | ResolvedDirectorySourceConfig
+export interface ResolvedMastergoSourceConfig {
+  type: 'mastergo'
+  fileId: string
+  layerId: string
+  token?: string
+  baseUrl: string
+}
+
+export interface ResolvedJsdesignSourceConfig {
+  type: 'jsdesign'
+  file?: string
+  dir?: string
+  token?: string
+}
+
+export interface ResolvedIconfontSourceConfig {
+  type: 'iconfont'
+  url?: string
+  dir?: string
+  stripPrefix: string
+}
+
+export type ResolvedSourceConfig
+  = | ResolvedFigmaSourceConfig
+    | ResolvedDirectorySourceConfig
+    | ResolvedMastergoSourceConfig
+    | ResolvedJsdesignSourceConfig
+    | ResolvedIconfontSourceConfig
 
 export interface LoadedSource {
   type: SourceConfig['type']

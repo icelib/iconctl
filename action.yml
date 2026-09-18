@@ -9,6 +9,10 @@ inputs:
     description: Figma personal access token. Required when a Figma source is configured.
     required: false
     default: ''
+  mastergo-token:
+    description: MasterGo personal access token. Required when a MasterGo source is configured.
+    required: false
+    default: ''
   commit:
     description: Commit changed files back to the current branch
     required: false
@@ -28,6 +32,7 @@ runs:
       shell: bash
       env:
         FIGMA_TOKEN: ${{ inputs.token }}
+        MASTERGO_TOKEN: ${{ inputs.mastergo-token }}
       run: |
         extra=()
         if [ -n "${{ inputs.config }}" ]; then

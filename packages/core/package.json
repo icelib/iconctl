@@ -1,5 +1,5 @@
 {
-  "name": "@icebreakers/iconctl",
+  "name": "@iconctl/core",
   "type": "module",
   "version": "0.0.0",
   "description": "Load icons from Figma, SVG directories, and more, then export Iconify JSON",

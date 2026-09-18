@@ -27,6 +27,18 @@ describe('config', () => {
     ])
   })
 
+  it('accepts mastergo iconfont and jsdesign sources', () => {
+    const resolved = resolveConfig({
+      prefix: 'brand',
+      sources: [
+        { type: 'mastergo', file: 'https://mastergo.com/file/192644601973042?layer_id=40:015' },
+        { type: 'iconfont', url: 'https://at.alicdn.com/t/c/font_1.js' },
+        { type: 'jsdesign', dir: './js-export' },
+      ],
+    })
+    expect(resolved.sources.map(item => item.type)).toEqual(['mastergo', 'iconfont', 'jsdesign'])
+  })
+
   it('reads FIGMA_TOKEN from env', () => {
     expect(resolveFigmaToken(undefined, { FIGMA_TOKEN: 'figu_test' })).toBe('figu_test')
     expect(() => resolveFigmaToken(undefined, {})).toThrow(IconctlError)

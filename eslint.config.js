@@ -3,6 +3,6 @@ import { defineEslintConfig } from 'repoctl/tooling'
 export default await defineEslintConfig(
   {},
   {
-    ignores: ['**/*.md'],
+    ignores: ['**/*.md', '**/fixtures/**'],
   },
 )

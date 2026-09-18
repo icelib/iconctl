@@ -8,10 +8,10 @@ export {
   parseFigmaFileKey,
   resolveConfig,
   sync,
-} from '@icebreakers/iconctl'
+} from '@iconctl/core'
 export type {
   IconctlConfig,
   SourceConfig,
   SyncOptions,
   SyncResult,
-} from '@icebreakers/iconctl'
+} from '@iconctl/core'

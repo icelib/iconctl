@@ -28,6 +28,7 @@ export const routeSections = [
       item('', 'Introduction', '介绍'),
       item('quick-start', 'Quick start', '快速开始'),
       item('figma', 'Figma conventions', 'Figma 约定'),
+      item('sources', 'Other sources', '其他来源'),
       item('distribute', 'Distribute', '分发'),
       item('miniprogram', 'Mini programs', '小程序'),
     ],

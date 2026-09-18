@@ -228,7 +228,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@icebreakers/iconctl':
+      '@iconctl/core':
         specifier: workspace:*
         version: link:../../packages/core
       cac:
