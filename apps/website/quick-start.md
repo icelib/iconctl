@@ -68,4 +68,4 @@ pnpm exec iconctl sync --json
 
 ## 5. Use the JSON
 
-With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`.
+With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font — see [Icon formats](/formats).

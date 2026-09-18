@@ -68,4 +68,4 @@ pnpm exec iconctl sync --json
 
 ## 5. 使用 JSON
 
-在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。
+在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体，见[图标方案](/zh/formats)。

@@ -6,4 +6,4 @@
 <view class="i-brand-arrow-left text-primary text-24px"></view>
 ```
 
-class 名和 Web 一样，颜色跟文字走。不要从这套管线再出 iconfont。
+class 名和 Web 一样，颜色跟文字走。不要从这套管线再出 iconfont。为什么用 mask 而不是 webfont 或 `<use>`，见[图标方案](/zh/formats)。

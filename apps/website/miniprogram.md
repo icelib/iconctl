@@ -8,4 +8,4 @@ WeChat, Alipay, and Douyin do not consume SVG the way a browser does. Keep using
 
 Class names stay identical to Web. Color follows text color.
 
-Do not generate iconfont from this pipeline. Multicolor logos are normal images, not Iconify icons.
+Do not generate iconfont from this pipeline. Multicolor logos are normal images, not Iconify icons. Why mask instead of webfont or `<use>`: [Icon formats](/formats).

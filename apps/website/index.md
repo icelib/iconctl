@@ -29,4 +29,5 @@ Then consume the generated set:
 - [Demo](/demo)
 - [Other sources](/sources)
 - [Distribute](/distribute)
+- [Icon formats](/formats)
 - [Mini programs](/miniprogram)

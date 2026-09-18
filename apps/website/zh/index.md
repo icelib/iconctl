@@ -29,4 +29,5 @@ pnpm exec iconctl sync
 - [演示](/zh/demo)
 - [其他来源](/zh/sources)
 - [分发](/zh/distribute)
+- [图标方案](/zh/formats)
 - [小程序](/zh/miniprogram)

@@ -31,6 +31,7 @@ export const routeSections = [
       item('demo', 'Demo', '演示'),
       item('sources', 'Other sources', '其他来源'),
       item('distribute', 'Distribute', '分发'),
+      item('formats', 'Icon formats', '图标方案'),
       item('miniprogram', 'Mini programs', '小程序'),
     ],
   },

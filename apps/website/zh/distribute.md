@@ -8,6 +8,8 @@
 output: { json: 'src/icons.json' }
 ```
 
+把 UnoCSS / Tailwind 指到这个文件，JSON 跟应用一起发。class 怎么画（CSS mask、内联 SVG、webfont）见[图标方案](/zh/formats)。
+
 ## 2. Iconify JSON 包
 
 ```ts

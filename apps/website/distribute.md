@@ -8,7 +8,7 @@
 output: { json: 'src/icons.json' }
 ```
 
-Point UnoCSS / Tailwind at that file. Ship the JSON with the app.
+Point UnoCSS / Tailwind at that file. Ship the JSON with the app. How the class is painted (CSS mask vs inline SVG vs webfont) is on [Icon formats](/formats).
 
 ## 2. Iconify JSON package
 
