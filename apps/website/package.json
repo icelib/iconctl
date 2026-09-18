@@ -30,6 +30,7 @@
     "preview": "vitepress preview",
     "sync:demo": "iconctl sync",
     "sync:demo:svg": "node --experimental-strip-types scripts/generate-demo-snapshot.ts",
+    "sync:demo:font": "node --experimental-strip-types scripts/generate-demo-font.ts",
     "deploy": "wrangler deploy",
     "deploy:preview": "wrangler versions upload",
     "deploy:dry-run": "wrangler deploy --dry-run",
@@ -39,6 +40,7 @@
   },
   "dependencies": {
     "@iconctl/core": "workspace:*",
+    "@iconify/vue": "^5.0.2",
     "vue": "^3.5.43"
   },
   "devDependencies": {

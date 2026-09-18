@@ -29,6 +29,12 @@ Native iOS/Android vectors, PNG/PDF, and canvas are out of scope here. Multicolo
 
 iconctl **does not** emit webfonts or symbol JS. iconfont Symbol URLs are an [input](/sources), not an output.
 
+## Live comparison
+
+Same four Lucide icons, seven paint methods. Change the color: mask / inline / symbol / runtime / webfont follow `currentColor`. `<img>` and CSS background stay amber — that is the baked-color tax.
+
+<IconFormatPlayground />
+
 ## Comparison
 
 | Scheme | `currentColor` | Multi-color | Tree-shake | Extra request | Mini program |

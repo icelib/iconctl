@@ -29,6 +29,12 @@ iconctl 写出的是 **Iconify JSON**（以及可选的 SVG 文件）。那是�
 
 iconctl **不会**产出 webfont 或 symbol JS。iconfont Symbol URL 是[输入](/zh/sources)，不是输出。
 
+## 实际效果
+
+同一套四个 Lucide 图标，七种画法。改颜色：mask / 内联 / symbol / 运行时 / webfont 会跟 `currentColor`。`<img>` 和 CSS background 保持琥珀色——那就是颜色写死的代价。
+
+<IconFormatPlayground />
+
 ## 对比
 
 | 方案 | `currentColor` | 多色 | 按需 | 额外请求 | 小程序 |
