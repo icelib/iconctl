@@ -8,6 +8,7 @@ export interface IconctlOutputConfig {
   jsonPackage?: string
   types?: string
   preview?: string
+  changelog?: string
 }
 
 export interface IconctlValidateConfig {
@@ -152,6 +153,9 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
   }
   if (config.output?.preview) {
     output.preview = config.output.preview
+  }
+  if (config.output?.changelog) {
+    output.changelog = config.output.changelog
   }
 
   const validate: ResolvedIconctlConfig['validate'] = {

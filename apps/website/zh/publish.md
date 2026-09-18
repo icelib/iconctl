@@ -35,3 +35,13 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 4. 打开插件给出的 Actions 链接；workflow 会开 `chore: sync icons`
 
 不要把 `contents:write` 的 PAT 放进插件。写 JSON 的是 Action，不是插件。
+
+## 这个仓库
+
+`packages/icons`（`@iconctl/icons`）是完整示例。源是本地 SVG，不打 live Figma。sync 会写出 `icons.json`、`svg/`、`src/icon-names.ts`、`preview.html` 和 `CHANGELOG.md`。
+
+```bash
+pnpm --filter @iconctl/icons sync
+```
+
+`.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR。Figma 插件可以指向 `sonofmagic/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。

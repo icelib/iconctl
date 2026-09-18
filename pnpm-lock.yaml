@@ -318,6 +318,12 @@ importers:
         specifier: ^1.117.0
         version: 1.138.0
 
+  packages/icons:
+    devDependencies:
+      iconctl:
+        specifier: workspace:*
+        version: link:../../apps/cli
+
 packages:
 
   '@11ty/gray-matter@2.1.0':

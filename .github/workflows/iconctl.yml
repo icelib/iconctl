@@ -1,0 +1,62 @@
+name: iconctl publish
+
+on:
+  repository_dispatch:
+    types: [iconctl-publish]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build iconctl
+        run: pnpm --filter @iconctl/core build && pnpm --filter iconctl build
+
+      - name: Sync icon package
+        run: pnpm --filter @iconctl/icons exec iconctl sync --json | tee /tmp/iconctl-sync.json
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add packages/icons
+          if git diff --cached --quiet; then
+            echo "No icon changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="iconctl/sync-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git commit -m "chore: sync icons"
+          git push -u origin "$branch"
+          body="Automated icon sync from iconctl (${GITHUB_EVENT_NAME})."
+          if [ -f /tmp/iconctl-sync.json ] && command -v jq >/dev/null; then
+            body=$(jq -r '
+              "## iconctl sync\n\n"
+              + "- prefix: `\(.prefix)`\n"
+              + "- added: " + ((.added // []) | join(", ")) + "\n"
+              + "- removed: " + ((.removed // []) | join(", ")) + "\n"
+              + "- changed: " + ((.changed // []) | join(", ")) + "\n"
+            ' /tmp/iconctl-sync.json)
+          fi
+          gh pr create --title "chore: sync icons" --body "$body"

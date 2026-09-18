@@ -31,7 +31,7 @@ This uses Iconify's `@iconify-json/<prefix>` layout.
 
 The action runs `iconctl sync --json`. If sources are unchanged, it exits 0 and writes nothing.
 
-Designer-triggered publish opens a PR instead of pushing the current branch — see [Publish](/publish) and `examples/github-publish.yml` (`pr: true`).
+Designer-triggered publish opens a PR instead of pushing the current branch — see [Publish](/publish) and `examples/github-publish.yml` (`pr: true`). This repo’s worked example is `packages/icons`.
 
 ## Commands
 

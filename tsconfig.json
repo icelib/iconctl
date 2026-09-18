@@ -12,6 +12,9 @@
     },
     {
       "path": "./packages/figma-plugin"
+    },
+    {
+      "path": "./packages/icons"
     }
   ],
   "files": []

@@ -35,3 +35,13 @@ Figma Library “Publish” is still for other **design** files. This button is 
 4. Open the Actions URL the plugin prints; the workflow opens `chore: sync icons`
 
 Do not store a `contents:write` PAT in the plugin. The Action, not the plugin, writes the JSON.
+
+## This repo
+
+`packages/icons` (`@iconctl/icons`) is the worked example. Source is local SVG, not live Figma. Sync writes `icons.json`, `svg/`, `src/icon-names.ts`, `preview.html`, and `CHANGELOG.md`.
+
+```bash
+pnpm --filter @iconctl/icons sync
+```
+
+`.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`. Point the Figma plugin at `sonofmagic/iconctl` to exercise the same event (the workflow still will not call Figma).

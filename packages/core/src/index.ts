@@ -1,3 +1,4 @@
+export { changelogDate, formatChangelogBullets, mergeChangelog, writeChangelog } from './changelog'
 export { check, type CheckOptions } from './check'
 export {
   defineConfig,

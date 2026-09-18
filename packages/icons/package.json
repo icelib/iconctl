@@ -1,0 +1,46 @@
+{
+  "name": "@iconctl/icons",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dogfood Iconify JSON package for the iconctl publish flow",
+  "author": "ice breaker <1324318532@qq.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "directory": "packages/icons"
+  },
+  "bugs": {
+    "url": "https://github.com/sonofmagic/iconctl/issues"
+  },
+  "keywords": [
+    "iconctl",
+    "iconify",
+    "icons"
+  ],
+  "exports": {
+    ".": "./icons.json",
+    "./json": "./icons.json",
+    "./names": "./src/icon-names.ts"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "icons.json",
+    "preview.html",
+    "src/icon-names.ts",
+    "svg"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "sync": "iconctl sync",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "iconctl": "workspace:*"
+  }
+}

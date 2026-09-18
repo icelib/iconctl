@@ -1,6 +1,7 @@
 # Copy this into the product repo as .github/workflows/iconctl.yml
 # Secrets: FIGMA_TOKEN (read the icon library file)
 # The Figma plugin needs a separate fine-grained PAT with actions:write on this repo.
+# Optional `paths` limits git add (this repo uses packages/icons).
 
 name: iconctl publish
 

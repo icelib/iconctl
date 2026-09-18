@@ -44,3 +44,4 @@ config.ts.timestamp-*.mjs
 # iconctl
 .iconctl-cache
 preview.html
+!packages/icons/preview.html

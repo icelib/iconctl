@@ -5,6 +5,7 @@ import type { IconDiff } from './diff'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
 import { dirname, join } from 'pathe'
+import { writeChangelog } from './changelog'
 import { diffIconSets } from './diff'
 import { IconctlError } from './errors'
 import { exportOutputs, readPreviousIconJson } from './export'
@@ -142,6 +143,16 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     exported.files.push(previewFile)
   }
 
+  const diff = diffIconSets(previous, exported.json)
+
+  if (!options.dryRun && config.output.changelog) {
+    const changelogFile = join(cwd, config.output.changelog)
+    const written = await writeChangelog(changelogFile, diff)
+    if (written) {
+      exported.files.push(written)
+    }
+  }
+
   const result: SyncResult = {
     prefix: config.prefix,
     notModified,
@@ -149,7 +160,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     failed: processed.failed,
     issues,
     sources: sourceSummaries,
-    diff: diffIconSets(previous, exported.json),
+    diff,
     files: exported.files,
     json: exported.json,
   }

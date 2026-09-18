@@ -25,6 +25,10 @@ inputs:
     description: Optional path to iconctl.config.ts
     required: false
     default: ''
+  paths:
+    description: Git paths to stage (space-separated). Empty means all changes.
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -42,12 +46,16 @@ runs:
         if [ -n "${{ inputs.config }}" ]; then
           extra+=(--config "${{ inputs.config }}")
         fi
-        npx --yes iconctl sync --json "${extra[@]}"
+        npx --yes iconctl sync --json "${extra[@]}" | tee /tmp/iconctl-sync.json
     - name: Commit changes
       if: ${{ inputs.commit == 'true' && inputs.pr != 'true' }}
       shell: bash
       run: |
-        git add -A
+        if [ -n "${{ inputs.paths }}" ]; then
+          git add ${{ inputs.paths }}
+        else
+          git add -A
+        fi
         if git diff --cached --quiet; then
           echo "No icon changes"
           exit 0
@@ -62,7 +70,11 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        git add -A
+        if [ -n "${{ inputs.paths }}" ]; then
+          git add ${{ inputs.paths }}
+        else
+          git add -A
+        fi
         if git diff --cached --quiet; then
           echo "No icon changes"
           exit 0
@@ -73,4 +85,14 @@ runs:
         git checkout -b "$branch"
         git commit -m "chore: sync icons"
         git push -u origin "$branch"
-        gh pr create --title "chore: sync icons" --body "Automated icon sync from iconctl (${GITHUB_EVENT_NAME})."
+        body="Automated icon sync from iconctl (${GITHUB_EVENT_NAME})."
+        if [ -f /tmp/iconctl-sync.json ] && command -v jq >/dev/null; then
+          body=$(jq -r '
+            "## iconctl sync\n\n"
+            + "- prefix: `\(.prefix)`\n"
+            + "- added: " + ((.added // []) | join(", ")) + "\n"
+            + "- removed: " + ((.removed // []) | join(", ")) + "\n"
+            + "- changed: " + ((.changed // []) | join(", ")) + "\n"
+          ' /tmp/iconctl-sync.json)
+        fi
+        gh pr create --title "chore: sync icons" --body "$body"
