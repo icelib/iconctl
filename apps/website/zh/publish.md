@@ -36,6 +36,8 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 
 不要把 `contents:write` 的 PAT 放进插件。写 JSON 的是 Action，不是插件。
 
+merge 之后，开发要么 **git pull**（JSON 在应用仓），要么 **`pnpm add`**（已发布的包）。两种都在[分发](/zh/distribute)。
+
 ## 这个仓库
 
 `packages/icons`（`@iconctl/icons`）是完整示例。源是本地 SVG，不打 live Figma。sync 会写出 `icons.json`、`svg/`、`src/icon-names.ts`、`preview.html` 和 `CHANGELOG.md`。

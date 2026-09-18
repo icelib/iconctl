@@ -2,7 +2,6 @@
   "name": "@iconctl/icons",
   "type": "module",
   "version": "0.0.0",
-  "private": true,
   "description": "Dogfood Iconify JSON package for the iconctl publish flow",
   "author": "ice breaker <1324318532@qq.com>",
   "license": "MIT",
@@ -31,6 +30,10 @@
     "src/icon-names.ts",
     "svg"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "engines": {
     "node": ">=22.13.0"
   },

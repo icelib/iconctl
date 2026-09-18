@@ -1,0 +1,14 @@
+{
+	"prefix": "brand",
+	"lastModified": 1789722381,
+	"icons": {
+		"arrow-left": {
+			"body": "<path fill=\"currentColor\" d=\"m10 6-6 6 6 6v-4h10v-4H10z\"/>"
+		},
+		"user": {
+			"body": "<path fill=\"currentColor\" d=\"M12 12a4 4 0 10-4-4 4 4 0 004 4m0 2c-4 0-8 2-8 4v2h16v-2c0-2-4-4-8-4\"/>"
+		}
+	},
+	"width": 24,
+	"height": 24
+}

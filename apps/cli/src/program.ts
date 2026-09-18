@@ -83,6 +83,8 @@ export default defineConfig({
     json: ${JSON.stringify(input.json)},
     svg: 'svg',
     preview: 'preview.html',
+    // Or ship an installable package:
+    // jsonPackage: { dir: 'packages/icons', name: '@iconify-json/brand' },
   },
   validate: {
     width: 24,

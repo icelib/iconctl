@@ -5,8 +5,10 @@ export {
   type IconctlConfig,
   type IconctlOutputConfig,
   type IconctlValidateConfig,
+  type JsonPackageOutputConfig,
   resolveConfig,
   type ResolvedIconctlConfig,
+  resolveJsonPackage,
 } from './config'
 export { diffIconSets, type IconDiff } from './diff'
 export { IconctlError } from './errors'

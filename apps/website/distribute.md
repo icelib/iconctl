@@ -1,37 +1,102 @@
 # Distribute
 
-`iconctl` publishes the **tool**. Your product icons are generated into your own repo.
+`iconctl` publishes the **tool**. Product icons are generated in *your* repo, then developers consume them in one of two ways. Designer [Publish](/publish) only opens a PR. The split is what happens after merge.
 
 ## 1. JSON in the app repo
 
-```ts
-output: { json: 'src/icons.json' }
-```
-
-Point UnoCSS / Tailwind at that file. Ship the JSON with the app. How the class is painted (CSS mask vs inline SVG vs webfont) is on [Icon formats](/formats).
-
-## 2. Iconify JSON package
+Merge the PR. `git pull`. No npm.
 
 ```ts
 output: {
-  jsonPackage: 'packages/icons',
+  json: 'src/icons.json',
+  types: 'src/icon-names.ts',
+  preview: 'preview.html',
+  changelog: 'CHANGELOG.md',
 }
 ```
 
-This uses Iconify's `@iconify-json/<prefix>` layout.
+Worked example: [`examples/app-json`](https://github.com/sonofmagic/iconctl/tree/main/examples/app-json). This site’s [demo gallery](/demo) is the same pattern.
 
-## 3. GitHub Action
+Tailwind (`@iconify/tailwind4`):
+
+```ts
+import { addDynamicIconSelectors } from '@iconify/tailwind4'
+import icons from './src/icons.json'
+
+addDynamicIconSelectors({
+  prefix: 'i',
+  iconSets: { brand: icons },
+})
+```
+
+UnoCSS:
+
+```ts
+import icons from './src/icons.json'
+import { defineConfig, presetIcons } from 'unocss'
+
+export default defineConfig({
+  presets: [
+    presetIcons({
+      collections: { brand: icons },
+    }),
+  ],
+})
+```
+
+Class: `i-brand-arrow-left`. See [Icon formats](/formats).
+
+## 2. Installable package
+
+Merge the PR, version, publish. Other apps install it.
+
+### Iconify JSON package
+
+```ts
+output: {
+  jsonPackage: {
+    dir: 'packages/icon-json',
+    name: '@iconify-json/brand', // default `@iconify-json/${prefix}`
+  },
+}
+```
+
+```bash
+pnpm add @iconify-json/brand
+```
+
+```ts
+import icons from '@iconify-json/brand/icons.json'
+```
+
+Same `iconSets` / `collections` wiring as above. `clean: false` keeps sibling files (README, changelog) in that directory.
+
+### Workspace / npm package with preview
+
+`packages/icons` (`@iconctl/icons`) is this repo’s example: JSON + types + `preview.html` + `CHANGELOG.md`. After publish:
+
+```bash
+pnpm add @iconctl/icons
+```
+
+```ts
+import icons from '@iconctl/icons'
+```
+
+Class: `i-iconctl-arrow-left`.
+
+In a changesets monorepo, the icon sync PR should include a patch changeset so release can publish. This repo’s `.github/workflows/iconctl.yml` does that. GitHub Packages is the same package with a different `publishConfig.registry`.
+
+## GitHub Action
 
 ```yaml
 - uses: sonofmagic/iconctl@v1
   with:
     token: ${{ secrets.FIGMA_TOKEN }}
-    commit: true
+    pr: true
 ```
 
-The action runs `iconctl sync --json`. If sources are unchanged, it exits 0 and writes nothing.
-
-Designer-triggered publish opens a PR instead of pushing the current branch — see [Publish](/publish) and `examples/github-publish.yml` (`pr: true`). This repo’s worked example is `packages/icons`.
+`examples/github-publish.yml` is the copy-paste workflow. `paths` limits `git add`. `changeset: true` writes a patch changeset when icons change.
 
 ## Commands
 

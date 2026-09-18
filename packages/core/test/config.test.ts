@@ -39,6 +39,21 @@ describe('config', () => {
     expect(resolved.sources.map(item => item.type)).toEqual(['mastergo', 'iconfont', 'jsdesign'])
   })
 
+  it('resolves jsonPackage objects', () => {
+    const resolved = resolveConfig({
+      prefix: 'brand',
+      sources: [{ type: 'directory', dir: './raw-svg' }],
+      output: {
+        jsonPackage: { dir: 'packages/icons', name: '@acme/icons', clean: false },
+      },
+    })
+    expect(resolved.output.jsonPackage).toEqual({
+      dir: 'packages/icons',
+      name: '@acme/icons',
+      clean: false,
+    })
+  })
+
   it('reads FIGMA_TOKEN from env', () => {
     expect(resolveFigmaToken(undefined, { FIGMA_TOKEN: 'figu_test' })).toBe('figu_test')
     expect(() => resolveFigmaToken(undefined, {})).toThrow(IconctlError)

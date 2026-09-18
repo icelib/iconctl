@@ -29,6 +29,14 @@ inputs:
     description: Git paths to stage (space-separated). Empty means all changes.
     required: false
     default: ''
+  changeset:
+    description: Write a patch changeset when the icon diff is non-empty
+    required: false
+    default: 'false'
+  changeset-package:
+    description: Package name for the generated changeset (required when changeset is true)
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -47,6 +55,25 @@ runs:
           extra+=(--config "${{ inputs.config }}")
         fi
         npx --yes iconctl sync --json "${extra[@]}" | tee /tmp/iconctl-sync.json
+    - name: Write changeset
+      if: ${{ inputs.changeset == 'true' }}
+      shell: bash
+      run: |
+        pkg="${{ inputs.changeset-package }}"
+        if [ -z "$pkg" ]; then
+          echo "changeset-package is required when changeset is true"
+          exit 1
+        fi
+        if [ ! -f /tmp/iconctl-sync.json ] || ! command -v jq >/dev/null; then
+          echo "No sync JSON; skipping changeset"
+          exit 0
+        fi
+        if [ "$(jq -r '((.added // []) + (.removed // []) + (.changed // [])) | length' /tmp/iconctl-sync.json)" = "0" ]; then
+          echo "No icon diff; skipping changeset"
+          exit 0
+        fi
+        mkdir -p .changeset
+        printf '%s\n' '---' "\"${pkg}\": patch" '---' '' 'Sync icons from iconctl.' > ".changeset/icons-${GITHUB_RUN_ID:-local}.md"
     - name: Commit changes
       if: ${{ inputs.commit == 'true' && inputs.pr != 'true' }}
       shell: bash

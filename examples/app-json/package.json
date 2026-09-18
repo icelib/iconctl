@@ -1,0 +1,12 @@
+{
+  "name": "@iconctl/example-app-json",
+  "type": "module",
+  "private": true,
+  "description": "Example: Iconify JSON shipped inside the app repo",
+  "scripts": {
+    "sync": "iconctl sync"
+  },
+  "devDependencies": {
+    "iconctl": "workspace:*"
+  }
+}

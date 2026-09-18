@@ -36,6 +36,8 @@ Figma Library “Publish” is still for other **design** files. This button is 
 
 Do not store a `contents:write` PAT in the plugin. The Action, not the plugin, writes the JSON.
 
+After merge, developers get icons either from **git pull** (JSON in the app) or **`pnpm add`** (published package). Both are on [Distribute](/distribute).
+
 ## This repo
 
 `packages/icons` (`@iconctl/icons`) is the worked example. Source is local SVG, not live Figma. Sync writes `icons.json`, `svg/`, `src/icon-names.ts`, `preview.html`, and `CHANGELOG.md`.

@@ -34,11 +34,24 @@ jobs:
       - name: Sync icon package
         run: pnpm --filter @iconctl/icons exec iconctl sync --json | tee /tmp/iconctl-sync.json
 
+      - name: Write changeset
+        run: |
+          if [ ! -f /tmp/iconctl-sync.json ] || ! command -v jq >/dev/null; then
+            echo "No sync JSON; skipping changeset"
+            exit 0
+          fi
+          if [ "$(jq -r '((.added // []) + (.removed // []) + (.changed // [])) | length' /tmp/iconctl-sync.json)" = "0" ]; then
+            echo "No icon diff; skipping changeset"
+            exit 0
+          fi
+          mkdir -p .changeset
+          printf '%s\n' '---' '"@iconctl/icons": patch' '---' '' 'Sync icons from iconctl.' > ".changeset/icons-${GITHUB_RUN_ID}.md"
+
       - name: Open pull request
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git add packages/icons
+          git add packages/icons .changeset
           if git diff --cached --quiet; then
             echo "No icon changes"
             exit 0

@@ -45,3 +45,4 @@ config.ts.timestamp-*.mjs
 .iconctl-cache
 preview.html
 !packages/icons/preview.html
+!examples/app-json/preview.html

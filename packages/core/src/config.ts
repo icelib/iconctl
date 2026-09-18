@@ -2,10 +2,17 @@ import type { ResolvedSourceConfig, SourceConfig } from './sources/types'
 import { IconctlError } from './errors'
 import { parseMastergoRef } from './sources/mastergo'
 
+export interface JsonPackageOutputConfig {
+  dir: string
+  name?: string
+  package?: Record<string, unknown>
+  clean?: boolean
+}
+
 export interface IconctlOutputConfig {
   json?: string
   svg?: string
-  jsonPackage?: string
+  jsonPackage?: string | JsonPackageOutputConfig
   types?: string
   preview?: string
   changelog?: string
@@ -32,7 +39,9 @@ export interface ResolvedIconctlConfig {
   sources: ResolvedSourceConfig[]
   cacheDir: string
   color: string | false
-  output: Required<Pick<IconctlOutputConfig, 'json'>> & IconctlOutputConfig
+  output: Required<Pick<IconctlOutputConfig, 'json'>> & Omit<IconctlOutputConfig, 'jsonPackage'> & {
+    jsonPackage?: JsonPackageOutputConfig
+  }
   validate: {
     width?: number
     height?: number
@@ -46,6 +55,33 @@ const defaultNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export function defineConfig<T extends IconctlConfig>(config: T): T {
   return config
+}
+
+export function resolveJsonPackage(prefix: string, value: string | JsonPackageOutputConfig): JsonPackageOutputConfig {
+  if (typeof value === 'string') {
+    const dir = value.trim()
+    if (!dir) {
+      throw new IconctlError('iconctl jsonPackage is empty')
+    }
+    return {
+      dir,
+      name: `@iconify-json/${prefix}`,
+      clean: true,
+    }
+  }
+  const dir = value.dir?.trim()
+  if (!dir) {
+    throw new IconctlError('iconctl jsonPackage is missing `dir`')
+  }
+  const resolved: JsonPackageOutputConfig = {
+    dir,
+    name: value.name?.trim() || `@iconify-json/${prefix}`,
+    clean: value.clean !== false,
+  }
+  if (value.package) {
+    resolved.package = value.package
+  }
+  return resolved
 }
 
 function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): Extract<ResolvedSourceConfig, { type: 'figma' }> {
@@ -146,7 +182,7 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
     output.svg = config.output.svg
   }
   if (config.output?.jsonPackage) {
-    output.jsonPackage = config.output.jsonPackage
+    output.jsonPackage = resolveJsonPackage(config.prefix, config.output.jsonPackage)
   }
   if (config.output?.types) {
     output.types = config.output.types
