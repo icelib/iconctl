@@ -43,6 +43,7 @@ export async function exportOutputs(
 
   if (!options.dryRun) {
     const jsonFile = resolve(config.output.json)
+    await mkdir(dirname(jsonFile), { recursive: true })
     await writeJSONFile(jsonFile, json)
     files.push(jsonFile)
 

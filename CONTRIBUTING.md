@@ -16,6 +16,6 @@ English | [简体中文](README.zh-CN.md)
 - `apps/website` — VitePress docs
 - `examples/minimal` — sample config
 
-Do not call the live Figma API in CI. Use SVG fixtures under `packages/core/test/fixtures`. New platforms should land as another `sources[].type` adapter.
+Do not call the live Figma API in CI. Use SVG fixtures under `packages/core/test/fixtures`. The website gallery snapshot is `pnpm --filter @iconctl/website sync:demo:svg` (Lucide SVGs through the same pipeline). `sync:demo` talks to Figma and is manual: duplicate the Lucide community file, set `FIGMA_TOKEN` and `ICONCTL_FIGMA_FILE`. New platforms should land as another `sources[].type` adapter.
 
 Publishable package changes need `pnpm change` and Conventional Commits.

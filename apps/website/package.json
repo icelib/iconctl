@@ -28,6 +28,8 @@
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
+    "sync:demo": "iconctl sync",
+    "sync:demo:svg": "node --experimental-strip-types scripts/generate-demo-snapshot.ts",
     "deploy": "wrangler deploy",
     "deploy:preview": "wrangler versions upload",
     "deploy:dry-run": "wrangler deploy --dry-run",
@@ -36,6 +38,7 @@
     "typecheck": "vue-tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@iconctl/core": "workspace:*",
     "vue": "^3.5.43"
   },
   "devDependencies": {
@@ -45,6 +48,7 @@
     "cytoscape-cose-bilkent": "^4.1.0",
     "dayjs": "^1.11.23",
     "debug": "^4.4.3",
+    "iconctl": "workspace:*",
     "mermaid": "^12.0.0",
     "tailwindcss": "^4.3.3",
     "vitepress": "^1.6.4",

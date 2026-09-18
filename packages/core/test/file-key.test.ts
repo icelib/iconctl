@@ -18,4 +18,10 @@ describe('parseFigmaFileKey', () => {
     expect(() => parseFigmaFileKey('')).toThrow(IconctlError)
     expect(() => parseFigmaFileKey('https://example.com/x')).toThrow(IconctlError)
   })
+
+  it('rejects Community file URLs with a duplicate hint', () => {
+    expect(() => parseFigmaFileKey('https://www.figma.com/community/file/939851755929765537/Lucide-Icons')).toThrow(
+      /Community file URLs cannot be used with the REST API/,
+    )
+  })
 })

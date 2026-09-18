@@ -10,10 +10,14 @@
     "skipLibCheck": true
   },
   "include": [
+    "figma-demo-icons.ts",
+    "iconctl.config.ts",
+    "scripts/**/*.ts",
     ".vitepress/config.ts",
     ".vitepress/navigation/**/*.ts",
     ".vitepress/theme/**/*.ts",
     ".vitepress/theme/**/*.vue",
+    ".vitepress/theme/**/*.json",
     ".vitepress/env.d.ts"
   ]
 }

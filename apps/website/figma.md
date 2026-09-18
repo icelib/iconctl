@@ -29,3 +29,5 @@ Monochrome icons only. The pipeline rewrites fills to `currentColor`.
 ```
 
 Publishing the Figma library is for other design files. Engineering runs `iconctl sync` or the GitHub Action after the library is ready.
+
+See the [demo](/demo) for a gallery built from the public [Lucide Icons](https://www.figma.com/community/file/939851755929765537/Lucide-Icons) library. Community URLs must be duplicated to a `/design/{fileKey}` link before the REST API will serve them.

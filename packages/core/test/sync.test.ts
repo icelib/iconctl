@@ -30,6 +30,18 @@ describe('sync', () => {
     expect(await readFile(path.join(cwd, 'preview.html'), 'utf8')).toContain('brand:arrow-left')
   })
 
+  it('creates parent directories for json output', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-'))
+    const config = resolveConfig({
+      prefix: 'brand',
+      sources: [{ type: 'directory', dir: fixtureDir }],
+      output: { json: 'nested/out/icons.json' },
+    })
+    await sync({ cwd, config })
+    const json = JSON.parse(await readFile(path.join(cwd, 'nested/out/icons.json'), 'utf8')) as { prefix: string }
+    expect(json.prefix).toBe('brand')
+  })
+
   it('still accepts a preloaded icon set', async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-'))
     const config = resolveConfig({

@@ -244,6 +244,9 @@ importers:
 
   apps/website:
     dependencies:
+      '@iconctl/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       vue:
         specifier: ^3.5.43
         version: 3.5.43(typescript@6.0.3)
@@ -266,6 +269,9 @@ importers:
       debug:
         specifier: ^4.4.3
         version: 4.4.3(supports-color@10.2.2)
+      iconctl:
+        specifier: workspace:*
+        version: link:../cli
       mermaid:
         specifier: ^12.0.0
         version: 12.0.0

@@ -26,6 +26,7 @@ pnpm exec iconctl sync
 
 - [快速开始](/zh/quick-start)
 - [Figma 约定](/zh/figma)
+- [演示](/zh/demo)
 - [其他来源](/zh/sources)
 - [分发](/zh/distribute)
 - [小程序](/zh/miniprogram)

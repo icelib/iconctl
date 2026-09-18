@@ -10,7 +10,7 @@ export {
 export { diffIconSets, type IconDiff } from './diff'
 export { IconctlError } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
-export { parseFigmaFileKey } from './file-key'
+export { FIGMA_COMMUNITY_FILE_HELP, parseFigmaFileKey } from './file-key'
 export { stripIconPrefix } from './icon-set'
 export { loadConfig, type LoadConfigOptions } from './load-config'
 export { defaultIconNameForNode, shouldSkipName, toIconName } from './naming'
