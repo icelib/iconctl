@@ -1,14 +1,26 @@
 export const FORMAT_IDS = [
-  'inline',
-  'file',
-  'symbol',
   'mask',
-  'background',
+  'inline',
   'runtime',
+  'file',
+  'background',
+  'symbol',
   'webfont',
 ] as const
 
 export type FormatId = typeof FORMAT_IDS[number]
+
+export type FormatBadge = 'mainstream' | 'situational' | 'legacy'
+
+export const formatBadge: Record<FormatId, FormatBadge> = {
+  mask: 'mainstream',
+  inline: 'mainstream',
+  runtime: 'mainstream',
+  file: 'situational',
+  background: 'situational',
+  symbol: 'legacy',
+  webfont: 'legacy',
+}
 
 export const SCORE_IDS = [
   'theme',

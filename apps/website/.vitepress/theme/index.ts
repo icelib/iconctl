@@ -1,7 +1,9 @@
 import type { Theme } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import IconDemoGallery from './components/IconDemoGallery.vue'
-import IconFormatPlayground from './components/IconFormatPlayground.vue'
+import IconFormatDemo from './components/IconFormatDemo.vue'
+import IconFormatScores from './components/IconFormatScores.vue'
+import IconFormatToolbar from './components/IconFormatToolbar.vue'
 import Layout from './Layout.vue'
 import './tailwind.css'
 
@@ -10,6 +12,8 @@ export default {
   Layout,
   enhanceApp({ app }) {
     app.component('IconDemoGallery', IconDemoGallery)
-    app.component('IconFormatPlayground', IconFormatPlayground)
+    app.component('IconFormatDemo', IconFormatDemo)
+    app.component('IconFormatScores', IconFormatScores)
+    app.component('IconFormatToolbar', IconFormatToolbar)
   },
 } satisfies Theme
