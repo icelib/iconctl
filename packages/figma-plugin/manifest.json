@@ -1,0 +1,12 @@
+{
+  "name": "iconctl Publish",
+  "id": "iconctl-publish",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["https://api.github.com"],
+    "reasoning": "Trigger the iconctl GitHub Action that syncs Figma icons into a pull request"
+  }
+}

@@ -17,6 +17,10 @@ inputs:
     description: Commit changed files back to the current branch
     required: false
     default: 'false'
+  pr:
+    description: Open a pull request with changed files instead of committing to the current branch
+    required: false
+    default: 'false'
   config:
     description: Optional path to iconctl.config.ts
     required: false
@@ -40,7 +44,7 @@ runs:
         fi
         npx --yes iconctl sync --json "${extra[@]}"
     - name: Commit changes
-      if: ${{ inputs.commit == 'true' }}
+      if: ${{ inputs.commit == 'true' && inputs.pr != 'true' }}
       shell: bash
       run: |
         git add -A
@@ -52,3 +56,21 @@ runs:
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git commit -m "chore: sync icons"
         git push
+    - name: Open pull request
+      if: ${{ inputs.pr == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        git add -A
+        if git diff --cached --quiet; then
+          echo "No icon changes"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        branch="iconctl/sync-${GITHUB_RUN_ID}"
+        git checkout -b "$branch"
+        git commit -m "chore: sync icons"
+        git push -u origin "$branch"
+        gh pr create --title "chore: sync icons" --body "Automated icon sync from iconctl (${GITHUB_EVENT_NAME})."

@@ -1,6 +1,5 @@
 {
   "extends": "repoctl/tsconfig.json",
-  "files": [],
   "references": [
     {
       "path": "./apps/cli"
@@ -10,6 +9,10 @@
     },
     {
       "path": "./packages/core"
+    },
+    {
+      "path": "./packages/figma-plugin"
     }
-  ]
+  ],
+  "files": []
 }

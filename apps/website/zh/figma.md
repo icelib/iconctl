@@ -1,6 +1,6 @@
 # Figma 约定
 
-Figma 只是 `iconctl` 的一种来源。v1 不要求设计师点我们的发布按钮。他们维护 Library，工程侧去 sync。
+Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [iconctl 插件](/zh/publish) 里点 **Publish**。工程侧 review PR。Figma 的 Publish Library 只给其他设计稿用。
 
 ## 文件
 
@@ -24,6 +24,6 @@ Figma 只是 `iconctl` 的一种来源。v1 不要求设计师点我们的发布
 }
 ```
 
-在 Figma 里 Publish Library 是给其他设计稿用的。进代码靠 `iconctl sync` 或 GitHub Action。
+在 Figma 里 Publish Library 是给其他设计稿用的。进代码靠插件的 **Publish**（或 `iconctl sync` / GitHub Action）。
 
 [演示页](/zh/demo) 用公开的 [Lucide Icons](https://www.figma.com/community/file/939851755929765537/Lucide-Icons) 库跑了一遍流水线。Community 链接要先复制成 `/design/{fileKey}`，REST API 才能读。

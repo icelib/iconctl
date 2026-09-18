@@ -312,6 +312,12 @@ importers:
         specifier: ^2.0.3
         version: 2.0.3
 
+  packages/figma-plugin:
+    devDependencies:
+      '@figma/plugin-typings':
+        specifier: ^1.117.0
+        version: 1.138.0
+
 packages:
 
   '@11ty/gray-matter@2.1.0':
@@ -1071,6 +1077,9 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@figma/plugin-typings@1.138.0':
+    resolution: {integrity: sha512-bLP9wRf8c0e4z5GbXpDUXd7YNPXEDpgyeMmTe8Lm4EWMU8JEO1DFRfj1NaucIeRSurbde8y7xS1jas60LTTDaw==}
 
   '@gwhitney/detect-indent@7.0.1':
     resolution: {integrity: sha512-7bQW+gkKa2kKZPeJf6+c6gFK9ARxQfn+FKy9ScTBppyKRWH2KzsmweXUoklqeEiHiNVWaeP5csIdsNq6w7QhzA==}
@@ -8037,6 +8046,8 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
+
+  '@figma/plugin-typings@1.138.0': {}
 
   '@gwhitney/detect-indent@7.0.1': {}
 

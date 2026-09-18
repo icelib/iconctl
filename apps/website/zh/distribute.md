@@ -29,6 +29,8 @@ output: {
 
 Action 内部跑 `iconctl sync --json`。来源没改时退出 0，不写文件。
 
+设计师点发布时开 PR，而不是推当前分支。见[发布](/zh/publish) 和 `examples/github-publish.yml`（`pr: true`）。
+
 ## 命令
 
 | 命令 | 作用 |

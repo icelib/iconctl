@@ -1,0 +1,23 @@
+# Copy this into the product repo as .github/workflows/iconctl.yml
+# Secrets: FIGMA_TOKEN (read the icon library file)
+# The Figma plugin needs a separate fine-grained PAT with actions:write on this repo.
+
+name: iconctl publish
+
+on:
+  repository_dispatch:
+    types: [iconctl-publish]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sonofmagic/iconctl@v1
+        with:
+          token: ${{ secrets.FIGMA_TOKEN }}
+          pr: true
