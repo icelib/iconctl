@@ -47,10 +47,17 @@ export function routePath(locale: DocsLocale, slug: string) {
 }
 
 export function createNav(locale: DocsLocale): DefaultTheme.NavItem[] {
-  return routeSections[0].items.map(entry => ({
-    text: entry.label[locale],
-    link: routePath(locale, entry.slug),
-  }))
+  return [
+    {
+      text: locale === 'zh' ? '指南' : 'Guide',
+      link: routePath(locale, 'quick-start'),
+      activeMatch: locale === 'zh' ? '^/zh/(?!demo)' : '^/(?!zh/|demo)',
+    },
+    {
+      text: locale === 'zh' ? '演示' : 'Demo',
+      link: routePath(locale, 'demo'),
+    },
+  ]
 }
 
 export function createSidebars(locale: DocsLocale): DefaultTheme.Sidebar {
