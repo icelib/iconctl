@@ -1,7 +1,7 @@
 {
   "name": "@iconctl/core",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Load icons from Figma, SVG directories, and more, then export Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",

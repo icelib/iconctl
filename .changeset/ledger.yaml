@@ -1,0 +1,14 @@
+"@iconctl/core@0.0.1":
+  dir: packages/core
+  intents:
+    - big-maps-clap
+    - big-taxis-turn
+    - modern-pigs-cheer
+    - wet-elephants-wink
+iconctl@0.0.1:
+  dir: apps/cli
+  intents:
+    - big-maps-clap
+    - big-taxis-turn
+    - modern-pigs-cheer
+    - wet-elephants-wink
