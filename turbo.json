@@ -45,7 +45,7 @@
     },
     "test": {
       "dependsOn": [
-        "^test"
+        "^build"
       ],
       "inputs": [
         "src/**",
@@ -74,7 +74,7 @@
     },
     "typecheck": {
       "dependsOn": [
-        "^typecheck"
+        "^build"
       ],
       "inputs": [
         "src/**",
