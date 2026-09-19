@@ -247,6 +247,9 @@ importers:
       '@iconctl/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@iconctl/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       '@iconify/vue':
         specifier: ^5.0.2
         version: 5.0.2(vue@3.5.43(typescript@6.0.3))
@@ -326,6 +329,9 @@ importers:
 
   packages/icons:
     devDependencies:
+      '@iconctl/core':
+        specifier: workspace:*
+        version: link:../core
       iconctl:
         specifier: workspace:*
         version: link:../../apps/cli

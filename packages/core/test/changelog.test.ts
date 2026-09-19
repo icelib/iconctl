@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { resolveConfig, sync } from '../src'
+import { parseChangelog, resolveConfig, sync } from '../src'
 import { mergeChangelog } from '../src/changelog'
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#111111" d="M0 0h24v24H0z"/></svg>`
@@ -78,5 +78,34 @@ describe('changelog', () => {
     const second = await readFile(path.join(dir, 'CHANGELOG.md'), 'utf8')
     expect(second).toContain('- Added: `user`')
     expect(second).toContain('arrow-left')
+  })
+
+  it('parses dated Added Removed Changed bullets', () => {
+    const days = parseChangelog(`# Changelog
+
+## 2026-09-19
+
+- Added: \`bell\`, \`user\`
+- Removed: \`star\`
+- Changed: \`arrow-left\`
+
+## 2026-09-18
+
+- Added: \`home\`
+`)
+    expect(days).toEqual([
+      {
+        date: '2026-09-19',
+        added: ['bell', 'user'],
+        removed: ['star'],
+        changed: ['arrow-left'],
+      },
+      {
+        date: '2026-09-18',
+        added: ['home'],
+        removed: [],
+        changed: [],
+      },
+    ])
   })
 })

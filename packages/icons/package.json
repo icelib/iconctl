@@ -21,7 +21,8 @@
   "exports": {
     ".": "./icons.json",
     "./json": "./icons.json",
-    "./names": "./src/icon-names.ts"
+    "./names": "./src/icon-names.ts",
+    "./CHANGELOG.md": "./CHANGELOG.md"
   },
   "files": [
     "CHANGELOG.md",
@@ -39,11 +40,13 @@
   },
   "scripts": {
     "sync": "iconctl sync",
+    "add-iconfont": "node --experimental-strip-types scripts/add-iconfont.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@iconctl/core": "workspace:*",
     "iconctl": "workspace:*"
   }
 }

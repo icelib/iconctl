@@ -4,6 +4,15 @@ on:
   repository_dispatch:
     types: [iconctl-publish]
   workflow_dispatch:
+    inputs:
+      iconfont_url:
+        description: Optional iconfont Symbol JS URL to ingest into packages/icons
+        required: false
+        type: string
+      only:
+        description: Optional comma-separated icon names to take from that URL
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -31,7 +40,20 @@ jobs:
       - name: Build iconctl
         run: pnpm --filter @iconctl/core build && pnpm --filter iconctl build
 
+      - name: Ingest iconfont
+        if: github.event_name == 'workflow_dispatch' && inputs.iconfont_url != ''
+        env:
+          ICONFONT_URL: ${{ inputs.iconfont_url }}
+          ICONFONT_ONLY: ${{ inputs.only }}
+        run: |
+          extra=()
+          if [ -n "$ICONFONT_ONLY" ]; then
+            extra+=(--only "$ICONFONT_ONLY")
+          fi
+          pnpm --filter @iconctl/icons add-iconfont --json -- "${extra[@]}" "$ICONFONT_URL" | tee /tmp/iconctl-sync.json
+
       - name: Sync icon package
+        if: github.event_name != 'workflow_dispatch' || inputs.iconfont_url == ''
         run: pnpm --filter @iconctl/icons exec iconctl sync --json | tee /tmp/iconctl-sync.json
 
       - name: Write changeset

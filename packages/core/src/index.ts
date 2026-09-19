@@ -1,4 +1,11 @@
-export { changelogDate, formatChangelogBullets, mergeChangelog, writeChangelog } from './changelog'
+export {
+  changelogDate,
+  formatChangelogBullets,
+  type IconChangelogDay,
+  mergeChangelog,
+  parseChangelog,
+  writeChangelog,
+} from './changelog'
 export { check, type CheckOptions } from './check'
 export {
   defineConfig,
@@ -19,6 +26,11 @@ export { loadConfig, type LoadConfigOptions } from './load-config'
 export { defaultIconNameForNode, shouldSkipName, toIconName } from './naming'
 export { renderPreviewHtml, writePreviewHtml } from './preview'
 export { processIconSet } from './process'
+export {
+  type IconfontJsToSvgOptions,
+  iconfontJsToSvgs,
+  writeIconfontJsToDirectory,
+} from './sources/iconfont'
 export { parseIconfontSymbolJs, symbolToSvg } from './sources/iconfont-symbol'
 export { parseMastergoRef } from './sources/mastergo'
 export {

@@ -15,8 +15,4 @@ export default defineConfig({
     preview: 'preview.html',
     changelog: 'CHANGELOG.md',
   },
-  validate: {
-    width: 24,
-    height: 24,
-  },
 })

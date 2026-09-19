@@ -1,43 +1,25 @@
 # 演示
 
-这是 **iconctl** 的产出：24 个 [Lucide](https://www.figma.com/community/file/939851755929765537/Lucide-Icons) 图标（ISC），清洗成 `currentColor`、24×24、kebab-case 名称。
+这是 **`@iconctl/icons`**，本仓库发布的图标包。源在 `packages/icons/raw`。`iconctl sync` 会写出 Iconify JSON、SVG、类型、`preview.html`，以及按增删改记的 `CHANGELOG.md`。
 
-## 本地 SVG
-
-当前提交的快照走这条路：一文件夹 `.svg`，不需要 token。
-
-```ts
-{
-  type: 'directory',
-  dir: 'scripts/lucide-svg',
-}
-```
-
-```bash
-pnpm --filter @iconctl/website sync:demo:svg
-```
-
-## Figma
-
-同一套图标，从 Lucide Community 文件复制后的 Figma 稿导入。Community 链接不是 REST 的 file key。
-
-```ts
-{
-  type: 'figma',
-  file: process.env.ICONCTL_FIGMA_FILE ?? 'https://www.figma.com/community/file/939851755929765537/Lucide-Icons',
-  iconNameForNode: (node) => {
-    const name = defaultIconNameForNode(node)
-    return name && DEMO_ICON_SET.has(name) ? name : null
-  },
-}
-```
-
-```bash
-export FIGMA_TOKEN=figu_xxx
-export ICONCTL_FIGMA_FILE=https://www.figma.com/design/<fileKey>/Lucide-Icons
-pnpm --filter @iconctl/website sync:demo
-```
-
-点击图标复制 `i-demo-arrow-left`。改颜色可以确认填充已被写成 `currentColor`。
+点图标复制 `i-iconctl-arrow-left`。改颜色可以确认 fill 已经洗成 `currentColor`。
 
 <IconDemoGallery />
+
+## 从 iconfont 添加
+
+公开的 Symbol CDN，不用 token。脚本写入 `raw/`，再 sync：
+
+```bash
+pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.js
+```
+
+`--only arrow-left,user` 只收一部分。默认去掉 `icon-` 前缀。把 package 文件提交上去，下次文档部署就会出现在这页。
+
+改或删 `raw/` 里的 SVG，再跑 `pnpm --filter @iconctl/icons sync`，changelog 同样会记。
+
+Actions → **iconctl publish** → Run workflow 也可以填同一个 Symbol URL。
+
+## 变更记录
+
+<IconChangelog />

@@ -1,7 +1,13 @@
 <script setup lang="ts">
+import icons from '@iconctl/icons'
 import { useData } from 'vitepress'
 import { computed, ref } from 'vue'
-import icons from '../data/figma-demo.json'
+
+interface IconRecord {
+  body: string
+  width?: number
+  height?: number
+}
 
 interface DemoIcon {
   name: string
@@ -19,14 +25,15 @@ const copied = ref<string | null>(null)
 const prefix = icons.prefix
 const defaultWidth = icons.width ?? 24
 const defaultHeight = icons.height ?? 24
+const iconMap = icons.icons as Record<string, IconRecord>
 
 const allIcons = computed<DemoIcon[]>(() =>
-  Object.entries(icons.icons)
+  Object.entries(iconMap)
     .map(([name, icon]) => ({
       name,
       body: icon.body,
-      width: defaultWidth,
-      height: defaultHeight,
+      width: icon.width ?? defaultWidth,
+      height: icon.height ?? defaultHeight,
     }))
     .sort((left, right) => left.name.localeCompare(right.name)),
 )

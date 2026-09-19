@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { parseIconfontSymbolJs, resolveConfig, stripIconPrefix, symbolToSvg, sync } from '../src'
+import { parseIconfontSymbolJs, resolveConfig, stripIconPrefix, symbolToSvg, sync, writeIconfontJsToDirectory } from '../src'
 import { loadIconfontSource } from '../src/sources/iconfont'
 
 const fixtureJs = path.resolve(import.meta.dirname, 'fixtures/iconfont/symbol.js')
@@ -42,5 +42,15 @@ describe('iconfont', () => {
     const result = await sync({ cwd, config })
     expect(result.sources[0]?.type).toBe('iconfont')
     expect(result.diff.added.sort()).toEqual(['arrow-left', 'user'])
+  })
+
+  it('writes selected symbols into a directory', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'iconctl-iconfont-raw-'))
+    const js = await readFile(fixtureJs, 'utf8')
+    const names = await writeIconfontJsToDirectory(js, dir, { only: ['user'] })
+    expect(names).toEqual(['user'])
+    const svg = await readFile(path.join(dir, 'user.svg'), 'utf8')
+    expect(svg).toContain('viewBox="0 0 1024 1024"')
+    await expect(readFile(path.join(dir, 'arrow-left.svg'), 'utf8')).rejects.toThrow()
   })
 })

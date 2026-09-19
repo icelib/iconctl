@@ -1,43 +1,25 @@
 # Demo
 
-This gallery is **iconctl** output: twenty-four [Lucide](https://www.figma.com/community/file/939851755929765537/Lucide-Icons) icons (ISC), cleaned to `currentColor`, 24×24, kebab-case names.
+This gallery is **`@iconctl/icons`**, the installable set this repo publishes. Source of truth is `packages/icons/raw`. `iconctl sync` writes Iconify JSON, SVG, types, `preview.html`, and a dated `CHANGELOG.md` for added, removed, and changed names.
 
-## Local SVG
-
-The committed snapshot is this path — a folder of `.svg` files, no token:
-
-```ts
-{
-  type: 'directory',
-  dir: 'scripts/lucide-svg',
-}
-```
-
-```bash
-pnpm --filter @iconctl/website sync:demo:svg
-```
-
-## Figma
-
-Same icons, from a duplicated Figma copy of the Lucide community file. Community URLs are not REST file keys.
-
-```ts
-{
-  type: 'figma',
-  file: process.env.ICONCTL_FIGMA_FILE ?? 'https://www.figma.com/community/file/939851755929765537/Lucide-Icons',
-  iconNameForNode: (node) => {
-    const name = defaultIconNameForNode(node)
-    return name && DEMO_ICON_SET.has(name) ? name : null
-  },
-}
-```
-
-```bash
-export FIGMA_TOKEN=figu_xxx
-export ICONCTL_FIGMA_FILE=https://www.figma.com/design/<fileKey>/Lucide-Icons
-pnpm --filter @iconctl/website sync:demo
-```
-
-Click an icon to copy `i-demo-arrow-left`. Change the color to confirm fills were rewritten to `currentColor`.
+Click an icon to copy `i-iconctl-arrow-left`. Change the color to confirm fills were rewritten to `currentColor`.
 
 <IconDemoGallery />
+
+## Add from iconfont
+
+Public Symbol CDN, no token. The script writes `raw/`, then syncs:
+
+```bash
+pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.js
+```
+
+Take a subset with `--only arrow-left,user`. Default prefix strip is `icon-`. Commit the package files; the next docs deploy shows them here.
+
+Edit or delete SVGs in `raw/` and run `pnpm --filter @iconctl/icons sync` for the same changelog.
+
+Actions → **iconctl publish** → Run workflow can pass the same Symbol URL.
+
+## Changelog
+
+<IconChangelog />
