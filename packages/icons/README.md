@@ -10,7 +10,7 @@ pnpm add @iconctl/icons
 import icons from '@iconctl/icons'
 ```
 
-Point UnoCSS / Tailwind `collections` / `iconSets` at that JSON. Class: `i-iconctl-arrow-left`. Types: `@iconctl/icons/names`.
+Point UnoCSS / Tailwind `collections` / `iconSets` at that JSON. Class: `i-ice-arrow-left`. Types: `@iconctl/icons/names`.
 
 Same repo:
 

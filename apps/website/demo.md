@@ -2,7 +2,7 @@
 
 This gallery is **`@iconctl/icons`**, the installable set this repo publishes. Source of truth is `packages/icons/raw`. `iconctl sync` writes Iconify JSON, SVG, types, `preview.html`, and a dated `CHANGELOG.md` for added, removed, and changed names.
 
-Click an icon to copy `i-iconctl-arrow-left`. Change the color to confirm fills were rewritten to `currentColor`.
+Click an icon to copy `i-ice-arrow-left`. Change the color to confirm fills were rewritten to `currentColor`.
 
 <IconDemoGallery />
 

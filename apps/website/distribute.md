@@ -83,7 +83,7 @@ pnpm add @iconctl/icons
 import icons from '@iconctl/icons'
 ```
 
-Class: `i-iconctl-arrow-left`.
+Class: `i-ice-arrow-left`.
 
 In a changesets monorepo, the icon sync PR should include a patch changeset so release can publish. This repo’s `.github/workflows/iconctl.yml` does that. GitHub Packages is the same package with a different `publishConfig.registry`.
 

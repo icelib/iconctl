@@ -1,6 +1,6 @@
 {
-	"prefix": "iconctl",
-	"lastModified": 1789710560,
+	"prefix": "ice",
+	"lastModified": 1789870481,
 	"icons": {
 		"arrow-left": {
 			"body": "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"m12 19-7-7 7-7m7 7H5\"/>"

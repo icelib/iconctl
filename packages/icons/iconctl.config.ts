@@ -1,7 +1,7 @@
 import { defineConfig } from 'iconctl'
 
 export default defineConfig({
-  prefix: 'iconctl',
+  prefix: 'ice',
   sources: [
     {
       type: 'directory',

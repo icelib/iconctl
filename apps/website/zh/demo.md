@@ -2,7 +2,7 @@
 
 这是 **`@iconctl/icons`**，本仓库发布的图标包。源在 `packages/icons/raw`。`iconctl sync` 会写出 Iconify JSON、SVG、类型、`preview.html`，以及按增删改记的 `CHANGELOG.md`。
 
-点图标复制 `i-iconctl-arrow-left`。改颜色可以确认 fill 已经洗成 `currentColor`。
+点图标复制 `i-ice-arrow-left`。改颜色可以确认 fill 已经洗成 `currentColor`。
 
 <IconDemoGallery />
 

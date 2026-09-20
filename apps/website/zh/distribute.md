@@ -83,7 +83,7 @@ pnpm add @iconctl/icons
 import icons from '@iconctl/icons'
 ```
 
-class：`i-iconctl-arrow-left`。
+class：`i-ice-arrow-left`。
 
 用 changesets 的 monorepo 里，图标 PR 应带一个 patch changeset，release 才能发版。本仓库的 `.github/workflows/iconctl.yml` 会写这个 changeset。GitHub Packages 只是换 `publishConfig.registry`。
 
