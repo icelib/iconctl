@@ -89,19 +89,32 @@ In a changesets monorepo, the icon sync PR should include a patch changeset so r
 
 ## GitHub Action
 
+Complete [OAuth authorization](/figma#oauth-login-and-automatic-renewal) and configure the three Secrets. All jobs sharing a CI authorization must use the same concurrency group and run serially:
+
+```yaml
+concurrency:
+  group: iconctl-figma-oauth
+  cancel-in-progress: false
+```
+
 ```yaml
 - uses: icelib/iconctl@v1
   with:
-    token: ${{ secrets.FIGMA_TOKEN }}
+    figma-client-id: ${{ secrets.FIGMA_CLIENT_ID }}
+    figma-client-secret: ${{ secrets.FIGMA_CLIENT_SECRET }}
+    figma-refresh-token: ${{ secrets.FIGMA_REFRESH_TOKEN }}
     pr: true
 ```
 
 `examples/github-publish.yml` is the copy-paste workflow. `paths` limits `git add`. `changeset: true` writes a patch changeset when icons change.
 
+Personal tokens remain supported through the `token` input using the `FIGMA_TOKEN` secret and take precedence over OAuth inputs, but require manual replacement. Use separate OAuth apps or accounts for CI and local development; never cache or upload credential files.
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
+| `iconctl auth figma login/status/logout` | Manage Figma OAuth authorization |
 | `iconctl init` | Write `iconctl.config.ts` |
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl check` | Validate existing SVG/JSON |

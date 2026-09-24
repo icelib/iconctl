@@ -46,7 +46,9 @@ sources: [{ type: 'directory', dir: './raw-svg' }]
 
 ## 3. Token
 
-Figma 来源需要 `FIGMA_TOKEN`。目录来源不需要。
+Figma 推荐使用 [OAuth 登录与自动续期](/zh/figma#oauth-登录与自动续期)。完成 App 配置后运行 `pnpm exec iconctl auth figma login`，后续同步自动刷新令牌。目录来源不需要凭据。
+
+也可以使用需手动更换的个人令牌：
 
 ```bash
 export FIGMA_TOKEN=figu_xxx
@@ -64,7 +66,7 @@ CI：
 pnpm exec iconctl sync --json
 ```
 
-`--dry-run` 只校验不写盘。校验失败默认非 0 退出，并且不写半成品。
+`--dry-run` 不写图标产物，但可能更新认证凭据和缓存。校验失败默认非 0 退出，并且不写半成品。
 
 ## 5. 使用 JSON
 

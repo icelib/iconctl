@@ -89,19 +89,32 @@ class：`i-ice-arrow-left`。
 
 ## GitHub Action
 
+先完成 [OAuth 授权](/zh/figma#oauth-登录与自动续期)，设置三个 Secrets。同一 CI 授权的所有任务使用相同 concurrency group，且不要并行运行：
+
+```yaml
+concurrency:
+  group: iconctl-figma-oauth
+  cancel-in-progress: false
+```
+
 ```yaml
 - uses: icelib/iconctl@v1
   with:
-    token: ${{ secrets.FIGMA_TOKEN }}
+    figma-client-id: ${{ secrets.FIGMA_CLIENT_ID }}
+    figma-client-secret: ${{ secrets.FIGMA_CLIENT_SECRET }}
+    figma-refresh-token: ${{ secrets.FIGMA_REFRESH_TOKEN }}
     pr: true
 ```
 
 `examples/github-publish.yml` 可直接拷。`paths` 限制 `git add`。`changeset: true` 在图标有 diff 时写 patch changeset。
 
+个人令牌仍可通过 `token` 输入使用 `FIGMA_TOKEN` Secret，优先于 OAuth 输入，但需要手动更换。CI 和本地使用独立 OAuth App 或账号；不要将凭据文件放入缓存或制品。
+
 ## 命令
 
 | 命令 | 作用 |
 | --- | --- |
+| `iconctl auth figma login/status/logout` | 管理 Figma OAuth 授权 |
 | `iconctl init` | 写 `iconctl.config.ts` |
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
 | `iconctl check` | 校验已有 SVG/JSON |

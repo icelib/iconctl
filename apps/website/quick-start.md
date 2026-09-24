@@ -46,7 +46,9 @@ sources: [{ type: 'directory', dir: './raw-svg' }]
 
 ## 3. Token
 
-Figma sources need a personal access token in `FIGMA_TOKEN`. Directory sources do not.
+For Figma, use [OAuth login and automatic renewal](/figma#oauth-login-and-automatic-renewal). After configuring your app, run `pnpm exec iconctl auth figma login`; subsequent syncs refresh tokens automatically. Directory sources need no credentials.
+
+Alternatively, use a personal token, which requires manual replacement:
 
 ```bash
 export FIGMA_TOKEN=figu_xxx
@@ -64,7 +66,7 @@ CI:
 pnpm exec iconctl sync --json
 ```
 
-`--dry-run` validates without writing. Validation errors exit non-zero and do not write a partial set.
+`--dry-run` skips icon outputs but may update authentication and caches. Validation errors exit non-zero and do not write a partial set.
 
 ## 5. Use the JSON
 

@@ -9,6 +9,7 @@ import {
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
+import { runFigmaAuth } from './figma-auth'
 
 interface GlobalOptions {
   config?: string
@@ -98,9 +99,22 @@ export async function runCli(argv: string[] = process.argv) {
   const cli = cac('iconctl')
 
   cli.option('--config <path>', 'Path to iconctl config')
-  cli.option('--dry-run', 'Validate and print the plan without writing files')
+  cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Write files even when validation fails')
+
+  cli
+    .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')
+    .option('--redirect-uri <url>', 'Registered HTTP loopback callback URL')
+    .option('--no-open', 'Print the authorization URL without opening a browser')
+    .action(async (provider: string, action: string, options) => {
+      try {
+        await runFigmaAuth(provider, action, options)
+      }
+      catch (error) {
+        printError(error)
+      }
+    })
 
   cli
     .command('sync', 'Load icon sources and export Iconify JSON')
@@ -178,7 +192,7 @@ export async function runCli(argv: string[] = process.argv) {
         if (sourceType === 'figma') {
           const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
           sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
-          hint = 'Set FIGMA_TOKEN, then run `iconctl sync`.'
+          hint = 'Run `iconctl auth figma login` for OAuth with automatic refresh, or set FIGMA_TOKEN, then run `iconctl sync`.'
         }
         else if (sourceType === 'mastergo') {
           const file = await consola.prompt('MasterGo file URL (include layer_id)', { type: 'text' })

@@ -6,7 +6,19 @@ branding:
   color: gray-dark
 inputs:
   token:
-    description: Figma personal access token. Required when a Figma source is configured.
+    description: Figma personal access token (manual renewal). Takes precedence over OAuth inputs.
+    required: false
+    default: ''
+  figma-client-id:
+    description: Figma OAuth client ID. Supply together with client secret and refresh token.
+    required: false
+    default: ''
+  figma-client-secret:
+    description: Figma OAuth client secret.
+    required: false
+    default: ''
+  figma-refresh-token:
+    description: Figma OAuth refresh token. Use an authorization separate from local development.
     required: false
     default: ''
   mastergo-token:
@@ -48,6 +60,9 @@ runs:
       shell: bash
       env:
         FIGMA_TOKEN: ${{ inputs.token }}
+        FIGMA_CLIENT_ID: ${{ inputs.figma-client-id }}
+        FIGMA_CLIENT_SECRET: ${{ inputs.figma-client-secret }}
+        FIGMA_REFRESH_TOKEN: ${{ inputs.figma-refresh-token }}
         MASTERGO_TOKEN: ${{ inputs.mastergo-token }}
       run: |
         extra=()

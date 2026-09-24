@@ -1,7 +1,7 @@
 import process from 'node:process'
 import { IconctlError } from './errors'
 
-export const FIGMA_TOKEN_HELP = 'Create a Figma personal access token at https://www.figma.com/developers/api#access-tokens and set FIGMA_TOKEN.'
+export const FIGMA_TOKEN_HELP = 'Run `iconctl auth figma login` for OAuth with automatic refresh, or create a personal access token at https://www.figma.com/developers/api#access-tokens and set FIGMA_TOKEN (manual renewal).'
 export const MASTERGO_TOKEN_HELP = 'Create a MasterGo personal access token in 个人设置 → 安全设置, then set MASTERGO_TOKEN. Team edition is required and files must be in a team project.'
 
 export function resolveFigmaToken(

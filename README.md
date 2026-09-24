@@ -79,14 +79,16 @@ export default defineConfig({
 })
 ```
 
-Tokens stay in the environment: `FIGMA_TOKEN`, `MASTERGO_TOKEN`. Directory, iconfont Symbol URLs, and 即时设计 export folders need no token. MasterGo requires Team edition and a team-project file. 即时设计 has no public REST for CLI — export SVG first.
+Figma supports OAuth with automatic renewal: configure your app, run `iconctl auth figma login`, and `sync` / `preview` refresh tokens as needed. See the [OAuth setup guide](apps/website/figma.md). Local credentials stay outside the repository; CI uses an independent authorization and three OAuth Secrets. Personal tokens via `FIGMA_TOKEN` remain supported with manual renewal; MasterGo uses `MASTERGO_TOKEN`. Directory, iconfont Symbol URLs, and 即时设计 export folders need no token. MasterGo requires Team edition and a team-project file. 即时设计 has no public REST for CLI — export SVG first.
 
 ## GitHub Action
 
 ```yaml
 - uses: icelib/iconctl@v1
   with:
-    token: ${{ secrets.FIGMA_TOKEN }}
+    figma-client-id: ${{ secrets.FIGMA_CLIENT_ID }}
+    figma-client-secret: ${{ secrets.FIGMA_CLIENT_SECRET }}
+    figma-refresh-token: ${{ secrets.FIGMA_REFRESH_TOKEN }}
     mastergo-token: ${{ secrets.MASTERGO_TOKEN }}
     commit: true
 ```
@@ -94,3 +96,5 @@ Tokens stay in the environment: `FIGMA_TOKEN`, `MASTERGO_TOKEN`. Directory, icon
 ## License
 
 MIT
+
+OAuth workflows must serialize jobs sharing an authorization with a fixed concurrency group and `cancel-in-progress: false`. See [github-publish.yml](examples/github-publish.yml).

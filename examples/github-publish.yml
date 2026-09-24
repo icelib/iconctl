@@ -1,5 +1,7 @@
 # Copy this into the product repo as .github/workflows/iconctl.yml
-# Secrets: FIGMA_TOKEN (read the icon library file)
+# Secrets: FIGMA_CLIENT_ID, FIGMA_CLIENT_SECRET, FIGMA_REFRESH_TOKEN
+# Use a CI OAuth app/account separate from local development.
+# All workflows sharing this authorization must use the same concurrency group.
 # The Figma plugin needs a separate fine-grained PAT with actions:write on this repo.
 # Optional `paths` limits git add (this repo uses packages/icons).
 # Optional `changeset: true` + `changeset-package: '@scope/icons'` for a publishable icon package.
@@ -11,6 +13,10 @@ on:
     types: [iconctl-publish]
   workflow_dispatch:
 
+concurrency:
+  group: iconctl-figma-oauth
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -21,5 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: icelib/iconctl@v1
         with:
-          token: ${{ secrets.FIGMA_TOKEN }}
+          figma-client-id: ${{ secrets.FIGMA_CLIENT_ID }}
+          figma-client-secret: ${{ secrets.FIGMA_CLIENT_SECRET }}
+          figma-refresh-token: ${{ secrets.FIGMA_REFRESH_TOKEN }}
           pr: true

@@ -79,14 +79,16 @@ export default defineConfig({
 })
 ```
 
-Token 只放环境变量：`FIGMA_TOKEN`、`MASTERGO_TOKEN`。目录、iconfont Symbol URL、即时设计导出文件夹不需要 token。MasterGo 需要团队版和团队项目文件。即时设计没有给 CLI 用的公开 REST，先导出 SVG。
+Figma 支持 OAuth 自动续期：配置 App 后运行 `iconctl auth figma login`，后续 `sync` / `preview` 按需刷新。详见 [OAuth 配置指南](apps/website/zh/figma.md)。本地凭据保存在仓库外；CI 使用独立授权及三个 OAuth Secrets。`FIGMA_TOKEN` 个人令牌仍受支持，但需要手动更换；MasterGo 使用 `MASTERGO_TOKEN`。目录、iconfont Symbol URL、即时设计导出文件夹不需要 token。MasterGo 需要团队版和团队项目文件。即时设计没有给 CLI 用的公开 REST，先导出 SVG。
 
 ## GitHub Action
 
 ```yaml
 - uses: icelib/iconctl@v1
   with:
-    token: ${{ secrets.FIGMA_TOKEN }}
+    figma-client-id: ${{ secrets.FIGMA_CLIENT_ID }}
+    figma-client-secret: ${{ secrets.FIGMA_CLIENT_SECRET }}
+    figma-refresh-token: ${{ secrets.FIGMA_REFRESH_TOKEN }}
     mastergo-token: ${{ secrets.MASTERGO_TOKEN }}
     commit: true
 ```
@@ -94,3 +96,5 @@ Token 只放环境变量：`FIGMA_TOKEN`、`MASTERGO_TOKEN`。目录、iconfont 
 ## License
 
 MIT
+
+使用 OAuth 的 workflow 应设置固定 concurrency group 和 `cancel-in-progress: false`，使同一授权的任务串行执行。完整示例见 [github-publish.yml](examples/github-publish.yml)。

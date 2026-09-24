@@ -20,6 +20,8 @@ export {
 export { diffIconSets, type IconDiff } from './diff'
 export { IconctlError } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
+export { getFigmaAuthStatus, logoutFigma } from './figma/auth'
+export { type FigmaLoginOptions, loginFigma } from './figma/login'
 export { FIGMA_COMMUNITY_FILE_HELP, parseFigmaFileKey } from './file-key'
 export { stripIconPrefix } from './icon-set'
 export { loadConfig, type LoadConfigOptions } from './load-config'
