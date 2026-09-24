@@ -1,5 +1,13 @@
 # @iconctl/core
 
+## 0.1.0
+
+### Minor Changes
+
+- Add Figma OAuth login and automatic token renewal for local CLI and GitHub Actions
+
+- Add injectable Figma authorization providers and a Workers-compatible OAuth protocol export; preserve multi-source sync results and validate cache baselines.
+
 ## 0.0.1
 
 ### Patch Changes

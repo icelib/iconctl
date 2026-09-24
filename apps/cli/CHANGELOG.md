@@ -1,5 +1,16 @@
 # iconctl
 
+## 0.1.0
+
+### Minor Changes
+
+- Add Figma OAuth login and automatic token renewal for local CLI and GitHub Actions
+
+### Patch Changes
+
+- Updated dependencies:
+  - @iconctl/core@0.1.0
+
 ## 0.0.1
 
 ### Patch Changes
