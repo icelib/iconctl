@@ -54,6 +54,6 @@
     "tsd": "pnpm build && tsd --files test-d/**/*.test-d.ts"
   },
   "devDependencies": {
-    "@figma/plugin-typings": "^1.117.0"
+    "@figma/plugin-typings": "^1.139.0"
   }
 }
