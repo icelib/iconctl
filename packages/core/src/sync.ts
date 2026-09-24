@@ -2,9 +2,11 @@ import type { IconSet } from '@iconify/tools'
 import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
+import type { FigmaSourceLoadOptions } from './sources/figma'
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { dirname, join } from 'pathe'
+import { dirname, resolve } from 'pathe'
 import { writeChangelog } from './changelog'
 import { diffIconSets } from './diff'
 import { IconctlError } from './errors'
@@ -21,6 +23,7 @@ export interface SyncOptions {
   dryRun?: boolean
   continueOnError?: boolean
   iconSet?: IconSet
+  figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
 }
 
 export interface SyncResult {
@@ -38,6 +41,7 @@ export interface SyncResult {
 }
 
 interface CacheMeta {
+  configDigest?: string
   lastModified?: string
   version?: string
 }
@@ -59,14 +63,25 @@ async function writeCacheMeta(file: string, meta: CacheMeta) {
 export async function sync(options: SyncOptions): Promise<SyncResult> {
   const cwd = options.cwd ?? process.cwd()
   const config = options.config
-  const previous = await readPreviousIconJson(join(cwd, config.output.json))
-  const cacheMetaFile = join(cwd, config.cacheDir, 'meta.json')
+  const previous = await readPreviousIconJson(resolve(cwd, config.output.json))
+  const cacheMetaFile = resolve(cwd, config.cacheDir, 'meta.json')
   const previousMeta = await readCacheMeta(cacheMetaFile)
+  const configDigest = createHash('sha256')
+    .update(
+      JSON.stringify(config, (key, value) =>
+        key === 'token'
+          ? undefined
+          : typeof value === 'function' || value instanceof RegExp
+            ? String(value)
+            : value),
+    )
+    .digest('hex')
 
   let iconSet = options.iconSet
   let fileVersion: string | undefined
   let fileKey: string | undefined
   let notModified = false
+  let nextMeta: CacheMeta | undefined
   const sourceSummaries: SyncResult['sources'] = []
 
   if (!iconSet) {
@@ -74,7 +89,14 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       cwd,
       config,
       ...(options.env ? { env: options.env } : {}),
-      ...(previousMeta?.lastModified ? { figmaIfModifiedSince: previousMeta.lastModified } : {}),
+      ...(options.figmaAuthProvider
+        ? { figmaAuthProvider: options.figmaAuthProvider }
+        : {}),
+      ...(previous
+        && previousMeta?.configDigest === configDigest
+        && previousMeta?.lastModified
+        ? { figmaIfModifiedSince: previousMeta.lastModified }
+        : {}),
     })
 
     notModified = loaded.length > 0 && loaded.every(item => item.notModified)
@@ -104,7 +126,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       return result
     }
 
-    const sets = loaded.flatMap(item => item.iconSet ? [item.iconSet] : [])
+    const sets = loaded.flatMap(item => (item.iconSet ? [item.iconSet] : []))
     iconSet = mergeIconSets(config.prefix, sets)
     fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
     fileKey = loaded.find(item => item.fileKey)?.fileKey
@@ -116,12 +138,15 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       })
     }
 
-    const figma = loaded.find(item => item.type === 'figma' && item.lastModified)
+    const figma = loaded.find(
+      item => item.type === 'figma' && item.lastModified,
+    )
     if (!options.dryRun && figma?.lastModified) {
-      await writeCacheMeta(cacheMetaFile, {
+      nextMeta = {
+        configDigest,
         lastModified: figma.lastModified,
         ...(figma.fileVersion ? { version: figma.fileVersion } : {}),
-      })
+      }
     }
   }
 
@@ -129,7 +154,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const { issues } = validateIconSet(iconSet, config)
 
   if (issues.length && !options.continueOnError) {
-    throw new IconctlError(`Icon validation failed:\n${formatValidationIssues(issues)}`)
+    throw new IconctlError(
+      `Icon validation failed:\n${formatValidationIssues(issues)}`,
+    )
   }
 
   const exported = await exportOutputs(iconSet, config, {
@@ -138,7 +165,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   })
 
   if (!options.dryRun && config.output.preview) {
-    const previewFile = join(cwd, config.output.preview)
+    const previewFile = resolve(cwd, config.output.preview)
     await writePreviewHtml(previewFile, exported.json)
     exported.files.push(previewFile)
   }
@@ -146,11 +173,20 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const diff = diffIconSets(previous, exported.json)
 
   if (!options.dryRun && config.output.changelog) {
-    const changelogFile = join(cwd, config.output.changelog)
+    const changelogFile = resolve(cwd, config.output.changelog)
     const written = await writeChangelog(changelogFile, diff)
     if (written) {
       exported.files.push(written)
     }
+  }
+
+  if (
+    !options.dryRun
+    && !issues.length
+    && !processed.failed.length
+    && nextMeta
+  ) {
+    await writeCacheMeta(cacheMetaFile, nextMeta)
   }
 
   const result: SyncResult = {

@@ -44,7 +44,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "tsdown -w",
+    "dev": "node scripts/dev.mjs",
     "build": "tsdown && node scripts/inline-ui.mjs",
     "test": "vitest run",
     "test:dev": "vitest",

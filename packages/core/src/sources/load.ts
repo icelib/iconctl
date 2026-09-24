@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from '../config'
+import type { FigmaSourceLoadOptions } from './figma'
 import type { LoadedSource, ResolvedSourceConfig } from './types'
 import { blankIconSet } from '@iconify/tools'
 import { IconctlError } from '../errors'
@@ -34,9 +35,10 @@ export interface LoadSourcesOptions {
   config: ResolvedIconctlConfig
   env?: NodeJS.Dict<string>
   figmaIfModifiedSince?: string
+  figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
 }
 
-async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions): Promise<LoadedSource> {
+async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
   switch (source.type) {
     case 'directory':
       return await loadDirectorySource(source, {
@@ -61,13 +63,15 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         ...(options.env ? { env: options.env } : {}),
       })
     case 'figma': {
-      const onlyFigma = options.config.sources.every(item => item.type === 'figma')
+      const onlyFigma = options.config.sources.length === 1
       return await loadFigmaSource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
         cacheDir: options.config.cacheDir,
         skipPrefix: options.config.validate.skipPrefix,
+        refreshDocument: !onlyFigma,
         ...(options.env ? { env: options.env } : {}),
+        ...(options.figmaAuthProvider ? { authProvider: item => options.figmaAuthProvider!(item, sourceIndex) } : {}),
         ...(onlyFigma && options.figmaIfModifiedSince ? { ifModifiedSince: options.figmaIfModifiedSince } : {}),
       })
     }
@@ -80,8 +84,8 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
   }
 
   const loaded: LoadedSource[] = []
-  for (const source of options.config.sources) {
-    loaded.push(await loadOneSource(source, options))
+  for (const [index, source] of options.config.sources.entries()) {
+    loaded.push(await loadOneSource(source, options, index))
   }
   return loaded
 }

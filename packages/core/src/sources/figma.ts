@@ -1,8 +1,9 @@
 import type { FigmaAPIImagesResponse, FigmaDocument } from '@iconify/tools/lib/import/figma/types/api'
+import type { FigmaAuth } from '../figma/auth'
 import type { LoadedSource, ResolvedFigmaSourceConfig } from './types'
 import { blankIconSet, cleanupSVG, SVG } from '@iconify/tools'
 import { getFigmaIconNodes } from '@iconify/tools/lib/import/figma/nodes'
-import { join } from 'pathe'
+import { resolve } from 'pathe'
 import { IconctlError } from '../errors'
 import { resolveFigmaAuth } from '../figma/auth'
 import { FigmaClient } from '../figma/client'
@@ -16,6 +17,8 @@ export interface FigmaSourceLoadOptions {
   skipPrefix: string[]
   env?: NodeJS.Dict<string>
   ifModifiedSince?: string
+  authProvider?: (source: ResolvedFigmaSourceConfig, sourceIndex?: number) => Promise<FigmaAuth>
+  refreshDocument?: boolean
 }
 
 export async function loadFigmaSource(
@@ -23,10 +26,10 @@ export async function loadFigmaSource(
   options: FigmaSourceLoadOptions,
 ): Promise<LoadedSource> {
   const fileKey = parseFigmaFileKey(source.file)
-  const auth = await resolveFigmaAuth(source.token, options.env)
+  const auth = options.authProvider ? await options.authProvider(source) : await resolveFigmaAuth(source.token, options.env)
   // Refresh even when the remote response can be served from cache.
   await auth.token()
-  const client = new FigmaClient(auth, join(options.cwd, options.cacheDir))
+  const client = new FigmaClient(auth, resolve(options.cwd, options.cacheDir))
   const parameters = new URLSearchParams({ depth: String(source.depth) })
   if (source.ids) {
     parameters.set('ids', source.ids.join(','))
@@ -37,7 +40,7 @@ export async function loadFigmaSource(
       return { type: 'figma', notModified: true, fileKey }
     }
   }
-  const document = await client.json<FigmaDocument>(`files/${fileKey}`, parameters, Boolean(options.ifModifiedSince))
+  const document = await client.json<FigmaDocument>(`files/${fileKey}`, parameters, Boolean(options.ifModifiedSince || options.refreshDocument))
   if (document.editorType !== 'figma' || !Array.isArray(document.document?.children) || typeof document.version !== 'string' || typeof document.lastModified !== 'string') {
     throw new IconctlError('Invalid Figma document. Use a Figma design file.')
   }

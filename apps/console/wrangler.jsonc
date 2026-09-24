@@ -1,0 +1,102 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "iconctl-docs",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-24",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "assets": {
+    "directory": "dist/public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": true
+  },
+  "routes": [
+    {
+      "pattern": "iconctl.icebreaker.top",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://iconctl.icebreaker.top",
+    "EXECUTOR_REPOSITORY": "icelib/iconctl",
+    "EXECUTOR_COMMIT": "UNCONFIGURED"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ACCOUNT",
+        "class_name": "AccountState"
+      }
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "iconctl-console-production"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AccountState"
+      ]
+    }
+  ],
+  "secrets": {
+    "required": [
+      "GITHUB_APP_ID",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
+      "GITHUB_PRIVATE_KEY",
+      "GITHUB_WEBHOOK_SECRET",
+      "CREDENTIAL_ENCRYPTION_KEY"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
+  "env": {
+    "staging": {
+      "name": "iconctl-console-staging",
+      "workers_dev": true,
+      "routes": [],
+      "vars": {
+        "APP_ORIGIN": "https://iconctl-console-staging.sonofmagic.workers.dev",
+        "EXECUTOR_REPOSITORY": "icelib/iconctl",
+        "EXECUTOR_COMMIT": "UNCONFIGURED"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ACCOUNT",
+            "class_name": "AccountState"
+          }
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "ARTIFACTS",
+          "bucket_name": "iconctl-console-staging"
+        }
+      ],
+      "secrets": {
+        "required": [
+          "GITHUB_APP_ID",
+          "GITHUB_CLIENT_ID",
+          "GITHUB_CLIENT_SECRET",
+          "GITHUB_PRIVATE_KEY",
+          "GITHUB_WEBHOOK_SECRET",
+          "CREDENTIAL_ENCRYPTION_KEY"
+        ]
+      }
+    }
+  }
+}

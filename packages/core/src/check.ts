@@ -1,7 +1,7 @@
 import type { ResolvedIconctlConfig } from './config'
 import process from 'node:process'
 import { importDirectory } from '@iconify/tools'
-import { join } from 'pathe'
+import { resolve } from 'pathe'
 import { IconctlError } from './errors'
 import { readPreviousIconJson } from './export'
 import { processIconSet } from './process'
@@ -15,7 +15,7 @@ export interface CheckOptions {
 export async function check(options: CheckOptions) {
   const cwd = options.cwd ?? process.cwd()
   const config = options.config
-  const svgDir = config.output.svg ? join(cwd, config.output.svg) : undefined
+  const svgDir = config.output.svg ? resolve(cwd, config.output.svg) : undefined
 
   const iconSet = svgDir
     ? await importDirectory(svgDir, { prefix: config.prefix })
@@ -34,7 +34,7 @@ export async function check(options: CheckOptions) {
     }
   }
 
-  const json = await readPreviousIconJson(join(cwd, config.output.json))
+  const json = await readPreviousIconJson(resolve(cwd, config.output.json))
   if (!json) {
     throw new IconctlError(`Nothing to check. Missing ${config.output.json} and svg output.`)
   }

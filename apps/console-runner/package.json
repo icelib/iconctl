@@ -1,0 +1,43 @@
+{
+  "name": "@iconctl/console-runner",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Iconctl console runner",
+  "author": "ice breaker <1324318532@qq.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "directory": "apps/console-runner"
+  },
+  "bugs": {
+    "url": "https://github.com/sonofmagic/iconctl/issues"
+  },
+  "keywords": [
+    "repoctl",
+    "cli",
+    "template",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "dev": "tsdown --watch --sourcemap",
+    "build": "tsdown",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@iconctl/console-contracts": "workspace:*",
+    "@iconctl/core": "workspace:*",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "tsdown": "0.23.0"
+  }
+}

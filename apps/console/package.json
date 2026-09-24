@@ -1,0 +1,60 @@
+{
+  "name": "@iconctl/console",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private iconctl control console",
+  "author": "ice breaker <1324318532@qq.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sonofmagic/iconctl.git",
+    "directory": "apps/console"
+  },
+  "bugs": {
+    "url": "https://github.com/sonofmagic/iconctl/issues"
+  },
+  "keywords": [
+    "repoctl",
+    "vue",
+    "cloudflare",
+    "template"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:api": "wrangler dev --port 8787",
+    "build": "pnpm cf-typegen && vue-tsc -b && vite build && node scripts/assemble.mjs",
+    "lint": "eslint .",
+    "typecheck": "pnpm cf-typegen && vue-tsc -b",
+    "cf-typegen": "wrangler types",
+    "deploy": "node scripts/deploy.mjs production",
+    "deploy:staging": "node scripts/deploy.mjs staging",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "test:worker": "vitest run --config vitest.worker.config.ts",
+    "test:e2e": "playwright test",
+    "test": "pnpm test:worker"
+  },
+  "dependencies": {
+    "@iconctl/console-contracts": "workspace:*",
+    "@iconctl/core": "workspace:*",
+    "hono": "^4.13.8",
+    "jose": "^6.2.1",
+    "vue": "^3.5.43",
+    "vue-router": "^5.3.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "latest",
+    "@iconctl/website": "workspace:*",
+    "@playwright/test": "latest",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/tsconfig": "^0.9.1",
+    "vite": "^8.3.0",
+    "vitest": "^4.1.0",
+    "vue-tsc": "^3.3.11",
+    "wrangler": "^4.137.0"
+  }
+}

@@ -48,3 +48,7 @@ pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.
 ```
 
 `.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR。`workflow_dispatch` 可以带 iconfont URL。Figma 插件可以指向 `icelib/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。
+
+## 私有线上控制台
+
+需要在网页管理多项目、授权续期、快照审核和 npm 发布时，参阅[控制台接入](./console)。

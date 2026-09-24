@@ -73,3 +73,7 @@ pnpm exec iconctl sync --json
 With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font.
 
 Two ways to get the JSON to other developers: ship it **in the app repo**, or publish an **installable package**. See [Distribute](/distribute).
+
+## Private online console
+
+For browser-based projects, OAuth renewal, snapshot review and npm publishing, see [console setup](./console).

@@ -78,14 +78,30 @@
     </style>
   </head>
   <body>
-    <h1>iconctl Publish</h1>
-    <label>GitHub repo<input id="repo" placeholder="owner/repo" /></label>
-    <label>GitHub token (actions:write)<input id="token" type="password" placeholder="github_pat_…" /></label>
-    <label>Event type<input id="event" value="iconctl-publish" /></label>
+    <h1>iconctl</h1>
+    <label
+      >Connection mode<select id="mode">
+        <option value="console">Private console</option>
+        <option value="github">GitHub dispatch (legacy)</option>
+      </select></label
+    >
+    <section id="console-fields">
+      <label>Console URL<input id="origin" value="https://iconctl.icebreaker.top" /></label>
+      <button id="connect" type="button">Connect console</button
+      ><button id="disconnect" class="secondary" type="button">Disconnect</button>
+      <p id="console-status">Connect to receive a short-lived pairing code.</p>
+    </section>
+    <section id="github-fields" hidden>
+      <label>GitHub repo<input id="repo" placeholder="owner/repo" /></label>
+      <label
+        >GitHub token (Contents: read and write)<input id="token" type="password" placeholder="github_pat_…"
+      /></label>
+      <label>Event type<input id="event" value="iconctl-publish" /></label>
+    </section>
     <p id="status">Scanning this page…</p>
     <ul id="list"></ul>
     <div class="row">
-      <button id="publish" disabled>Publish</button>
+      <button id="publish" disabled>Sync to console</button>
       <button id="rescan" class="secondary" type="button">Rescan</button>
     </div>
     <script src="./ui.js"></script>

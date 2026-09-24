@@ -48,3 +48,7 @@ pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.
 ```
 
 `.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`. `workflow_dispatch` can pass an iconfont URL. Point the Figma plugin at `icelib/iconctl` to exercise the same event (the workflow still will not call Figma).
+
+## Private online console
+
+For browser-based projects, OAuth renewal, snapshot review and npm publishing, see [console setup](./console).

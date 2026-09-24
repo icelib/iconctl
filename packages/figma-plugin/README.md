@@ -13,7 +13,13 @@ In Figma: **Plugins → Development → Import plugin from manifest…** and pic
 ## Settings
 
 - GitHub repo `owner/name`
-- Fine-grained PAT with **Actions: write** on that repo (not `FIGMA_TOKEN`)
+- Fine-grained PAT with **Contents: read and write** on that repo (not `FIGMA_TOKEN`)
 - Event type `iconctl-publish` (must match the workflow)
 
 The product repo needs `FIGMA_TOKEN` as an Actions secret and a copy of `examples/github-publish.yml`.
+
+## Private console mode
+
+Choose Private console and connect with a five-minute pairing code. Approve the code and project in the authenticated web console. The plugin can trigger sync only; publishing must be confirmed on the website. Errors in preflight block submission. Revoke devices from the console. See [setup](../../apps/website/console.md).
+
+`pnpm --filter @iconctl/figma-plugin dev` rebuilds JavaScript and re-inlines the UI after source changes.

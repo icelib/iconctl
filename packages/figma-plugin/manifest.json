@@ -4,9 +4,17 @@
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
-  "editorType": ["figma"],
+  "editorType": [
+    "figma"
+  ],
   "networkAccess": {
-    "allowedDomains": ["https://api.github.com"],
-    "reasoning": "Trigger the iconctl GitHub Action that syncs Figma icons into a pull request"
+    "allowedDomains": [
+      "https://api.github.com",
+      "https://iconctl.icebreaker.top"
+    ],
+    "devAllowedDomains": [
+      "https://*.workers.dev"
+    ],
+    "reasoning": "Pair with the private iconctl console and trigger project-scoped sync, or dispatch the legacy GitHub Action"
   }
 }

@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { IconctlError } from '../errors'
 
 export interface FigmaOAuthClient {
@@ -26,7 +25,7 @@ export async function requestFigmaToken(
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64')}`,
+        'Authorization': `Basic ${btoa(String.fromCharCode(...new TextEncoder().encode(`${client.clientId}:${client.clientSecret}`)))}`,
       },
       body: parameters,
     })

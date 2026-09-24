@@ -98,3 +98,7 @@ Figma supports OAuth with automatic renewal: configure your app, run `iconctl au
 MIT
 
 OAuth workflows must serialize jobs sharing an authorization with a fixed concurrency group and `cancel-in-progress: false`. See [github-publish.yml](examples/github-publish.yml).
+
+## Private console
+
+The owner-only Vue/Hono console lives at `/app` alongside the public documentation. See [setup, GitHub App, OAuth and deployment](apps/website/console.md).

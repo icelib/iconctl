@@ -6,7 +6,10 @@ export interface GithubSettings {
 }
 
 export function parseRepo(input: string): { owner: string, repo: string } {
-  const trimmed = input.trim().replace(/^https:\/\/github\.com\//i, '').replace(/\.git$/, '')
+  const trimmed = input
+    .trim()
+    .replace(/^https:\/\/github\.com\//i, '')
+    .replace(/\.git$/, '')
   const [owner, repo] = trimmed.split('/')
   if (!owner || !repo) {
     throw new Error('Repo must look like owner/name')
@@ -26,11 +29,14 @@ export async function dispatchPublish(settings: GithubSettings): Promise<void> {
     body: JSON.stringify({ event_type: settings.eventType }),
   })
   if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`GitHub dispatch failed (${response.status}): ${body || response.statusText}`)
+    throw new Error(
+      `GitHub dispatch failed (${response.status}). Check repository access and Contents: write permission.`,
+    )
   }
 }
 
-export function actionsUrl(settings: Pick<GithubSettings, 'owner' | 'repo'>): string {
+export function actionsUrl(
+  settings: Pick<GithubSettings, 'owner' | 'repo'>,
+): string {
   return `https://github.com/${settings.owner}/${settings.repo}/actions`
 }

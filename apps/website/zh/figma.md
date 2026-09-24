@@ -72,3 +72,7 @@ jq -r .refreshToken "$ICONCTL_FIGMA_CREDENTIALS_FILE" | gh secret set FIGMA_REFR
 ```
 
 Action 的 `figma-client-id`、`figma-client-secret`、`figma-refresh-token` 输入使用这些 Secrets。每次 CLI 进程启动获取一次 access token，多个来源复用；该模式仅在内存维护令牌，不回写 Secrets。按照[分发文档](/zh/distribute)设置 workflow concurrency，同一授权的任务必须串行。GitHub concurrency 不跨仓库协调，不同仓库请使用独立授权。无需增加定时续期任务。
+
+## 私有线上控制台
+
+需要在网页管理多项目、授权续期、快照审核和 npm 发布时，参阅[控制台接入](./console)。

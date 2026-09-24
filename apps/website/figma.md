@@ -76,3 +76,7 @@ jq -r .refreshToken "$ICONCTL_FIGMA_CREDENTIALS_FILE" | gh secret set FIGMA_REFR
 ```
 
 The Action's `figma-client-id`, `figma-client-secret`, and `figma-refresh-token` inputs use these secrets. Each CLI process obtains an access token once and reuses it across sources. Tokens stay in memory in this mode; Secrets are not rewritten. Configure workflow concurrency as shown in [Distribute](/distribute), and serialize every job sharing an authorization. Repository concurrency does not coordinate separate repositories, so use separate authorizations there. No scheduled renewal job is needed.
+
+## Private online console
+
+For browser-based projects, OAuth renewal, snapshot review and npm publishing, see [console setup](./console).

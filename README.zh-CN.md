@@ -98,3 +98,7 @@ Figma 支持 OAuth 自动续期：配置 App 后运行 `iconctl auth figma login
 MIT
 
 使用 OAuth 的 workflow 应设置固定 concurrency group 和 `cancel-in-progress: false`，使同一授权的任务串行执行。完整示例见 [github-publish.yml](examples/github-publish.yml)。
+
+## 私有控制台
+
+公开文档旁的 `/app` 提供仅所有者可用的 Vue/Hono 图标工作台。参阅[GitHub App、OAuth、插件与部署指南](apps/website/zh/console.md)。

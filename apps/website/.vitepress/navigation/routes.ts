@@ -27,6 +27,7 @@ export const routeSections = [
     items: [
       item('', 'Introduction', '介绍'),
       item('quick-start', 'Quick start', '快速开始'),
+      item('console', 'Private console', '私有控制台'),
       item('figma', 'Figma conventions', 'Figma 约定'),
       item('publish', 'Publish', '发布'),
       item('demo', 'Demo', '演示'),

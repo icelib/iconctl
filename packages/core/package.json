@@ -33,6 +33,11 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./figma/oauth": {
+      "types": "./dist/figma-oauth.d.mts",
+      "import": "./dist/figma-oauth.mjs",
+      "require": "./dist/figma-oauth.cjs"
     }
   },
   "main": "./dist/index.cjs",

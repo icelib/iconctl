@@ -38,17 +38,22 @@ export function inspectComponent(input: PreflightInput): PreflightItem {
     }
   }
 
-  const raw = input.parentType === 'COMPONENT_SET' && input.parentName
-    ? `${input.parentName}-${input.name}`
-    : input.name
+  const raw
+    = input.parentType === 'COMPONENT_SET' && input.parentName
+      ? `${input.parentName}-${input.name}`
+      : input.name
   const iconName = toIconName(raw) || null
   const issues: string[] = []
 
   if (!iconName || !DEFAULT_NAME_PATTERN.test(iconName)) {
-    issues.push(`Name "${input.name}" is not kebab-case English (got ${iconName || '(empty)'})`)
+    issues.push(
+      `Name "${input.name}" is not kebab-case English (got ${iconName || '(empty)'})`,
+    )
   }
   if (input.width !== DEFAULT_SIZE || input.height !== DEFAULT_SIZE) {
-    issues.push(`Canvas is ${input.width}×${input.height}, expected ${DEFAULT_SIZE}×${DEFAULT_SIZE}`)
+    issues.push(
+      `Canvas is ${input.width}×${input.height}, expected ${DEFAULT_SIZE}×${DEFAULT_SIZE}`,
+    )
   }
 
   return {
@@ -64,4 +69,11 @@ export function inspectComponent(input: PreflightInput): PreflightItem {
 
 export function inspectComponents(nodes: PreflightInput[]): PreflightItem[] {
   return nodes.map(inspectComponent)
+}
+
+export function canSubmit(items: PreflightItem[]): boolean {
+  const visible = items.filter(item => !item.skipped)
+  return (
+    visible.length > 0 && visible.every(item => item.issues.length === 0)
+  )
 }

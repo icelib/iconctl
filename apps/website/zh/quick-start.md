@@ -73,3 +73,7 @@ pnpm exec iconctl sync --json
 在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体。
 
 给别的开发两种拿法：JSON **跟应用仓一起走**，或发成 **可安装的包**。见[分发](/zh/distribute)。
+
+## 私有线上控制台
+
+需要在网页管理多项目、授权续期、快照审核和 npm 发布时，参阅[控制台接入](./console)。

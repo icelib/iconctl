@@ -1,6 +1,6 @@
 import { parseRepo } from '@/github'
 import { shouldSkipName, toIconName } from '@/naming'
-import { inspectComponent } from '@/preflight'
+import { canSubmit, inspectComponent } from '@/preflight'
 
 describe('figma plugin preflight', () => {
   it('converts mixed names to kebab-case', () => {
@@ -79,4 +79,13 @@ describe('figma plugin preflight', () => {
     expect(parseRepo('https://github.com/sonofmagic/app.git')).toEqual({ owner: 'sonofmagic', repo: 'app' })
     expect(() => parseRepo('nope')).toThrow(/owner\/name/)
   })
+})
+
+it('blocks empty or invalid preflight submissions', () => {
+  expect(canSubmit([])).toBe(false)
+  const invalid = inspectComponent({ id: '1:1', name: 'bad', type: 'COMPONENT', width: 48, height: 48 })
+  expect(canSubmit([invalid])).toBe(false)
+  const valid = inspectComponent({ id: '1:2', name: 'good', type: 'COMPONENT', width: 24, height: 24 })
+  expect(canSubmit([valid])).toBe(true)
+  expect(canSubmit([valid, invalid])).toBe(false)
 })
