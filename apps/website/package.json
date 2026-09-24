@@ -31,9 +31,9 @@
     "sync:demo": "iconctl sync",
     "sync:demo:svg": "node --experimental-strip-types scripts/generate-demo-snapshot.ts",
     "sync:demo:font": "node --experimental-strip-types scripts/generate-demo-font.ts",
-    "deploy": "pnpm --filter @iconctl/console deploy",
+    "deploy": "pnpm --filter @iconctl/console run deploy",
     "deploy:preview": "wrangler versions upload",
-    "deploy:dry-run": "pnpm --filter @iconctl/console deploy:dry-run",
+    "deploy:dry-run": "pnpm --filter @iconctl/console run deploy:dry-run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit"

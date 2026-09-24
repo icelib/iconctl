@@ -82,7 +82,7 @@ pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console
 pnpm --filter @iconctl/console exec wrangler r2 bucket create iconctl-console-production
 # 使用仓库之外、权限为 0600 的 JSON 文件导入；内容包含上述八项 Secrets。
 pnpm --filter @iconctl/console exec wrangler secret bulk /absolute/path/production.secrets.json --env ""
-pnpm --filter @iconctl/console deploy
+pnpm --filter @iconctl/console run deploy
 ```
 
 部署要求改动已提交且提交已推送到 `origin/main`，执行器固定到该 SHA；脚本先执行 dry-run 再部署。GitHub 自动部署需配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` Secrets，并在初次接入验证后设置仓库变量 `ICONCTL_DEPLOY_ENABLED=true`。创建 GitHub production environment 可进一步管理部署访问。

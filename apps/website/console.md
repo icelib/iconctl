@@ -61,7 +61,7 @@ Legacy GitHub dispatch remains supported. Its fine-grained PAT needs repository 
 pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console-runner...
 pnpm --filter @iconctl/console exec wrangler r2 bucket create iconctl-console-production
 pnpm --filter @iconctl/console exec wrangler secret bulk /absolute/path/production.secrets.json --env ""
-pnpm --filter @iconctl/console deploy
+pnpm --filter @iconctl/console run deploy
 ```
 
 Keep the secrets JSON outside the repository with mode 0600. Deployment requires committed changes pushed to `origin/main`; it pins the executor SHA and runs a dry run first. Automatic deployment requires repository Secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` and variable `ICONCTL_DEPLOY_ENABLED=true` after initial validation. Updating the executor requires merging an updated installation PR in each target repository.
