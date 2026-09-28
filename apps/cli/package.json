@@ -1,7 +1,7 @@
 {
   "name": "iconctl",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CLI to load icons from Figma, SVG directories, and more, then distribute Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
