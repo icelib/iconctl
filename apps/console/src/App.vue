@@ -141,6 +141,9 @@ const labels: Record<string, string> = {
   'dry-run': 'Dry run',
   'publish': '发布',
   'claimed': '已领取',
+  'dispatching': '派发 Actions',
+  'dispatched': '等待 Actions 启动',
+  'starting': 'Actions 排队或构建中',
   'fetching': '抓取来源',
   'validating': '校验图标',
   'packing': '组装产物',
@@ -998,6 +1001,15 @@ onUnmounted(() => clearInterval(poll))
                   }}<small v-if="job.error" class="error-text">{{
                     job.error
                   }}</small>
+                  <details v-if="job.events?.length">
+                    <summary>阶段记录</summary>
+                    <ol>
+                      <li v-for="(event, index) in job.events" :key="index">
+                        {{ date(event.at) }} · {{ labels[event.stage] ?? event.stage }} · {{ labels[event.status] ?? event.status }}
+                        <small v-if="event.error" class="error-text">{{ event.error }}</small>
+                      </li>
+                    </ol>
+                  </details>
                 </td>
                 <td>
                   <a

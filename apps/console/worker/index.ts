@@ -45,6 +45,19 @@ const cookieOptions = {
 } as const
 const sessionCookie = '__Host-iconctl-session'
 const oauthCookie = '__Host-iconctl-oauth'
+async function loginStage<T>(stage: string, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action()
+  }
+  catch (error) {
+    if (error instanceof Error && error.message.startsWith('ICONCTL_ERROR:')) {
+      throw error
+    }
+    // Do not log exception messages, URLs, OAuth codes or provider response bodies.
+    console.error(JSON.stringify({ event: 'github-login-failed', stage }))
+    fail(502, `GitHub login failed during ${stage}; start login again`)
+  }
+}
 async function jsonBody(c: Context<Bindings>, maximum = 64_000) {
   return JSON.parse(
     new TextDecoder().decode(await limitedBody(c.req.raw, maximum)),
@@ -167,38 +180,40 @@ app.get('/api/auth/github/login', async (c) => {
 })
 app.get('/api/auth/github/callback', async (c) => {
   const state = z.string().min(30).max(200).parse(c.req.query('state'))
-  const oauth = await account(c.env).consumeOAuth(
+  const oauth = await loginStage<{ verifier: string }>('state-validation', () => account(c.env).consumeOAuth(
     state,
     getCookie(c, oauthCookie) ?? '',
     'github',
-  )
+  ))
   deleteCookie(c, oauthCookie, cookieOptions)
   const code = z.string().min(1).max(1000).parse(c.req.query('code'))
-  const response = await fetch('https://github.com/login/oauth/access_token', {
-    method: 'POST',
-    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: c.env.GITHUB_CLIENT_ID,
-      client_secret: c.env.GITHUB_CLIENT_SECRET,
-      code,
-      code_verifier: oauth.verifier,
-      redirect_uri: `${c.env.APP_ORIGIN}/api/auth/github/callback`,
-    }),
-    redirect: 'error',
-    signal: AbortSignal.timeout(15_000),
+  const token = await loginStage('token-exchange', async () => {
+    const response = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'iconctl-console' },
+      body: new URLSearchParams({
+        client_id: c.env.GITHUB_CLIENT_ID,
+        client_secret: c.env.GITHUB_CLIENT_SECRET,
+        code,
+        code_verifier: oauth.verifier,
+        redirect_uri: `${c.env.APP_ORIGIN}/api/auth/github/callback`,
+      }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) {
+      fail(502, 'GitHub login failed')
+    }
+    return response.json<{ access_token?: string }>()
   })
-  if (!response.ok) {
-    fail(502, 'GitHub login failed')
-  }
-  const token = await response.json<{ access_token?: string }>()
   if (!token.access_token) {
     fail(401, 'GitHub authorization was denied')
   }
-  const user = await github<{ id: number }>(token.access_token, '/user')
+  const user = await loginStage('owner-verification', () => github<{ id: number }>(token.access_token!, '/user'))
   if (String(user.id) !== OWNER_ID) {
     fail(403, 'Only the configured owner may access this console')
   }
-  const created = await account(c.env).newSession(String(user.id))
+  const created = await loginStage<{ token: string }>('session-creation', () => account(c.env).newSession(String(user.id)))
   setCookie(c, sessionCookie, created.token, {
     ...cookieOptions,
     maxAge: 7 * 86400,

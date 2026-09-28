@@ -157,8 +157,12 @@ export class AccountState extends DurableObject<Env> {
     return value
   }
 
-  private schedule() {
-    return this.ctx.storage.setAlarm(Date.now() + 60_000)
+  private async schedule() {
+    const next = Date.now() + 60_000
+    const current = await this.ctx.storage.getAlarm()
+    if (current === null || current > next) {
+      await this.ctx.storage.setAlarm(next)
+    }
   }
 
   private locked(projectId: string) {
@@ -1114,6 +1118,71 @@ export class AccountState extends DurableObject<Env> {
     return { restored: parsed.length }
   }
 
+  private async dispatchJob(id: string) {
+    let job = this.getJob(id)
+    if (Date.now() - (job.attemptStartedAt ?? job.createdAt) > 40 * 60_000) {
+      this.put(`job:${id}`, { ...job, status: 'failed', error: 'runner-timeout', updatedAt: Date.now() })
+      return
+    }
+    if (!job.dispatchAttempts && this.list<Job>('job').some(other =>
+      other.id !== id && other.project.repositoryInfo.id === job.project.repositoryInfo.id
+      && (other.status === 'running' || other.status === 'reconciling' || (other.status === 'queued' && other.dispatchAttempts > 0)),
+    )) {
+      return
+    }
+    if (job.runId) {
+      await this.reconcileJob(id)
+      return
+    }
+    const token = await installationToken(this.env, job.project.repositoryInfo.installationId)
+    // Discover a run before retrying an ambiguous dispatch or judging startup.
+    // A runner can spend minutes queued or building before its first claim.
+    const runs = await github<{ workflow_runs: { id: number, run_attempt: number, display_title: string, head_sha: string, event: string }[] }>(
+      token,
+      `/repos/${job.project.repository}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=100`,
+    )
+    const run = runs.workflow_runs.find(run => run.display_title === `iconctl-${job.id}-${job.attempt}` && run.event === 'workflow_dispatch')
+    job = this.getJob(id)
+    if (job.status !== 'queued' || job.runId) {
+      return
+    }
+    if (run) {
+      if (run.head_sha !== job.workflowCommit) {
+        this.put(`job:${id}`, { ...job, status: 'failed', error: 'workflow-changed', updatedAt: Date.now() })
+        return
+      }
+      this.put(`job:${id}`, { ...job, runId: String(run.id), runAttempt: String(run.run_attempt), stage: 'starting', updatedAt: Date.now() })
+      await this.reconcileJob(id)
+      return
+    }
+    // An accepted dispatch is never repeated. A lost response gets a discovery
+    // grace period before a bounded retry; claim still permits only one run.
+    if (job.stage === 'dispatched' || (job.dispatchAttempts > 0 && Date.now() - job.updatedAt < 5 * 60_000)) {
+      return
+    }
+    if (job.dispatchAttempts >= 3) {
+      this.put(`job:${id}`, { ...job, status: 'failed', error: 'dispatch', updatedAt: Date.now() })
+      return
+    }
+    if (await branchHead(token, job.project.repository, job.project.repositoryInfo.defaultBranch) !== job.workflowCommit) {
+      this.put(`job:${id}`, { ...job, status: 'failed', error: 'workflow-changed', updatedAt: Date.now() })
+      return
+    }
+    job = this.getJob(id)
+    if (job.status !== 'queued' || job.runId) {
+      return
+    }
+    this.put(`job:${id}`, { ...job, dispatchAttempts: job.dispatchAttempts + 1, stage: 'dispatching', updatedAt: Date.now() })
+    await github(token, `/repos/${job.project.repository}/actions/workflows/${WORKFLOW}/dispatches`, 'POST', {
+      ref: job.project.repositoryInfo.defaultBranch,
+      inputs: { job: id, attempt: String(job.attempt), operation: job.operation },
+    })
+    const current = this.getJob(id)
+    if (current.status === 'queued' && !current.runId) {
+      this.put(`job:${id}`, { ...current, stage: 'dispatched', updatedAt: Date.now() })
+    }
+  }
+
   async alarm() {
     const now = Date.now()
     for (const prefix of ['session', 'oauth', 'pair', 'confirmation']) {
@@ -1131,38 +1200,8 @@ export class AccountState extends DurableObject<Env> {
     }
     for (const job of this.list<Job>('job')) {
       if (job.status === 'queued' && job.updatedAt < now - 45_000) {
-        if (job.dispatchAttempts >= 3) {
-          this.put(`job:${job.id}`, {
-            ...job,
-            status: 'failed',
-            error: 'dispatch',
-            updatedAt: now,
-          })
-          continue
-        }
-        this.put(`job:${job.id}`, {
-          ...job,
-          dispatchAttempts: job.dispatchAttempts + 1,
-          updatedAt: now,
-        })
         try {
-          const token = await installationToken(
-            this.env,
-            job.project.repositoryInfo.installationId,
-          )
-          await github(
-            token,
-            `/repos/${job.project.repository}/actions/workflows/${WORKFLOW}/dispatches`,
-            'POST',
-            {
-              ref: job.project.repositoryInfo.defaultBranch,
-              inputs: {
-                job: job.id,
-                attempt: String(job.attempt),
-                operation: job.operation,
-              },
-            },
-          )
+          await this.dispatchJob(job.id)
         }
         catch {
           /* Persisted retry count bounds dispatch attempts. No provider response is logged. */
@@ -1317,6 +1356,7 @@ export class AccountState extends DurableObject<Env> {
       attempt: job.attempt + 1,
       status: 'queued',
       dispatchAttempts: 0,
+      stage: 'queued',
       updatedAt: Date.now(),
       attemptStartedAt: Date.now(),
     }

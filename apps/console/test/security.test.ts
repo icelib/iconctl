@@ -29,6 +29,48 @@ afterEach(async () => {
 })
 
 describe('private routes and sessions', () => {
+  it('denies other GitHub users and reports a safe exchange stage on upstream failure', async () => {
+    for (const upstreamFailure of [false, true]) {
+      const login = await exports.default.fetch(`${env.APP_ORIGIN}/api/auth/github/login`, { redirect: 'manual' })
+      const state = new URL(login.headers.get('location')!).searchParams.get('state')!
+      const cookie = login.headers.get('set-cookie')!.split(';')[0]!
+      const logs = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (upstreamFailure) {
+          throw new Error('secret-code-and-token')
+        }
+        return Response.json(String(input).includes('/access_token') ? { access_token: 'secret-user-token' } : { id: 1 })
+      })
+      const response = await exports.default.fetch(`${env.APP_ORIGIN}/api/auth/github/callback?state=${state}&code=secret-code`, { headers: { Cookie: cookie }, redirect: 'manual' })
+      expect(response.status).toBe(upstreamFailure ? 502 : 403)
+      expect(await response.text()).not.toContain('secret-')
+      expect(JSON.stringify(logs.mock.calls)).not.toContain('secret-')
+      expect(response.headers.getSetCookie().some(value => value.startsWith('__Host-iconctl-session='))).toBe(false)
+      fetch.mockRestore()
+      logs.mockRestore()
+    }
+  })
+  it('completes the browser OAuth callback and sets a usable owner session', async () => {
+    const login = await exports.default.fetch(`${env.APP_ORIGIN}/api/auth/github/login`, { redirect: 'manual' })
+    const state = new URL(login.headers.get('location')!).searchParams.get('state')!
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]!
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).includes('/access_token')) {
+        return Response.json({ access_token: 'user-token' })
+      }
+      return Response.json({ id: Number(OWNER_ID) })
+    })
+    const response = await exports.default.fetch(`${env.APP_ORIGIN}/api/auth/github/callback?state=${state}&code=test-code`, { headers: { Cookie: cookie }, redirect: 'manual' })
+    expect(await response.clone().text()).not.toContain('user-token')
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe('/app/')
+    const cookies = response.headers.getSetCookie()
+    const ownerCookie = cookies.find(value => value.startsWith('__Host-iconctl-session='))!
+    expect(ownerCookie).toContain('Secure')
+    expect(ownerCookie).toContain('HttpOnly')
+    const session = await exports.default.fetch(`${env.APP_ORIGIN}/api/session`, { headers: { Cookie: ownerCookie.split(';')[0]! } })
+    expect(session.status).toBe(200)
+  })
   it('rejects anonymous APIs, assets, snapshots and downloads', async () => {
     for (const path of [
       '/api/state',

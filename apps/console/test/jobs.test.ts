@@ -139,6 +139,61 @@ it('persists one idempotent job and lets only one Actions run claim it', async (
     ),
   ).toContain('active task')
 })
+it('waits for accepted Actions runs to build, and serializes projects in the same repository', async () => {
+  const fetch = mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await seed(`job:${job.id}`, { ...job, updatedAt: Date.now() - 60_000 })
+  let listed = false
+  let runStatus = 'in_progress'
+  let dispatches = 0
+  fetch.mockImplementation(async (input) => {
+    const path = new URL(String(input)).pathname
+    if (path.endsWith('/access_tokens')) {
+      return Response.json({ token: 'installation-token' })
+    }
+    if (path.endsWith('/git/ref/heads/main')) {
+      return Response.json({ object: { sha } })
+    }
+    if (path.endsWith('/dispatches')) {
+      dispatches++
+      return new Response(null, { status: 204 })
+    }
+    if (path.endsWith('/runs')) {
+      return Response.json({ workflow_runs: listed ? [{ id: 1234, run_attempt: 1, display_title: `iconctl-${job.id}-1`, head_sha: sha, event: 'workflow_dispatch' }] : [] })
+    }
+    return Response.json({ status: runStatus, conclusion: null })
+  })
+  await runInDurableObject(account(), instance => instance.alarm())
+  expect(dispatches).toBe(1)
+  for (let i = 0; i < 4; i++) {
+    const pending = await read<Job>(`job:${job.id}`)
+    await seed(`job:${job.id}`, { ...pending, updatedAt: Date.now() - 6 * 60_000 })
+    await runInDurableObject(account(), instance => instance.alarm())
+  }
+  expect(dispatches).toBe(1)
+  expect((await read<Job>(`job:${job.id}`)).status).toBe('queued')
+  const second = { ...job, id: crypto.randomUUID(), projectId: crypto.randomUUID(), updatedAt: Date.now() - 60_000 }
+  await seed(`job:${second.id}`, second)
+  await runInDurableObject(account(), instance => instance.alarm())
+  expect(dispatches).toBe(1)
+  listed = true
+  await runInDurableObject(account(), instance => instance.alarm())
+  expect((await read<Job>(`job:${job.id}`)).runId).toBe('1234')
+  await account().claim(job.id, identity, 'sync')
+  expect((await read<Job>(`job:${job.id}`)).status).toBe('running')
+  runStatus = 'completed'
+  await account().reconcileJob(job.id)
+  expect((await read<Job>(`job:${job.id}`)).error).toBe('runner-interrupted')
+})
+it('does not postpone an existing alarm when OAuth traffic arrives', async () => {
+  const due = Date.now() + 5000
+  await runInDurableObject(account(), async (_instance, state) => state.storage.setAlarm(due))
+  await account().newSession(OWNER_ID)
+  const actual = await runInDurableObject(account(), (_instance, state) => state.storage.getAlarm())
+  expect(actual).toBe(due)
+})
 it('stores immutable snapshots and advances the baseline only for successful sync', async () => {
   mockGithub()
   const saved = project()
