@@ -5,6 +5,12 @@
     - big-taxis-turn
     - modern-pigs-cheer
     - wet-elephants-wink
+"@iconctl/core@0.1.0":
+  dir: packages/core
+  intents:
+    - pretty-carrots-bake
+    - slow-boxes-float
+    - spicy-dogs-cry
 iconctl@0.0.1:
   dir: apps/cli
   intents:
@@ -12,3 +18,7 @@ iconctl@0.0.1:
     - big-taxis-turn
     - modern-pigs-cheer
     - wet-elephants-wink
+iconctl@0.1.0:
+  dir: apps/cli
+  intents:
+    - pretty-carrots-bake
