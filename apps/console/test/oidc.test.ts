@@ -25,7 +25,9 @@ it('verifies signed Actions identities and binds them to the exact dispatched jo
     },
   } as Job
   let title = `iconctl-${job.id}-1`
-  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    expect(new Request(input, init).url).toMatch(/^https:/)
+
     const url = String(input)
     if (url.includes('/.well-known/jwks')) {
       return Response.json({ keys: [jwk] })

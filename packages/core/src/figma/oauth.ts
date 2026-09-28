@@ -21,7 +21,7 @@ export async function requestFigmaToken(
   try {
     response = await fetch(`https://api.figma.com/v1/oauth/${refresh ? 'refresh' : 'token'}`, {
       method: 'POST',
-      redirect: 'error',
+      redirect: 'manual',
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

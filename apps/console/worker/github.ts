@@ -30,7 +30,7 @@ export async function github<T>(
       'Content-Type': 'application/json',
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    redirect: 'error',
+    redirect: 'manual',
     signal: AbortSignal.timeout(20_000),
   })
   if (!response.ok) {

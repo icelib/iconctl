@@ -198,7 +198,7 @@ app.get('/api/auth/github/callback', async (c) => {
         code_verifier: oauth.verifier,
         redirect_uri: `${c.env.APP_ORIGIN}/api/auth/github/callback`,
       }),
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(15_000),
     })
     if (!response.ok) {

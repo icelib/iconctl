@@ -1591,7 +1591,7 @@ export class AccountState extends DurableObject<Env> {
     }
     const response = await fetch(
       `https://registry.npmjs.org/${encodeURIComponent(job.project.packageName)}/${job.release.version}`,
-      { signal: AbortSignal.timeout(15_000), redirect: 'error' },
+      { signal: AbortSignal.timeout(15_000), redirect: 'manual' },
     )
     if (response.status === 404) {
       return false

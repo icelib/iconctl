@@ -1,5 +1,6 @@
 import type { AccountState } from '../worker/state'
 import { OWNER_ID } from '@iconctl/console-contracts'
+import { requestFigmaToken } from '@iconctl/core/figma/oauth'
 import { reset, runInDurableObject } from 'cloudflare:test'
 import { env, exports } from 'cloudflare:workers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -35,7 +36,9 @@ describe('private routes and sessions', () => {
       const state = new URL(login.headers.get('location')!).searchParams.get('state')!
       const cookie = login.headers.get('set-cookie')!.split(';')[0]!
       const logs = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        expect(new Request(input, init).url).toMatch(/^https:/)
+
         if (upstreamFailure) {
           throw new Error('secret-code-and-token')
         }
@@ -54,7 +57,9 @@ describe('private routes and sessions', () => {
     const login = await exports.default.fetch(`${env.APP_ORIGIN}/api/auth/github/login`, { redirect: 'manual' })
     const state = new URL(login.headers.get('location')!).searchParams.get('state')!
     const cookie = login.headers.get('set-cookie')!.split(';')[0]!
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(new Request(input, init).url).toMatch(/^https:/)
+
       if (String(input).includes('/access_token')) {
         return Response.json({ access_token: 'user-token' })
       }
@@ -196,6 +201,15 @@ describe('private routes and sessions', () => {
   })
 })
 describe('encrypted credential broker', () => {
+  it('uses a workerd-compatible request and refuses redirects carrying OAuth credentials', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const request = new Request(input, init)
+      expect(request.redirect).toBe('manual')
+      return new Response(null, { status: 302, headers: { Location: 'https://other.example' } })
+    })
+    await expect(requestFigmaToken({ clientId: 'client', clientSecret: 'secret' }, new URLSearchParams({ code: 'code' }))).rejects.toThrow('HTTP 302')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
   it('authenticates ciphertext and its connection context', async () => {
     const encrypted = await encrypt(
       env.CREDENTIAL_ENCRYPTION_KEY,
