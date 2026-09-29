@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { FigmaImportNodeFilter } from '@iconify/tools/lib/import/figma/types/nodes'
+import type { SyncIssue } from '../errors'
 
 export interface FigmaSourceConfig {
   type: 'figma'
@@ -91,6 +92,7 @@ export type ResolvedSourceConfig
     | ResolvedIconfontSourceConfig
 
 export interface LoadedSource {
+  issues?: SyncIssue[]
   type: SourceConfig['type']
   iconSet?: IconSet
   notModified: boolean

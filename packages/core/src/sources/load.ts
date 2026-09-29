@@ -3,6 +3,7 @@ import type { ResolvedIconctlConfig } from '../config'
 import type { FigmaSourceLoadOptions } from './figma'
 import type { LoadedSource, ResolvedSourceConfig } from './types'
 import { blankIconSet } from '@iconify/tools'
+import { checkpoint } from '../abort'
 import { IconctlError } from '../errors'
 import { loadDirectorySource } from './directory'
 import { loadFigmaSource } from './figma'
@@ -32,6 +33,7 @@ export function mergeIconSets(prefix: string, sets: IconSet[]): IconSet {
 
 export interface LoadSourcesOptions {
   cwd: string
+  signal?: AbortSignal
   config: ResolvedIconctlConfig
   env?: NodeJS.Dict<string>
   figmaIfModifiedSince?: string
@@ -39,27 +41,32 @@ export interface LoadSourcesOptions {
 }
 
 async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
+  const cancellation = options.signal ? { signal: options.signal } : {}
   switch (source.type) {
     case 'directory':
       return await loadDirectorySource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        ...cancellation,
         skipPrefix: options.config.validate.skipPrefix,
       })
     case 'iconfont':
       return await loadIconfontSource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        ...cancellation,
       })
     case 'jsdesign':
       return await loadJsdesignSource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        ...cancellation,
         skipPrefix: options.config.validate.skipPrefix,
       })
     case 'mastergo':
       return await loadMastergoSource(source, {
         prefix: options.config.prefix,
+        ...cancellation,
         ...(options.env ? { env: options.env } : {}),
       })
     case 'figma': {
@@ -67,9 +74,11 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
       return await loadFigmaSource(source, {
         cwd: options.cwd,
         prefix: options.config.prefix,
+        ...cancellation,
         cacheDir: options.config.cacheDir,
         skipPrefix: options.config.validate.skipPrefix,
         refreshDocument: !onlyFigma,
+        sourceIndex,
         ...(options.env ? { env: options.env } : {}),
         ...(options.figmaAuthProvider ? { authProvider: item => options.figmaAuthProvider!(item, sourceIndex) } : {}),
         ...(onlyFigma && options.figmaIfModifiedSince ? { ifModifiedSince: options.figmaIfModifiedSince } : {}),
@@ -85,7 +94,25 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
 
   const loaded: LoadedSource[] = []
   for (const [index, source] of options.config.sources.entries()) {
+    await checkpoint(options.signal)
     loaded.push(await loadOneSource(source, options, index))
+    await checkpoint(options.signal)
   }
   return loaded
+}
+
+export async function mergeIconSetsAsync(prefix: string, sets: IconSet[], signal?: AbortSignal): Promise<IconSet> {
+  const merged = blankIconSet(prefix)
+  for (const iconSet of sets) {
+    await iconSet.forEach(async (name, type) => {
+      await checkpoint(signal)
+      if (type === 'icon') {
+        const svg = iconSet.toSVG(name)
+        if (svg) {
+          merged.fromSVG(name, svg)
+        }
+      }
+    })
+  }
+  return merged
 }

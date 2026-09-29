@@ -3,8 +3,11 @@ import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { exportJSONPackage, exportToDirectory, writeJSONFile } from '@iconify/tools'
-import { dirname, join } from 'pathe'
+import { exportJSONPackage, writeJSONFile } from '@iconify/tools'
+import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'pathe'
+import { checkpoint } from './abort'
+import { IconctlError } from './errors'
+import { OutputTransaction } from './output-transaction'
 
 export interface ExportResult {
   files: string[]
@@ -32,27 +35,17 @@ export async function readPreviousIconJson(file: string): Promise<IconifyJSON | 
   }
 }
 
-export async function exportOutputs(
+export async function generateOutputs(
   iconSet: IconSet,
   config: ResolvedIconctlConfig,
-  options: { cwd: string, dryRun?: boolean } = { cwd: process.cwd() },
+  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
 ): Promise<ExportResult> {
   const files: string[] = []
   const json = iconSet.export()
   const resolve = (file: string) => file.startsWith('/') ? file : join(options.cwd, file)
 
   if (!options.dryRun) {
-    const jsonFile = resolve(config.output.json)
-    await mkdir(dirname(jsonFile), { recursive: true })
-    await writeJSONFile(jsonFile, json)
-    files.push(jsonFile)
-
-    if (config.output.svg) {
-      const svgDir = resolve(config.output.svg)
-      await exportToDirectory(iconSet, { target: svgDir })
-      files.push(svgDir)
-    }
-
+    await checkpoint(options.signal)
     if (config.output.jsonPackage) {
       const pkg = config.output.jsonPackage
       const dir = resolve(pkg.dir)
@@ -88,6 +81,31 @@ export async function exportOutputs(
       files.push(dir)
     }
 
+    await checkpoint(options.signal)
+    const jsonFile = resolve(config.output.json)
+    await mkdir(dirname(jsonFile), { recursive: true })
+    await writeJSONFile(jsonFile, json)
+    files.push(jsonFile)
+
+    if (config.output.svg) {
+      const svgDir = resolve(config.output.svg)
+      await mkdir(svgDir, { recursive: true })
+      await iconSet.forEach(async (name) => {
+        await checkpoint(options.signal)
+        const svg = iconSet.toString(name, { width: 'auto', height: 'auto' })
+        if (svg) {
+          const target = join(svgDir, `${name}.svg`)
+          const path = relative(svgDir, target)
+          if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
+            throw new IconctlError(`SVG name escapes the output directory: ${name}`)
+          }
+          await writeTextFile(target, svg)
+        }
+      })
+      files.push(svgDir)
+    }
+
+    await checkpoint(options.signal)
     if (config.output.types) {
       const names = Object.keys(json.icons).sort()
       const typesFile = resolve(config.output.types)
@@ -96,5 +114,59 @@ export async function exportOutputs(
     }
   }
 
+  const order = [config.output.json, config.output.svg, config.output.jsonPackage?.dir, config.output.types]
+    .flatMap(file => file ? [resolve(file)] : [])
+  files.sort((a, b) => order.indexOf(a) - order.indexOf(b))
   return { files, json }
+}
+
+export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { path: string, directory?: boolean }[] {
+  const output = config.output
+  return [
+    { path: resolvePath(cwd, output.json) },
+    ...(output.svg ? [{ path: resolvePath(cwd, output.svg), directory: true }] : []),
+    ...(output.jsonPackage ? [{ path: resolvePath(cwd, output.jsonPackage.dir), directory: true }] : []),
+    ...[output.types, output.preview, output.changelog].flatMap(file => file ? [{ path: resolvePath(cwd, file) }] : []),
+  ]
+}
+
+export function stagedConfig(config: ResolvedIconctlConfig, cwd: string, transaction: OutputTransaction): ResolvedIconctlConfig {
+  const path = (file: string) => transaction.path(resolvePath(cwd, file))
+  const output = config.output
+  return {
+    ...config,
+    output: {
+      json: path(output.json),
+      ...(output.svg ? { svg: path(output.svg) } : {}),
+      ...(output.jsonPackage ? { jsonPackage: { ...output.jsonPackage, dir: path(output.jsonPackage.dir) } } : {}),
+      ...(output.types ? { types: path(output.types) } : {}),
+      ...(output.preview ? { preview: path(output.preview) } : {}),
+      ...(output.changelog ? { changelog: path(output.changelog) } : {}),
+    },
+  }
+}
+
+export async function exportOutputs(
+  iconSet: IconSet,
+  config: ResolvedIconctlConfig,
+  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
+): Promise<ExportResult> {
+  await checkpoint(options.signal)
+  if (options.dryRun) {
+    return { files: [], json: iconSet.export() }
+  }
+  // Preview and changelog remain sync() responsibilities.
+  const { preview: _preview, changelog: _changelog, ...output } = config.output
+  const exportConfig = { ...config, output }
+  const targets = outputTargets(exportConfig, options.cwd)
+  const transaction = await OutputTransaction.create(targets, options.signal)
+  try {
+    const generatedConfig = stagedConfig(exportConfig, options.cwd, transaction)
+    const result = await generateOutputs(iconSet, generatedConfig, options)
+    await transaction.commit(options.signal)
+    return { json: result.json, files: targets.map(target => target.path) }
+  }
+  finally {
+    await transaction.dispose()
+  }
 }

@@ -3,11 +3,13 @@ import type { LoadedSource, ResolvedDirectorySourceConfig } from './types'
 import { stat } from 'node:fs/promises'
 import { importDirectory } from '@iconify/tools'
 import { isAbsolute, resolve } from 'pathe'
+import { checkpoint } from '../abort'
 import { IconctlError } from '../errors'
 import { shouldSkipName, toIconName } from '../naming'
 
 export interface ImportLocalSvgDirectoryOptions {
   skipPrefix?: string[]
+  signal?: AbortSignal
 }
 
 export async function importLocalSvgDirectory(
@@ -15,6 +17,7 @@ export async function importLocalSvgDirectory(
   prefix: string,
   options: ImportLocalSvgDirectoryOptions = {},
 ): Promise<IconSet> {
+  await checkpoint(options.signal)
   const skipPrefix = options.skipPrefix ?? ['_', '.']
   try {
     const info = await stat(dir)
@@ -31,7 +34,8 @@ export async function importLocalSvgDirectory(
 
   return await importDirectory(dir, {
     prefix,
-    keyword: (file) => {
+    keyword: async (file) => {
+      await checkpoint(options.signal)
       if (shouldSkipName(file.file, skipPrefix)) {
         return undefined
       }
@@ -42,12 +46,13 @@ export async function importLocalSvgDirectory(
 
 export async function loadDirectorySource(
   source: ResolvedDirectorySourceConfig,
-  options: { cwd: string, prefix: string, skipPrefix?: string[] },
+  options: { cwd: string, prefix: string, skipPrefix?: string[], signal?: AbortSignal },
 ): Promise<LoadedSource> {
   const dir = isAbsolute(source.dir) ? source.dir : resolve(options.cwd, source.dir)
   return {
     type: 'directory',
     iconSet: await importLocalSvgDirectory(dir, options.prefix, {
+      ...(options.signal ? { signal: options.signal } : {}),
       ...(options.skipPrefix ? { skipPrefix: options.skipPrefix } : {}),
     }),
     notModified: false,
