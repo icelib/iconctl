@@ -2,6 +2,7 @@ import type { LoadedSource, ResolvedIconfontSourceConfig } from './types'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { blankIconSet } from '@iconify/tools'
 import { isAbsolute, join, resolve } from 'pathe'
+import { checkpoint } from '../abort'
 import { IconctlError } from '../errors'
 import { fetchText } from '../http'
 import { addSvgToIconSet, applyNameTransform, stripIconPrefix } from '../icon-set'
@@ -47,16 +48,18 @@ export async function writeIconfontJsToDirectory(
 
 export async function loadIconfontSource(
   source: ResolvedIconfontSourceConfig,
-  options: { cwd: string, prefix: string },
+  options: { cwd: string, prefix: string, signal?: AbortSignal },
 ): Promise<LoadedSource> {
+  await checkpoint(options.signal)
   if (source.url) {
-    const js = await fetchText(source.url)
+    const js = await fetchText(source.url, options.signal ? { signal: options.signal } : undefined)
     const symbols = parseIconfontSymbolJs(js)
     if (!symbols.length) {
       throw new IconctlError(`No <symbol> icons found in ${source.url}`)
     }
     const iconSet = blankIconSet(options.prefix)
     for (const symbol of symbols) {
+      await checkpoint(options.signal)
       const name = stripIconPrefix(symbol.id, source.stripPrefix)
       if (!name) {
         continue
@@ -68,7 +71,7 @@ export async function loadIconfontSource(
 
   if (source.dir) {
     const dir = isAbsolute(source.dir) ? source.dir : resolve(options.cwd, source.dir)
-    const imported = await importLocalSvgDirectory(dir, options.prefix)
+    const imported = await importLocalSvgDirectory(dir, options.prefix, options.signal ? { signal: options.signal } : {})
     const iconSet = applyNameTransform(imported, name => stripIconPrefix(name, source.stripPrefix) || null)
     return { type: 'iconfont', iconSet, notModified: false }
   }

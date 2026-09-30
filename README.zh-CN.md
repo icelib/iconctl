@@ -36,6 +36,8 @@ pnpm exec iconctl sync
 
 `sync --json` 输出 `added`、`removed`、`changed`、`skipped`、`sources`、`fileVersion`、`outputFiles`。校验失败默认非 0 退出，并且不写半成品。
 
+`sync({ signal })` 支持调用方取消。单项导入／处理失败现在也会默认阻止产物替换。显式设置 `continueOnError: true` 可导出成功项，结果带有 `complete: false`、诊断 `issues` 和 `diff.deletionsReliable: false`，不报告删除、不更新 changelog。产物先暂存再提交：提交前取消保留旧产物，提交开始后取消会等待提交成功；共享 OAuth 刷新安全结束后才返回取消。不保证跨路径原子发布，完整契约见[同步完整性与取消](apps/website/zh/quick-start.md#同步完整性与取消)。
+
 ## 配置
 
 ```ts

@@ -1,5 +1,6 @@
 import type { LoadedSource, ResolvedMastergoSourceConfig } from './types'
 import { blankIconSet } from '@iconify/tools'
+import { checkpoint, throwIfAborted } from '../abort'
 import { IconctlError } from '../errors'
 import { fetchJson } from '../http'
 import { addSvgToIconSet, stripIconPrefix } from '../icon-set'
@@ -51,8 +52,9 @@ function mastergoError(statusMessage: string): string {
 
 export async function loadMastergoSource(
   source: ResolvedMastergoSourceConfig,
-  options: { prefix: string, env?: NodeJS.Dict<string> },
+  options: { prefix: string, env?: NodeJS.Dict<string>, signal?: AbortSignal },
 ): Promise<LoadedSource> {
+  await checkpoint(options.signal)
   const token = resolveMastergoToken(source.token, options.env)
   const headers = {
     'Accept': 'application/json',
@@ -64,14 +66,16 @@ export async function loadMastergoSource(
 
   try {
     while (true) {
+      await checkpoint(options.signal)
       const url = new URL('/mcp/extract-svg', source.baseUrl)
       url.searchParams.set('fileId', source.fileId)
       url.searchParams.set('layerId', source.layerId)
       url.searchParams.set('page', String(page))
       url.searchParams.set('pageSize', String(pageSize))
-      const payload = await fetchJson<MastergoExtractSvgResponse>(url.toString(), { headers })
+      const payload = await fetchJson<MastergoExtractSvgResponse>(url.toString(), { headers, ...(options.signal ? { signal: options.signal } : {}) })
       const svgs = payload.svgs ?? []
       for (const item of svgs) {
+        await checkpoint(options.signal)
         if (!item.svg) {
           continue
         }
@@ -93,6 +97,7 @@ export async function loadMastergoSource(
     }
   }
   catch (error) {
+    throwIfAborted(options.signal)
     if (error instanceof IconctlError) {
       throw new IconctlError(mastergoError(error.message), { cause: error })
     }
