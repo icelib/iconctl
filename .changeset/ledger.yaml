@@ -11,6 +11,10 @@
     - pretty-carrots-bake
     - slow-boxes-float
     - spicy-dogs-cry
+"@iconctl/core@0.2.0":
+  dir: packages/core
+  intents:
+    - neat-grapes-behave
 iconctl@0.0.1:
   dir: apps/cli
   intents:
@@ -22,3 +26,7 @@ iconctl@0.1.0:
   dir: apps/cli
   intents:
     - pretty-carrots-bake
+iconctl@0.2.0:
+  dir: apps/cli
+  intents:
+    - neat-grapes-behave
