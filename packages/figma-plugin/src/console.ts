@@ -214,7 +214,9 @@ export class PluginConsole {
       return
     }
     const items = this.host.scan({ ...context.validate, namingMode: context.namingMode })
-    this.host.post({ type: 'preflight', items })
+    if (this.mode === 'console') {
+      this.host.post({ type: 'preflight', items })
+    }
     if (!canSubmit(items)) {
       throw new Error('Fix all preflight errors and include at least one icon before syncing')
     }

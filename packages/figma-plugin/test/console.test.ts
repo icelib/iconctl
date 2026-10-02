@@ -145,6 +145,21 @@ it('ignores a context response arriving after disconnect', async () => {
   expect(fixture.records.has(DEVICE_KEY)).toBe(false)
   expect(fixture.post.mock.calls.at(-1)?.[0]).toMatchObject({ connected: false })
 })
+
+it('keeps GitHub preflight when a console context arrives after switching modes', async () => {
+  const fixture = host()
+  let reply: ((response: Response) => void) | undefined
+  network().mockImplementationOnce(() => new Promise((resolve) => {
+    reply = resolve
+  }))
+  const syncing = fixture.session.handle({ type: 'console-sync' })
+  await vi.waitFor(() => expect(reply).toBeDefined())
+  fixture.session.rescan('github')
+  reply!(Response.json(context))
+  await syncing
+  const preflight = fixture.post.mock.calls.filter(([message]) => message.type === 'preflight').at(-1)![0]
+  expect(preflight.items[0].issues).toEqual(['Canvas is 16×16, expected 24×24'])
+})
 it('clears revoked credentials and stops polling', async () => {
   const fixture = host()
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 403 }))
