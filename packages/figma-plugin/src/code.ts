@@ -4,8 +4,7 @@ import type { PreflightInput, PreflightRules } from './preflight'
 import { PluginConsole } from './console'
 import { PreflightNavigation } from './navigation'
 import { inspectComponents } from './preflight'
-
-const STORAGE_KEY = 'iconctl-settings'
+import { PluginSettings } from './settings'
 
 function collectComponents(
   node: SceneNode,
@@ -61,25 +60,34 @@ const consoleSession = new PluginConsole({
   scan: scanPage,
 })
 consoleSession.rescan()
+const settings = new PluginSettings({ storage: figma.clientStorage, post: message => figma.ui.postMessage(message) })
+let closed = false
 figma.on('currentpagechange', () => navigation.invalidate())
 figma.on('close', () => {
+  closed = true
   navigation.dispose()
   consoleSession.dispose()
-})
-
-void figma.clientStorage.getAsync(STORAGE_KEY).then((value) => {
-  figma.ui.postMessage({ type: 'settings', settings: value ?? {} })
+  settings.dispose()
 })
 
 figma.ui.onmessage = async (message: {
   type: string
   settings?: unknown
+  preferences?: unknown
+  scope?: unknown
   origin?: string
   mode?: 'console' | 'github'
   nodeId?: string
   scanId?: number
   requestId?: number
 }) => {
+  if (closed) {
+    return
+  }
+  if (message.type === 'cancel-navigation') {
+    navigation.cancel(message.scanId)
+    return
+  }
   if (message.type === 'locate') {
     await navigation.locate(message)
     return
@@ -92,7 +100,5 @@ figma.ui.onmessage = async (message: {
     consoleSession.rescan(message.mode)
     return
   }
-  if (message.type === 'save-settings' && message.settings) {
-    void figma.clientStorage.setAsync(STORAGE_KEY, message.settings)
-  }
+  await settings.handle(message)
 }

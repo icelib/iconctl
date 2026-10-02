@@ -86,6 +86,31 @@
       #navigation-status.ok {
         color: #1b7f37;
       }
+      .view-options {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .view-options label {
+        display: flex;
+        align-items: center;
+        margin: 0;
+        gap: 4px;
+      }
+      .storage-feedback {
+        color: #a33;
+        overflow-wrap: anywhere;
+        margin: 8px 0;
+      }
+      .storage-feedback button {
+        margin: 4px 0 0;
+      }
+      #view-count,
+      #empty-view {
+        color: #555;
+        margin: 6px 0;
+      }
       .row {
         display: flex;
         margin-top: 8px;
@@ -112,8 +137,23 @@
         >GitHub token (Contents: read and write)<input id="token" type="password" placeholder="github_pat_…"
       /></label>
       <label>Event type<input id="event" value="iconctl-publish" /></label>
+      <div id="settings-feedback" class="storage-feedback" hidden>
+        <p id="settings-storage-status" aria-live="polite"></p>
+        <button id="retry-settings" class="secondary" type="button">Retry settings storage</button>
+      </div>
     </section>
     <p id="status">Scanning this page…</p>
+    <label>Search preflight<input id="search" type="search" placeholder="Name or issue" /></label>
+    <div class="view-options">
+      <label><input id="problems-only" type="checkbox" />Problems only</label>
+      <button id="clear-filters" class="secondary" type="button">Clear filters</button>
+    </div>
+    <div id="preferences-feedback" class="storage-feedback" hidden>
+      <p id="preferences-storage-status" aria-live="polite"></p>
+      <button id="retry-preferences" class="secondary" type="button">Retry view storage</button>
+    </div>
+    <p id="view-count" aria-live="polite"></p>
+    <p id="empty-view" hidden></p>
     <ul id="list"></ul>
     <p id="navigation-status" role="status" aria-live="polite"></p>
     <div class="row">

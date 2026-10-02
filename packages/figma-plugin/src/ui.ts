@@ -1,4 +1,5 @@
 import type { PreflightItem } from './preflight'
+import type { LegacySettings, ViewPreferences } from './settings'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
 
@@ -13,11 +14,9 @@ interface PluginMessage {
   items?: PreflightItem[]
   scanId?: number
   requestId?: number
-  settings?: {
-    repo?: string
-    token?: string
-    eventType?: string
-  }
+  settings?: LegacySettings
+  preferences?: ViewPreferences
+  scope?: 'settings' | 'preferences'
 }
 const modeInput = document.querySelector<HTMLSelectElement>('#mode')!
 const originInput = document.querySelector<HTMLInputElement>('#origin')!
@@ -32,6 +31,14 @@ const listEl = document.querySelector('#list')!
 const publishBtn = document.querySelector<HTMLButtonElement>('#publish')!
 const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
 const navigationStatus = document.querySelector<HTMLElement>('#navigation-status')!
+const searchInput = document.querySelector<HTMLInputElement>('#search')!
+const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')!
+const viewCount = document.querySelector<HTMLElement>('#view-count')!
+const emptyView = document.querySelector<HTMLElement>('#empty-view')!
+const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
+const editedSettings = new Set<keyof LegacySettings>()
+const settingsInputs = { repo: repoInput, token: tokenInput, eventType: eventInput }
+let editedPreferences = false
 let items: PreflightItem[] = []
 let scanId: number | undefined
 let navigationRequest = 0
@@ -56,10 +63,15 @@ function escapeHtml(value: string) {
     '\'': '&#39;',
   })[char] || char)
 }
-function render() {
-  const visible = items.filter(item => !item.skipped)
-  const skipped = items.filter(item => item.skipped).length
-  const errors = visible.filter(item => item.issues.length)
+function renderList() {
+  const available = items.filter(item => !item.skipped)
+  const query = searchInput.value.trim().toLowerCase()
+  const visible = available.filter(item => (!problemsInput.checked || item.issues.length > 0)
+    && [item.name, item.iconName ?? '', ...item.issues].some(value => value.toLowerCase().includes(query)))
+  viewCount.textContent = `Showing ${visible.length} of ${available.length} icons`
+  emptyView.hidden = visible.length > 0
+  emptyView.textContent = available.length ? 'No icons match these filters.' : 'No icons to display on this page.'
+  clearFilters.disabled = !searchInput.value && !problemsInput.checked
   listEl.innerHTML = visible
     .map((item) => {
       const state = item.issues.length ? 'err' : 'ok'
@@ -69,11 +81,57 @@ function render() {
       return `<li class="${state}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(detail || '')}</span><button class="secondary locate" type="button" data-node-id="${escapeHtml(item.id)}"${scanId === undefined ? ' disabled' : ''} aria-label="Locate ${escapeHtml(item.name)}">Locate</button></li>`
     })
     .join('')
+}
+function render() {
+  renderList()
+  const visible = items.filter(item => !item.skipped)
+  const skipped = items.filter(item => item.skipped).length
+  const errors = visible.filter(item => item.issues.length)
   const summary = errors.length
     ? `${errors.length} of ${visible.length} icons need fixes`
     : `${visible.length} icons ready`
   setStatus(skipped ? `${summary} · ${skipped} drafts skipped` : summary, errors.length ? 'err' : 'ok')
   updateSubmit()
+}
+function changeView() {
+  navigationRequest++
+  navigationStatus.textContent = ''
+  navigationStatus.className = ''
+  if (scanId !== undefined) {
+    parent.postMessage({ pluginMessage: { type: 'cancel-navigation', scanId } }, '*')
+  }
+  renderList()
+}
+function savePreferences() {
+  editedPreferences = true
+  parent.postMessage({ pluginMessage: { type: 'save-preferences', preferences: { problemsOnly: problemsInput.checked } } }, '*')
+}
+searchInput.addEventListener('input', changeView)
+problemsInput.addEventListener('change', () => {
+  changeView()
+  savePreferences()
+})
+clearFilters.addEventListener('click', () => {
+  searchInput.value = ''
+  problemsInput.checked = false
+  changeView()
+  savePreferences()
+})
+for (const key of ['repo', 'token', 'eventType'] as const) {
+  settingsInputs[key].addEventListener('input', () => editedSettings.add(key))
+}
+for (const scope of ['settings', 'preferences'] as const) {
+  document.querySelector(`#retry-${scope}`)!.addEventListener('click', () => {
+    parent.postMessage({
+      pluginMessage: {
+        type: 'retry-storage',
+        scope,
+        ...(scope === 'settings'
+          ? { settings: { repo: repoInput.value, token: tokenInput.value, eventType: eventInput.value } }
+          : { preferences: { problemsOnly: problemsInput.checked } }),
+      },
+    }, '*')
+  })
 }
 function invalidateNavigation(text: string, error = false) {
   scanId = undefined
@@ -199,9 +257,19 @@ window.onmessage = (event: MessageEvent<{
     navigationStatus.className = message.error ? 'err' : 'ok'
   }
   if (message.type === 'settings' && message.settings) {
-    repoInput.value = message.settings.repo ?? ''
-    tokenInput.value = message.settings.token ?? ''
-    eventInput.value = message.settings.eventType ?? 'iconctl-publish'
+    for (const key of ['repo', 'token', 'eventType'] as const) {
+      if (!editedSettings.has(key)) {
+        settingsInputs[key].value = message.settings[key] ?? (key === 'eventType' ? 'iconctl-publish' : '')
+      }
+    }
+  }
+  if (message.type === 'preferences' && typeof message.preferences?.problemsOnly === 'boolean' && !editedPreferences) {
+    problemsInput.checked = message.preferences.problemsOnly
+    changeView()
+  }
+  if (message.type === 'storage-status' && (message.scope === 'settings' || message.scope === 'preferences')) {
+    document.querySelector<HTMLElement>(`#${message.scope}-feedback`)!.hidden = !message.error
+    document.querySelector(`#${message.scope}-storage-status`)!.textContent = message.text ?? ''
   }
 }
 modeInput.addEventListener('change', () => {
@@ -222,3 +290,4 @@ document
   .querySelector('#disconnect')!
   .addEventListener('click', () => parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*'))
 parent.postMessage({ pluginMessage: { type: 'console-status' } }, '*')
+parent.postMessage({ pluginMessage: { type: 'load-settings' } }, '*')
