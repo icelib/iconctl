@@ -47,3 +47,4 @@ export {
 export { emptyIconSet, importLocalSvgDirectory, mergeIconSets, sync, type SyncOptions, type SyncResult } from './sync'
 export { FIGMA_TOKEN_HELP, MASTERGO_TOKEN_HELP, resolveFigmaToken, resolveMastergoToken } from './token'
 export { formatValidationIssues, validateIconSet, type ValidationIssue } from './validate'
+export { watch, type WatchEvent, type WatchOptions } from './watch'

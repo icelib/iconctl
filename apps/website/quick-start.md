@@ -101,6 +101,46 @@ When the Promise settles, work started by this call has settled and it performs 
 
 This is not a cross-path atomic publish or crash-recovery protocol. Serialize syncs targeting the same paths. For strict atomic publication, configure all outputs in a separate versioned directory, then publish that directory or switch a pointer after success. `dryRun` still skips icon outputs while authentication and request caches may update.
 
+### Local watch
+
+For a config containing only local SVG folders:
+
+```bash
+pnpm exec iconctl watch
+pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
+```
+
+Watch supports `directory`, `jsdesign` with `dir`, and `iconfont` with `dir` and no `url`. Figma, MasterGo and remote iconfont URLs require a one-shot `sync`. There is no remote polling or preview server. `init` now defaults to `raw-svg` for source SVGs and `svg` for generated SVGs.
+
+The watcher becomes ready before the initial sync. SVG additions, edits, deletions and source directory recreation trigger a sync after 150 ms of quiet. Runs are serial; changes during a run coalesce into a follow-up. Non-SVG files, hidden source directories, generated outputs and caches do not trigger source syncs. As with `sync`, source directories may overlap.
+
+Saving the main config or a local `extends` layer cancels the current run, waits for it to drain, reloads without the module cache and rebuilds the watched paths. Local relative or absolute `extends` paths are supported. Arbitrary imported helper files are not watched: save the main config or restart watch after editing them. An invalid initial configuration is fatal. Later syntax errors, missing config files and unsupported sources pause syncing until the configuration is repaired; stale configuration is never reused to keep writing. Source import and validation errors are recoverable. `--continue` explicitly permits partial results, and `--dry-run` keeps its usual sync behavior.
+
+Source roots must not contain, equal or sit inside generated SVG or JSON-package directories, or sit inside the cache. Config files must not be overwritten by any output or cache. A generated `.svg` file cannot live inside a source. Real paths and reachable directory links are checked before importing to reject output/cache aliases and link cycles. Use separate paths such as `raw-svg`, `svg` and `packages/icons`. JSON, TypeScript and HTML output files can be inside a source, provided they do not replace a config file. Keep custom cache directories outside sources or hidden, because the importer traverses visible directories.
+
+`--json` writes one compact object per stdout line: `ready`, `start`, `result`, `error` or `stopped`. Each run has an increasing `runId`; `start.reason` is `initial`, `source` or `config`. A `result` contains the same summary as `sync --json`, without SVG bodies. Errors contain only `name`, `message` and available `issues`. Human-readable output goes to stderr. Recoverable failures keep the process running; fatal failures exit 1. SIGINT and SIGTERM drain the current run, close watchers and exit 130 and 143 respectively.
+
+```ts
+import { IconctlAbortError, watch } from 'iconctl'
+
+const controller = new AbortController()
+try {
+  await watch({
+    cwd: process.cwd(),
+    signal: controller.signal,
+    onEvent(event) {
+      if (event.type === 'result') console.log(event.result.diff)
+    },
+  })
+}
+catch (error) {
+  if (!(error instanceof IconctlAbortError)) throw error
+}
+// Call controller.abort() from your application's shutdown handler.
+```
+
+The long-running Promise rejects with `IconctlAbortError` after cancellation cleanup and a `stopped` event. Once it settles, it performs no later writes. The existing sync commit boundary still applies: a commit already in progress finishes before configuration reload or shutdown continues.
+
 ## 5. Use the JSON
 
 With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font.

@@ -101,6 +101,46 @@ Promise 结束时，本次调用启动的工作均已结束，不会再写图标
 
 这不提供跨路径原子发布或进程崩溃恢复。写入相同路径的同步应串行运行。需要严格原子发布时，将全部输出配置到独立的版本目录，成功后再发布目录或切换指针。`dryRun` 仍跳过图标产物，但认证和请求缓存可能更新。
 
+### 本地监听
+
+配置只包含本地 SVG 目录时，可以运行：
+
+```bash
+pnpm exec iconctl watch
+pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
+```
+
+支持 `directory`、带 `dir` 的 `jsdesign`，以及带 `dir` 且没有 `url` 的 `iconfont`。Figma、MasterGo 和远程 iconfont URL 继续使用单次 `sync`；监听不提供远程轮询或预览服务器。`init` 现在默认把原始 SVG 放在 `raw-svg`，生成 SVG 放在 `svg`。
+
+文件监听准备完成后执行首次同步。SVG 新增、修改、删除和来源目录重建在 150 ms 无新事件后触发同步。所有同步串行执行，运行期间的多次变更合并为下一轮。非 SVG 文件、隐藏来源目录、生成产物和缓存不会触发来源同步。与 `sync` 一样，多个来源目录可以重叠。
+
+保存主配置或本地 `extends` 配置层时，先取消当前同步并等待其结束，再禁用模块缓存重载配置、重建监听路径。`extends` 支持本地相对路径或绝对路径。任意 `import` 的辅助文件不在监听范围内，修改后请保存主配置或重启监听。启动时配置无效会直接失败；运行期间遇到语法错误、配置文件丢失或不支持的来源时，会暂停同步，修复后自动恢复，不会继续使用旧配置写入。来源导入和校验失败可恢复；`--continue` 显式允许部分产物，`--dry-run` 保持单次同步的行为。
+
+来源根目录不能包含、等于或位于生成的 SVG／JSON 包目录内，也不能位于缓存内。任何输出和缓存都不能覆盖配置文件，生成的 `.svg` 文件也不能放在来源内。导入前会校验真实路径和可达目录链接，拒绝指向产物／缓存的别名及链接循环。推荐使用彼此分离的 `raw-svg`、`svg` 和 `packages/icons`。JSON、TypeScript、HTML 输出文件可以位于来源内，但不能替换配置文件。自定义缓存应放在来源外或隐藏目录内，因为导入器会遍历可见子目录。
+
+`--json` 在 stdout 每行输出一个紧凑 JSON 对象：`ready`、`start`、`result`、`error` 或 `stopped`。每轮有递增的 `runId`；`start.reason` 为 `initial`、`source` 或 `config`。`result` 与 `sync --json` 使用相同摘要，不包含 SVG 内容；错误只序列化 `name`、`message` 和可用的 `issues`。人类可读日志写入 stderr。可恢复错误不会结束进程，致命错误退出码为 1。SIGINT／SIGTERM 等待当前同步结束、关闭监听后分别以 130／143 退出。
+
+```ts
+import { IconctlAbortError, watch } from 'iconctl'
+
+const controller = new AbortController()
+try {
+  await watch({
+    cwd: process.cwd(),
+    signal: controller.signal,
+    onEvent(event) {
+      if (event.type === 'result') console.log(event.result.diff)
+    },
+  })
+}
+catch (error) {
+  if (!(error instanceof IconctlAbortError)) throw error
+}
+// 在应用的退出处理器中调用 controller.abort()。
+```
+
+长期运行的 Promise 会在取消清理完成、发出 `stopped` 事件后以 `IconctlAbortError` 拒绝；结束后不会继续写入。已有同步提交边界仍然适用：提交若已开始，会先完成，再继续配置重载或退出。
+
 ## 5. 使用 JSON
 
 在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体。

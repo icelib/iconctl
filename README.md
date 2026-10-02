@@ -31,12 +31,15 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | --- | --- |
 | `iconctl init` | Write `iconctl.config.ts` |
 | `iconctl sync` | Load sources, clean, validate, export |
+| `iconctl watch` | Continuously sync local SVG folders and reload config |
 | `iconctl check` | Validate existing output without remote sources |
 | `iconctl preview` | Write a static HTML gallery |
 
 `sync --json` prints `added`, `removed`, `changed`, `skipped`, `sources`, `fileVersion`, and `outputFiles`. Validation failures exit non-zero and do not write a partial set.
 
 `sync({ signal })` supports caller cancellation. Individual import/processing failures now also block output replacement by default. Explicit `continueOnError: true` exports available icons with `complete: false`, diagnostic `issues`, and `diff.deletionsReliable: false`; removals and changelog updates are suppressed. Outputs are staged before commit. Cancellation before commit preserves old outputs; cancellation after commit starts waits for successful completion. Shared OAuth refresh finishes safely before cancellation returns. Cross-path atomic publication is not guaranteed; see [cancellation and integrity](apps/website/quick-start.md#sync-integrity-and-cancellation) for the full contract.
+
+For local development, `iconctl watch` performs an initial sync and watches SVG edits. Keep inputs such as `raw-svg` separate from generated SVG/package directories. It supports local `directory`, `jsdesign.dir` and `iconfont.dir` sources; remote sources still use `sync`. `watch --json` emits NDJSON events. See [local watch](apps/website/quick-start.md#local-watch) for configuration recovery, cancellation and the API.
 
 ## Config
 

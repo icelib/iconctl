@@ -1,6 +1,6 @@
 import type { SyncIssue, SyncResult } from '..'
 import { expectType } from 'tsd'
-import { defineConfig, IconctlAbortError, IconctlSyncError, parseFigmaFileKey, resolveConfig, sync } from '..'
+import { defineConfig, IconctlAbortError, IconctlSyncError, parseFigmaFileKey, resolveConfig, sync, watch } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
 expectType<{ prefix: string, sources: [{ type: 'figma', file: string }] }>(defineConfig({
@@ -16,3 +16,11 @@ expectType<boolean>(result.diff.deletionsReliable)
 expectType<SyncIssue[]>(result.issues)
 expectType<SyncIssue[]>(new IconctlSyncError([]).issues)
 expectType<'ABORT_ERR'>(new IconctlAbortError().code)
+expectType<Promise<void>>(watch({ signal: new AbortController().signal, onEvent(event) {
+  if (event.type === 'result') {
+    expectType<SyncResult>(event.result)
+  }
+  if (event.type === 'start') {
+    expectType<'initial' | 'source' | 'config'>(event.reason)
+  }
+} }))

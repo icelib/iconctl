@@ -10,6 +10,8 @@ import {
 import { cac } from 'cac'
 import { consola } from 'consola'
 import { runFigmaAuth } from './figma-auth'
+import { syncSummary } from './sync-summary'
+import { runWatch } from './watch'
 
 interface GlobalOptions {
   config?: string
@@ -39,21 +41,7 @@ function printError(error: unknown): never {
 
 function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boolean) {
   if (asJson) {
-    process.stdout.write(`${JSON.stringify({
-      prefix: result.prefix,
-      complete: result.complete,
-      deletionsReliable: result.diff.deletionsReliable,
-      fileKey: result.fileKey,
-      fileVersion: result.fileVersion,
-      notModified: result.notModified,
-      sources: result.sources,
-      added: result.diff.added,
-      removed: result.diff.removed,
-      changed: result.diff.changed,
-      skipped: result.failed,
-      issues: result.issues,
-      outputFiles: result.files,
-    }, null, 2)}\n`)
+    process.stdout.write(`${JSON.stringify(syncSummary(result), null, 2)}\n`)
     return
   }
 
@@ -115,6 +103,10 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
+
+  cli
+    .command('watch', 'Watch local SVG sources and reload config on change')
+    .action(runWatch)
 
   cli
     .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')
@@ -201,8 +193,8 @@ export async function runCli(argv: string[] = process.argv) {
         })
         const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
         const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
-        let sourceBlock = `{ type: 'directory', dir: './svg' }`
-        let hint = 'Put SVGs in ./svg, then run `iconctl sync`.'
+        let sourceBlock = `{ type: 'directory', dir: './raw-svg' }`
+        let hint = 'Put SVGs in ./raw-svg, then run `iconctl sync` or `iconctl watch`.'
         if (sourceType === 'figma') {
           const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
           sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
@@ -230,8 +222,8 @@ export async function runCli(argv: string[] = process.argv) {
           hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
         }
         else {
-          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './svg', default: './svg' })
-          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './svg')} }`
+          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './raw-svg', default: './raw-svg' })
+          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './raw-svg')} }`
         }
         const contents = configTemplate({
           prefix: prefix || 'brand',
