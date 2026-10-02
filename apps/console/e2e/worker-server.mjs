@@ -10,6 +10,7 @@ import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from
 async function main() {
   const entrypoint = new Map([
     ['history', './fixtures/history-worker.mjs'],
+    ['provenance', './fixtures/provenance-worker.mjs'],
     ['release-comparison', './fixtures/release-comparison-worker.mjs'],
   ]).get(process.argv[2])
   if (!entrypoint) {
