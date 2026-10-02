@@ -60,9 +60,9 @@ describe('sync failure reporting', () => {
     const success = vi.spyOn(consola, 'success').mockImplementation(() => {})
     await runCli(['node', 'iconctl', command, '--config', configFile, '--continue'])
     expect(process.exitCode).toBe(0)
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('with errors (--continue)'))
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('Incomplete sync'))
     expect(warning).toHaveBeenCalledWith('skipped: bad')
-    expect(warning).toHaveBeenCalledWith(expect.stringMatching(/^bad: Cannot import/))
+    expect(warning).toHaveBeenCalledWith(expect.stringMatching(/^bad \[import\]: Cannot import/))
     expect(success).not.toHaveBeenCalled()
   })
 

@@ -2,6 +2,7 @@ import type { LoadedSource, ResolvedIconfontSourceConfig } from './types'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { blankIconSet } from '@iconify/tools'
 import { isAbsolute, join, resolve } from 'pathe'
+import { checkpoint } from '../abort'
 import { IconctlError } from '../errors'
 import { fetchText } from '../http'
 import { addSvgToIconSet, applyNameTransform, stripIconPrefix } from '../icon-set'
@@ -47,10 +48,11 @@ export async function writeIconfontJsToDirectory(
 
 export async function loadIconfontSource(
   source: ResolvedIconfontSourceConfig,
-  options: { cwd: string, prefix: string },
+  options: { cwd: string, prefix: string, signal?: AbortSignal },
 ): Promise<LoadedSource> {
+  await checkpoint(options.signal)
   if (source.url) {
-    const js = await fetchText(source.url)
+    const js = await fetchText(source.url, options.signal ? { signal: options.signal } : undefined)
     const parsed = parseIconfontSymbols(js)
     const failures = parsed.failures.map(failure => ({ ...failure, name: stripIconPrefix(failure.name, source.stripPrefix) || failure.name }))
     if (!parsed.symbols.length && !failures.length) {
@@ -58,6 +60,7 @@ export async function loadIconfontSource(
     }
     const iconSet = blankIconSet(options.prefix)
     for (const symbol of parsed.symbols) {
+      await checkpoint(options.signal)
       const name = stripIconPrefix(symbol.id, source.stripPrefix)
       if (!name) {
         failures.push({ name: symbol.id, message: 'The iconfont symbol id cannot be converted to an icon name.' })
@@ -70,7 +73,7 @@ export async function loadIconfontSource(
         failures.push({ name, message: 'The iconfont symbol contains an invalid SVG.' })
       }
     }
-    return { type: 'iconfont', iconSet, notModified: false, ...(failures.length ? { failures } : {}) }
+    return { type: 'iconfont', iconSet, notModified: false, issues: failures.map(failure => ({ ...failure, stage: 'import', sourceType: 'iconfont' })), ...(failures.length ? { failures } : {}) }
   }
 
   if (source.dir) {
@@ -84,7 +87,8 @@ export async function loadIconfontSource(
       }
       return renamed || null
     })
-    return { type: 'iconfont', iconSet, notModified: false, ...(failures.length ? { failures } : {}) }
+    await checkpoint(options.signal)
+    return { type: 'iconfont', iconSet, notModified: false, issues: failures.map(failure => ({ ...failure, stage: 'import', sourceType: 'iconfont' })), ...(failures.length ? { failures } : {}) }
   }
 
   throw new IconctlError('iconctl iconfont source needs `url` or `dir`')

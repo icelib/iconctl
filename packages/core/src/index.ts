@@ -18,7 +18,7 @@ export {
   resolveJsonPackage,
 } from './config'
 export { diffIconSets, type IconDiff } from './diff'
-export { IconctlError } from './errors'
+export { IconctlAbortError, IconctlError, IconctlSyncError, type SyncIssue } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
 export { getFigmaAuthStatus, logoutFigma } from './figma/auth'
 export type { FigmaAuth } from './figma/auth'

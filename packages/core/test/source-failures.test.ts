@@ -1,11 +1,16 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { importLocalSvgDirectory } from '../src'
+import { IconctlAbortError, importLocalSvgDirectory } from '../src'
 import { loadDirectorySource } from '../src/sources/directory'
 import { loadIconfontSource } from '../src/sources/iconfont'
 import { loadJsdesignSource } from '../src/sources/jsdesign'
 import { loadMastergoSource } from '../src/sources/mastergo'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, readFile: vi.fn(actual.readFile) }
+})
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>'
 let directory: string
@@ -13,8 +18,22 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'iconctl-source-failures-'))
 })
 afterEach(async () => {
+  vi.mocked(readFile).mockRestore()
   vi.unstubAllGlobals()
   await rm(directory, { recursive: true, force: true })
+})
+
+it('normalizes cancellation during an SVG file read to IconctlAbortError', async () => {
+  await writeFile(join(directory, 'good.svg'), svg)
+  const controller = new AbortController()
+  vi.mocked(readFile).mockImplementationOnce(async (_path, options) => {
+    expect(options).toMatchObject({ signal: controller.signal })
+    controller.abort('cancelled while reading')
+    throw new DOMException('The operation was aborted', 'AbortError')
+  })
+  const task = loadDirectorySource({ type: 'directory', dir: directory }, { cwd: directory, prefix: 'brand', signal: controller.signal })
+  await expect(task).rejects.toBeInstanceOf(IconctlAbortError)
+  await expect(task).rejects.toMatchObject({ code: 'ABORT_ERR', cause: 'cancelled while reading' })
 })
 
 it.each(['directory', 'jsdesign', 'iconfont'] as const)('reports malformed local SVGs from %s without losing valid icons', async (type) => {

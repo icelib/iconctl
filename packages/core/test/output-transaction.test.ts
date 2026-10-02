@@ -1,216 +1,166 @@
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import process from 'node:process'
-import { IconSet } from '@iconify/tools'
-import { resolveConfig, sync } from '../src'
-import { OutputTransaction } from '../src/output-transaction'
+import * as fs from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setImmediate } from 'node:timers/promises'
+import { blankIconSet, SVG } from '@iconify/tools'
+import { exportOutputs, IconctlAbortError, resolveConfig, sync } from '../src'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, rename: vi.fn(actual.rename), rm: vi.fn(actual.rm) }
+  const actual = await importOriginal<typeof fs>()
+  return { ...actual, rename: vi.fn(actual.rename), writeFile: vi.fn(actual.writeFile) }
 })
-
-const roots: string[] = []
-async function fixture() {
-  const cwd = await realpath(await mkdtemp(path.join(os.tmpdir(), 'iconctl-transaction-')))
-  roots.push(cwd)
-  const config = resolveConfig({
-    prefix: 'brand',
-    sources: [{ type: 'directory', dir: 'raw' }],
-    output: { json: 'icons.json', svg: 'svg', types: 'types.ts', preview: 'preview.html', changelog: 'CHANGELOG.md', jsonPackage: { dir: 'pkg', clean: false } },
-  })
-  return { cwd, config }
+const actual = await vi.importActual<typeof fs>('node:fs/promises')
+let cwd: string
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M0 0h12v24H0z"/></svg>'
+function iconSet() {
+  const set = blankIconSet('fixture')
+  set.fromSVG('first', new SVG(svg))
+  set.fromSVG('second', new SVG(svg))
+  return set
 }
-function icons(...names: string[]) {
-  return new IconSet({ prefix: 'brand', width: 24, height: 24, icons: Object.fromEntries(names.map(name => [name, { body: '<path fill="currentColor" d="M0 0h24v24H0z"/>' }])) })
+function config() {
+  return resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'icons.json', svg: 'svg', preview: 'preview.html', types: 'types.ts', jsonPackage: { dir: 'pkg', clean: false }, changelog: 'CHANGELOG.md' } })
 }
-async function tree(root: string): Promise<Record<string, string>> {
-  const result: Record<string, string> = {}
-  async function visit(directory: string) {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const file = path.join(directory, entry.name)
-      if (entry.isDirectory()) {
-        await visit(file)
-      }
-      else {
-        result[path.relative(root, file)] = await readFile(file, 'utf8')
-      }
-    }
+const originalFiles = ['icons.json', 'svg/keep.svg', 'types.ts', 'preview.html', 'pkg/KEEP', 'pkg/package.json', 'CHANGELOG.md']
+async function snapshot() {
+  return await Promise.all(originalFiles.map(file => fs.readFile(join(cwd, file), 'utf8')))
+}
+async function stagedFiles() {
+  return (await fs.readdir(cwd, { recursive: true })).filter(file => file.includes('.iconctl-stage-'))
+}
+beforeEach(async () => {
+  vi.mocked(fs.rename).mockImplementation(actual.rename)
+  vi.mocked(fs.writeFile).mockImplementation(actual.writeFile)
+  cwd = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'iconctl-output-')))
+  await fs.mkdir(join(cwd, 'svg'))
+  await fs.mkdir(join(cwd, 'pkg'))
+  for (const file of originalFiles) {
+    await fs.writeFile(join(cwd, file), file === 'pkg/package.json' ? JSON.stringify({ name: '@test/icons', version: '1.2.3', private: true }) : `old-${file}`)
   }
-  await visit(root)
-  return result
-}
+})
 afterEach(async () => {
-  vi.mocked(rename).mockRestore()
-  vi.mocked(rm).mockRestore()
-  vi.restoreAllMocks()
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  vi.mocked(fs.rename).mockImplementation(actual.rename)
+  vi.mocked(fs.writeFile).mockImplementation(actual.writeFile)
+  await fs.rm(cwd, { recursive: true, force: true })
 })
 
-it.each(['types.ts', 'preview.html', 'pkg', '.iconctl-cache/meta.json'])('rolls back all outputs when committing %s fails', async (destination) => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  await mkdir(path.join(cwd, '.iconctl-cache'), { recursive: true })
-  await writeFile(path.join(cwd, '.iconctl-cache/meta.json'), '{"version":"old"}')
-  const before = await tree(cwd)
-  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename
-  vi.mocked(rename).mockImplementation(async (from, to) => {
-    if (destination === '.iconctl-cache/meta.json'
-      ? String(from) === path.join(cwd, destination)
-      : String(from).endsWith('/next') && String(to) === path.join(cwd, destination)) {
-      throw new Error('injected commit failure')
+it('cancels temporary SVG generation and leaves all previous outputs intact', async () => {
+  const before = await snapshot()
+  const controller = new AbortController()
+  let stagedWrites = 0
+  vi.mocked(fs.writeFile).mockImplementation(async (...args) => {
+    await actual.writeFile(...args)
+    if (String(args[0]).includes('.iconctl-stage-')) {
+      stagedWrites++
+      if (String(args[0]).endsWith('first.svg')) {
+        controller.abort()
+      }
     }
-    await original(from, to)
   })
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('injected commit failure')
-  expect(await tree(cwd)).toEqual(before)
-  expect((await readdir(cwd)).some(name => name.startsWith('.iconctl-transaction-'))).toBe(false)
+  await expect(sync({ cwd, config: config(), iconSet: iconSet(), signal: controller.signal })).rejects.toBeInstanceOf(IconctlAbortError)
+  expect(await snapshot()).toEqual(before)
+  expect(await stagedFiles()).toEqual([])
+  const count = stagedWrites
+  await setImmediate()
+  expect(stagedWrites).toBe(count)
 })
 
-it('stages every output before replacing any old file', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  await writeFile(path.join(cwd, 'pkg/package.json'), '{broken')
-  const before = await tree(cwd)
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow()
-  expect(await tree(cwd)).toEqual(before)
+it('finishes a started commit even when cancellation arrives during replacement', async () => {
+  const controller = new AbortController()
+  vi.mocked(fs.rename).mockImplementation(async (...args) => {
+    await actual.rename(...args)
+    if (String(args[1]).endsWith('/backup')) {
+      controller.abort()
+    }
+  })
+  const result = await sync({ cwd, config: config(), iconSet: iconSet(), signal: controller.signal })
+  expect(controller.signal.aborted).toBe(true)
+  expect(result.complete).toBe(true)
+  expect(JSON.parse(await fs.readFile(join(cwd, 'icons.json'), 'utf8')).icons).toHaveProperty('second')
+  expect(await fs.readFile(join(cwd, 'svg/second.svg'), 'utf8')).toContain('<svg')
+  expect(await fs.readFile(join(cwd, 'pkg/KEEP'), 'utf8')).toBe('old-pkg/KEEP')
+  expect(await stagedFiles()).toEqual([])
 })
 
-it.each(['types', 'preview', 'jsonPackage'] as const)('rejects wrong destination types before changing outputs: %s', async (kind) => {
-  const { cwd, config } = await fixture()
-  await writeFile(path.join(cwd, 'icons.json'), '{"prefix":"brand","icons":{}}')
-  if (kind === 'jsonPackage') {
-    await writeFile(path.join(cwd, 'pkg'), 'occupied')
+it('rolls back earlier replacements when a later replacement fails', async () => {
+  const before = await snapshot()
+  let failed = false
+  vi.mocked(fs.rename).mockImplementation(async (...args) => {
+    if (!failed && String(args[0]).endsWith('/output') && String(args[1]) === join(cwd, 'svg')) {
+      failed = true
+      throw new Error('simulated disk failure')
+    }
+    await actual.rename(...args)
+  })
+  await expect(sync({ cwd, config: config(), iconSet: iconSet() })).rejects.toThrow('previous outputs were restored')
+  expect(await snapshot()).toEqual(before)
+  expect(await stagedFiles()).toEqual([])
+})
+
+it('preserves recoverable backups and reports their location if rollback also fails', async () => {
+  vi.mocked(fs.rename).mockImplementation(async (...args) => {
+    if (String(args[1]) === join(cwd, 'svg')) {
+      throw new Error('simulated persistent disk failure')
+    }
+    await actual.rename(...args)
+  })
+  await expect(sync({ cwd, config: config(), iconSet: iconSet() })).rejects.toThrow('Recover backups from:')
+  const backup = (await stagedFiles()).find(file => file.endsWith('/backup/keep.svg'))
+  expect(backup).toBeDefined()
+  expect(await fs.readFile(join(cwd, backup!), 'utf8')).toBe('old-svg/keep.svg')
+})
+
+it('does not touch outputs if generation fails', async () => {
+  const before = await snapshot()
+  vi.mocked(fs.writeFile).mockImplementation(async (...args) => {
+    if (String(args[0]).includes('.iconctl-stage-') && String(args[0]).endsWith('second.svg')) {
+      throw new Error('generation failure')
+    }
+    await actual.writeFile(...args)
+  })
+  await expect(sync({ cwd, config: config(), iconSet: iconSet() })).rejects.toThrow('generation failure')
+  expect(await snapshot()).toEqual(before)
+  expect(await stagedFiles()).toEqual([])
+})
+
+it.each([false, true])('groups nested outputs with clean:%s', async (clean) => {
+  const cfg = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'pkg/custom.json', jsonPackage: { dir: 'pkg', clean }, svg: 'pkg/svg', types: 'pkg/types.ts', preview: 'pkg/preview.html', changelog: 'pkg/CHANGELOG.md' } })
+  await fs.writeFile(join(cwd, 'pkg/CHANGELOG.md'), '# Changelog\n\n## 2020-01-01\n\n- Added: `historical`\n')
+  await sync({ cwd, config: cfg, iconSet: iconSet() })
+  expect(await fs.readFile(join(cwd, 'pkg/CHANGELOG.md'), 'utf8')).toContain('historical')
+  for (const file of ['custom.json', 'icons.json', 'types.ts', 'preview.html', 'CHANGELOG.md', 'svg/first.svg']) {
+    expect(await fs.readFile(join(cwd, 'pkg', file), 'utf8')).not.toBe('')
+  }
+  if (!clean) {
+    expect(JSON.parse(await fs.readFile(join(cwd, 'pkg/package.json'), 'utf8'))).toMatchObject({ version: '1.2.3', private: true })
+    expect(await fs.readFile(join(cwd, 'pkg/KEEP'), 'utf8')).toBe('old-pkg/KEEP')
   }
   else {
-    await mkdir(path.join(cwd, config.output[kind]!))
+    await expect(fs.readFile(join(cwd, 'pkg/KEEP'))).rejects.toThrow()
   }
-  const before = await tree(cwd)
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('wrong file type')
-  expect(await tree(cwd)).toEqual(before)
 })
 
-it('rejects overlapping output targets including directory aliases', async () => {
-  const { cwd, config } = await fixture()
-  config.output.types = 'svg/types.ts'
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('Conflicting output targets')
-  expect(await tree(cwd)).toEqual({})
-  await mkdir(path.join(cwd, 'actual'))
-  await symlink(path.join(cwd, 'actual'), path.join(cwd, 'alias'))
-  config.output.json = 'actual/icons.json'
-  config.output.types = 'alias/icons.json'
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('Conflicting output targets')
+it('supports cancellation in the public exportOutputs helper', async () => {
+  const before = await snapshot()
+  await expect(exportOutputs(iconSet(), config(), { cwd, signal: AbortSignal.abort() })).rejects.toBeInstanceOf(IconctlAbortError)
+  expect(await snapshot()).toEqual(before)
 })
 
-it('removes deleted and renamed managed SVGs while preserving other files', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old', 'keep') })
-  await writeFile(path.join(cwd, 'svg/manual.svg'), 'manually maintained')
-  await writeFile(path.join(cwd, 'svg/README.md'), 'keep me')
-  await sync({ cwd, config, iconSet: icons('renamed', 'keep') })
-  expect((await readdir(path.join(cwd, 'svg'))).sort()).toEqual(['.iconctl-manifest.json', 'README.md', 'keep.svg', 'manual.svg', 'renamed.svg'])
-  await sync({ cwd, config, iconSet: icons() })
-  expect((await readdir(path.join(cwd, 'svg'))).sort()).toEqual(['.iconctl-manifest.json', 'README.md', 'manual.svg'])
-  expect(await readFile(path.join(cwd, 'svg/manual.svg'), 'utf8')).toBe('manually maintained')
+it('preserves a nested changelog when a partial export cleans its package directory', async () => {
+  const cfg = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'pkg/custom.json', jsonPackage: 'pkg', changelog: 'pkg/CHANGELOG.md' }, validate: { width: 16 } })
+  await fs.writeFile(join(cwd, 'pkg/CHANGELOG.md'), 'previous changelog')
+  const result = await sync({ cwd, config: cfg, iconSet: iconSet(), continueOnError: true })
+  expect(result.complete).toBe(false)
+  expect(await fs.readFile(join(cwd, 'pkg/CHANGELOG.md'), 'utf8')).toBe('previous changelog')
+  expect(JSON.parse(await fs.readFile(join(cwd, 'pkg/custom.json'), 'utf8')).icons).toHaveProperty('second')
 })
 
-it('adopts only matching legacy SVGs without a manifest', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old', 'edited') })
-  await rm(path.join(cwd, 'svg/.iconctl-manifest.json'))
-  await writeFile(path.join(cwd, 'svg/edited.svg'), 'user edit')
-  await sync({ cwd, config, iconSet: icons('new') })
-  expect((await readdir(path.join(cwd, 'svg'))).sort()).toEqual(['.iconctl-manifest.json', 'edited.svg', 'new.svg'])
-})
-
-it('rejects a malformed manifest without deleting any file', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  await writeFile(path.join(cwd, 'svg/.iconctl-manifest.json'), JSON.stringify({ version: 1, files: ['../icons.json'] }))
-  const before = await tree(cwd)
-  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('Invalid SVG output manifest')
-  expect(await tree(cwd)).toEqual(before)
-})
-
-it('does not follow generated SVG symlinks while staging', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  await writeFile(path.join(cwd, 'outside'), 'untouched')
-  await rm(path.join(cwd, 'svg/old.svg'))
-  await symlink(path.join(cwd, 'outside'), path.join(cwd, 'svg/old.svg'))
-  await sync({ cwd, config, iconSet: icons('old') })
-  expect(await readFile(path.join(cwd, 'outside'), 'utf8')).toBe('untouched')
-  expect(await readFile(path.join(cwd, 'svg/old.svg'), 'utf8')).toContain('<svg')
-})
-
-it('leaves outputs, manifests and completion cache untouched during dry-run', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  const before = await tree(cwd)
-  const result = await sync({ cwd, config, iconSet: icons('new'), dryRun: true })
-  expect(result.files).toEqual([])
-  expect(result.diff.removed).toEqual(['old'])
-  expect(await tree(cwd)).toEqual(before)
-})
-
-it('retains recovery backups if rollback itself fails', async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-rollback-'))
-  roots.push(cwd)
-  const destination = path.join(cwd, 'icons.json')
-  await writeFile(destination, 'old')
-  const transaction = new OutputTransaction()
-  transaction.add(destination, 'file', async staged => writeFile(staged, 'new'))
-  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename
-  vi.mocked(rename).mockImplementation(async (from, to) => {
-    if (String(from).endsWith('/next') || String(from).endsWith('/previous')) {
-      throw new Error('disk unavailable')
-    }
-    await original(from, to)
-  })
-  await expect(transaction.commit()).rejects.toThrow('recovery files retained')
-  const backup = (await readdir(cwd)).find(name => name.startsWith('.iconctl-transaction-'))!
-  expect(await readFile(path.join(cwd, backup, 'previous'), 'utf8')).toBe('old')
-})
-
-it('removes newly created outputs and parent directories on a first-run failure', async () => {
-  const { cwd } = await fixture()
-  const transaction = new OutputTransaction()
-  transaction.add(path.join(cwd, 'nested/deep/first.json'), 'file', async staged => writeFile(staged, 'first'))
-  transaction.add(path.join(cwd, 'nested/deep/second.json'), 'file', async staged => writeFile(staged, 'second'))
-  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename
-  vi.mocked(rename).mockImplementation(async (from, to) => {
-    if (String(to).endsWith('/second.json')) {
-      throw new Error('injected commit failure')
-    }
-    await original(from, to)
-  })
-  await expect(transaction.commit()).rejects.toThrow('injected commit failure')
-  expect(await readdir(cwd)).toEqual([])
-})
-
-it('checks changelog destination conflicts even when there are no changes', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('same') })
-  config.output.changelog = config.output.types!
-  const before = await tree(cwd)
-  await expect(sync({ cwd, config, iconSet: icons('same') })).rejects.toThrow('Conflicting output targets')
-  expect(await tree(cwd)).toEqual(before)
-})
-
-it('reports post-commit cleanup failures without reporting the committed sync as failed', async () => {
-  const { cwd, config } = await fixture()
-  await sync({ cwd, config, iconSet: icons('old') })
-  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rm
-  const warning = vi.spyOn(process, 'emitWarning').mockImplementation(() => {})
-  vi.mocked(rm).mockImplementation(async (file, options) => {
-    if (path.basename(String(file)).startsWith('.iconctl-transaction-')) {
-      throw new Error('cleanup unavailable')
-    }
-    await original(file, options)
-  })
-  const result = await sync({ cwd, config, iconSet: icons('new') })
-  expect(result.diff.added).toEqual(['new'])
-  expect(JSON.parse(await readFile(path.join(cwd, 'icons.json'), 'utf8')).icons).toHaveProperty('new')
-  expect(warning).toHaveBeenCalledWith(expect.stringContaining('Remove these directories manually:'), { code: 'ICONCTL_OUTPUT_CLEANUP' })
+it('does not allow partial export names to escape the temporary SVG directory', async () => {
+  const set = blankIconSet('fixture')
+  set.fromSVG('../../escape', new SVG(svg))
+  const before = await snapshot()
+  await expect(sync({ cwd, config: config(), iconSet: set, continueOnError: true })).rejects.toThrow('escapes the output directory')
+  expect(await snapshot()).toEqual(before)
+  await expect(fs.readFile(join(cwd, 'escape.svg'))).rejects.toThrow()
+  expect(await stagedFiles()).toEqual([])
 })

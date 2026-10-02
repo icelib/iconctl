@@ -1,10 +1,11 @@
 import type { IconSet } from '@iconify/tools'
 import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
-import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { exportJSONPackage, exportToDirectory, IconSet as IconSetClass, writeJSONFile } from '@iconify/tools'
-import { join, resolve } from 'pathe'
+import { exportJSONPackage, IconSet as IconSetClass, writeJSONFile } from '@iconify/tools'
+import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'pathe'
+import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 import { OutputTransaction } from './output-transaction'
 
@@ -28,21 +29,7 @@ async function readOptional(file: string): Promise<string | undefined> {
   }
 }
 
-async function copyExistingDirectory(source: string, target: string) {
-  try {
-    await lstat(source)
-  }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error
-    }
-    await mkdir(target)
-    return
-  }
-  await cp(source, target, { recursive: true, verbatimSymlinks: true })
-}
-
-async function managedSvgFiles(directory: string, previous?: IconifyJSON): Promise<string[]> {
+async function managedSvgFiles(directory: string, previous: IconifyJSON | undefined, signal?: AbortSignal): Promise<string[]> {
   const manifest = await readOptional(join(directory, svgManifest))
   if (manifest !== undefined) {
     const parsed: unknown = JSON.parse(manifest)
@@ -51,11 +38,11 @@ async function managedSvgFiles(directory: string, previous?: IconifyJSON): Promi
     }
     return parsed.files as string[]
   }
-  // Adopt legacy outputs only when both the prior JSON and exact SVG agree.
   const managed: string[] = []
   if (previous) {
     const oldSet = new IconSetClass(previous)
     for (const name of oldSet.list()) {
+      await checkpoint(signal)
       const file = `${name}.svg`
       if (safeSvgName.test(file) && await readOptional(join(directory, file)) === oldSet.toString(name, { width: 'auto', height: 'auto' })) {
         managed.push(file)
@@ -63,6 +50,11 @@ async function managedSvgFiles(directory: string, previous?: IconifyJSON): Promi
     }
   }
   return managed
+}
+
+async function writeTextFile(file: string, contents: string) {
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(file, contents, 'utf8')
 }
 
 export function generateIconNameTypes(prefix: string, names: string[]): string {
@@ -81,65 +73,65 @@ export async function readPreviousIconJson(file: string): Promise<IconifyJSON | 
   }
 }
 
-/** Build the output plan so sync can include preview, changelog and cache metadata. */
-export function prepareOutputs(
+export async function generateOutputs(
   iconSet: IconSet,
   config: ResolvedIconctlConfig,
-  options: { cwd: string, previous?: IconifyJSON },
-): ExportResult & { transaction: OutputTransaction } {
+  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
+): Promise<ExportResult> {
   const files: string[] = []
   const json = iconSet.export()
-  const transaction = new OutputTransaction()
-  const jsonFile = resolve(options.cwd, config.output.json)
-  transaction.add(jsonFile, 'file', async staged => writeJSONFile(staged, json))
-  files.push(jsonFile)
+  const resolve = (file: string) => file.startsWith('/') ? file : join(options.cwd, file)
 
-  if (config.output.svg) {
-    const svgDir = resolve(options.cwd, config.output.svg)
-    transaction.add(svgDir, 'directory', async (staged) => {
-      const managed = await managedSvgFiles(svgDir, options.previous)
-      await copyExistingDirectory(svgDir, staged)
-      const next = iconSet.list().map(name => `${name}.svg`)
-      if (!next.every(file => safeSvgName.test(file))) {
-        throw new IconctlError('SVG output names must be filenames without path separators')
+  if (!options.dryRun) {
+    await checkpoint(options.signal)
+    const generatedFiles = new Set<string>()
+    if (config.output.svg) {
+      for (const name of [...iconSet.list().map(name => `${name}.svg`), svgManifest]) {
+        generatedFiles.add(resolvePath(resolve(config.output.svg), name))
       }
-      for (const file of managed) {
-        if (!next.includes(file)) {
-          await rm(join(staged, file), { force: true })
-        }
+    }
+    if (config.output.jsonPackage) {
+      for (const name of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
+        generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
       }
-      // Remove copied generated targets, including symlinks, before writing.
-      for (const file of [...next, svgManifest]) {
-        await rm(join(staged, file), { force: true })
+    }
+    for (const file of [config.output.json, config.output.types, config.output.preview, config.output.changelog]) {
+      if (!file) {
+        continue
       }
-      await exportToDirectory(iconSet, { target: staged })
-      await writeFile(join(staged, svgManifest), `${JSON.stringify({ version: 1, files: next.sort() }, null, 2)}\n`)
-    })
-    files.push(svgDir)
-  }
-
-  if (config.output.jsonPackage) {
-    const pkg = config.output.jsonPackage
-    const dir = resolve(options.cwd, pkg.dir)
-    transaction.add(dir, 'directory', async (staged) => {
+      const target = resolvePath(resolve(file))
+      // The package's Iconify JSON can intentionally share the primary JSON
+      // output. All other generated files have distinct contents and owners.
+      const sharedJson = file === config.output.json && config.output.jsonPackage
+        && target === resolvePath(resolve(config.output.jsonPackage.dir), 'icons.json')
+      if (generatedFiles.has(target) && !sharedJson) {
+        throw new IconctlError(`Conflicting output targets: generated file and ${target}`)
+      }
+    }
+    const previous = await readPreviousIconJson(resolve(config.output.json))
+    const managed = config.output.svg
+      ? await managedSvgFiles(resolve(config.output.svg), previous, options.signal)
+      : []
+    if (config.output.jsonPackage) {
+      const pkg = config.output.jsonPackage
+      const dir = resolve(pkg.dir)
       let existing: Record<string, unknown> = {}
       if (pkg.clean === false) {
-        await copyExistingDirectory(dir, staged)
         const contents = await readOptional(join(dir, 'package.json'))
         if (contents) {
           existing = JSON.parse(contents) as Record<string, unknown>
         }
-        // Never follow copied links for generated package files.
         for (const file of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
-          await rm(join(staged, file), { force: true })
+          await checkpoint(options.signal)
+          await rm(join(dir, file), { force: true })
         }
       }
       await exportJSONPackage(iconSet, {
-        target: staged,
+        target: dir,
         cleanup: pkg.clean !== false,
         package: {
           name: pkg.name ?? `@iconify-json/${config.prefix}`,
-          description: 'Iconify JSON generated by iconctl',
+          description: `Iconify JSON generated by iconctl`,
           ...(typeof existing['version'] === 'string' ? { version: existing['version'] } : {}),
           ...pkg.package,
         },
@@ -154,28 +146,109 @@ export function prepareOutputs(
           }
         },
       })
-    })
-    files.push(dir)
+      files.push(dir)
+    }
+
+    await checkpoint(options.signal)
+    const jsonFile = resolve(config.output.json)
+    await mkdir(dirname(jsonFile), { recursive: true })
+    await writeJSONFile(jsonFile, json)
+    files.push(jsonFile)
+
+    if (config.output.svg) {
+      const svgDir = resolve(config.output.svg)
+      await mkdir(svgDir, { recursive: true })
+      const next = iconSet.list().map(name => `${name}.svg`)
+      if (!next.every(file => safeSvgName.test(file))) {
+        throw new IconctlError('SVG name escapes the output directory: names must be filenames without path separators')
+      }
+      for (const file of managed) {
+        await checkpoint(options.signal)
+        if (!next.includes(file)) {
+          await rm(join(svgDir, file), { force: true })
+        }
+      }
+      await iconSet.forEach(async (name) => {
+        await checkpoint(options.signal)
+        const svg = iconSet.toString(name, { width: 'auto', height: 'auto' })
+        if (svg) {
+          const target = join(svgDir, `${name}.svg`)
+          const path = relative(svgDir, target)
+          if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
+            throw new IconctlError(`SVG name escapes the output directory: ${name}`)
+          }
+          await rm(target, { force: true })
+          await writeTextFile(target, svg)
+        }
+      })
+      await checkpoint(options.signal)
+      await rm(join(svgDir, svgManifest), { force: true })
+      await writeFile(join(svgDir, svgManifest), `${JSON.stringify({ version: 1, files: next.sort() }, null, 2)}\n`)
+      files.push(svgDir)
+    }
+
+    await checkpoint(options.signal)
+    if (config.output.types) {
+      const names = Object.keys(json.icons).sort()
+      const typesFile = resolve(config.output.types)
+      await writeTextFile(typesFile, generateIconNameTypes(config.prefix, names))
+      files.push(typesFile)
+    }
   }
 
-  if (config.output.types) {
-    const typesFile = resolve(options.cwd, config.output.types)
-    transaction.add(typesFile, 'file', async staged => writeFile(staged, generateIconNameTypes(config.prefix, Object.keys(json.icons).sort()), 'utf8'))
-    files.push(typesFile)
+  const order = [config.output.json, config.output.svg, config.output.jsonPackage?.dir, config.output.types]
+    .flatMap(file => file ? [resolve(file)] : [])
+  files.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  return { files, json }
+}
+
+export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { path: string, directory?: boolean }[] {
+  const output = config.output
+  return [
+    { path: resolvePath(cwd, output.json) },
+    ...(output.svg ? [{ path: resolvePath(cwd, output.svg), directory: true }] : []),
+    ...(output.jsonPackage ? [{ path: resolvePath(cwd, output.jsonPackage.dir), directory: true }] : []),
+    ...[output.types, output.preview, output.changelog].flatMap(file => file ? [{ path: resolvePath(cwd, file) }] : []),
+  ]
+}
+
+export function stagedConfig(config: ResolvedIconctlConfig, cwd: string, transaction: OutputTransaction): ResolvedIconctlConfig {
+  const path = (file: string) => transaction.path(resolvePath(cwd, file))
+  const output = config.output
+  return {
+    ...config,
+    output: {
+      json: path(output.json),
+      ...(output.svg ? { svg: path(output.svg) } : {}),
+      ...(output.jsonPackage ? { jsonPackage: { ...output.jsonPackage, dir: path(output.jsonPackage.dir) } } : {}),
+      ...(output.types ? { types: path(output.types) } : {}),
+      ...(output.preview ? { preview: path(output.preview) } : {}),
+      ...(output.changelog ? { changelog: path(output.changelog) } : {}),
+    },
   }
-  return { files, json, transaction }
 }
 
 export async function exportOutputs(
   iconSet: IconSet,
   config: ResolvedIconctlConfig,
-  options: { cwd: string, dryRun?: boolean } = { cwd: process.cwd() },
+  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
 ): Promise<ExportResult> {
+  await checkpoint(options.signal)
   if (options.dryRun) {
     return { files: [], json: iconSet.export() }
   }
-  const previous = await readPreviousIconJson(resolve(options.cwd, config.output.json))
-  const { files, json, transaction } = prepareOutputs(iconSet, config, { cwd: options.cwd, ...(previous ? { previous } : {}) })
-  await transaction.commit()
-  return { files, json }
+  // Preview and changelog remain sync() responsibilities.
+  const { preview: _preview, changelog: _changelog, ...output } = config.output
+  const exportConfig = { ...config, output }
+  const targets = outputTargets(exportConfig, options.cwd)
+  const transaction = await OutputTransaction.create(targets, options.signal)
+  try {
+    const generatedConfig = stagedConfig(exportConfig, options.cwd, transaction)
+    const result = await generateOutputs(iconSet, generatedConfig, options)
+    await transaction.commit(options.signal)
+    return { json: result.json, files: targets.map(target => target.path) }
+  }
+  finally {
+    await transaction.dispose()
+  }
 }

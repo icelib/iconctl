@@ -39,7 +39,7 @@ describe('processIconSet', () => {
     const result = processIconSet(iconSet, config)
     expect(result.processed).toBe(1)
     expect(result.failed).toEqual(['bad'])
-    expect(result.issues).toEqual([{ name: 'bad', message: expect.stringContaining('cleaning SVG') }])
+    expect(result.issues).toEqual([{ name: 'bad', stage: 'process', message: expect.stringContaining('cleaning SVG') }])
     expect(iconSet.list()).toEqual(['good'])
   })
 
@@ -59,6 +59,6 @@ describe('processIconSet', () => {
     const result = processIconSet(iconSet, config)
     expect(result.processed).toBe(1)
     expect(result.failed).toEqual(['user'])
-    expect(result.issues).toEqual([{ name: 'user', message: expect.stringContaining('reading SVG') }])
+    expect(result.issues).toEqual([{ name: 'user', stage: 'process', message: expect.stringContaining('reading SVG') }])
   })
 })

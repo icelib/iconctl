@@ -112,7 +112,7 @@ it('reports a continued failure, invalidates completed metadata and retries it',
   const partial = await sync({ cwd: directory, config, continueOnError: true })
   expect(Object.keys(partial.json.icons)).toEqual(['home'])
   expect(partial.failed).toEqual(['user'])
-  expect(partial.issues).toEqual([{ name: 'user', message: expect.stringContaining('download') }])
+  expect(partial.issues).toEqual([expect.objectContaining({ name: 'user', stage: 'download', message: expect.stringContaining('download') })])
   await expect(readFile(join(directory, config.cacheDir, 'meta.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   const downloads = state.userDownloads
   state.failure = undefined
@@ -131,7 +131,7 @@ it('blocks processing failures by default and reports them when continuing', asy
   await expect(readFile(join(directory, 'icons.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   const partial = await sync({ cwd: directory, config, iconSet: createIcons(), continueOnError: true })
   expect(partial.failed).toEqual(['bad'])
-  expect(partial.issues).toEqual([{ name: 'bad', message: expect.stringContaining('cleaning SVG') }])
+  expect(partial.issues).toEqual([{ name: 'bad', stage: 'process', message: expect.stringContaining('cleaning SVG') }])
   expect(Object.keys(partial.json.icons)).toEqual(['good'])
 })
 

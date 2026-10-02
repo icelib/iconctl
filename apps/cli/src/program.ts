@@ -41,6 +41,8 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   if (asJson) {
     process.stdout.write(`${JSON.stringify({
       prefix: result.prefix,
+      complete: result.complete,
+      deletionsReliable: result.diff.deletionsReliable,
       fileKey: result.fileKey,
       fileVersion: result.fileVersion,
       notModified: result.notModified,
@@ -60,17 +62,17 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
     return
   }
 
-  if (result.failed.length || result.issues.length) {
-    consola.warn(`Synced ${result.processed} icons for prefix "${result.prefix}" with errors (--continue)`)
+  if (result.complete) {
+    consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
+  }
+  else {
+    consola.warn(`Incomplete sync: ${result.processed} icons for prefix "${result.prefix}". Deletions are unknown; changelog was not updated.`)
     if (result.failed.length) {
       consola.warn(`skipped: ${result.failed.join(', ')}`)
     }
     for (const issue of result.issues) {
-      consola.warn(`${issue.name}: ${issue.message}`)
+      consola.warn(`${issue.name}${issue.nodeId ? ` (${issue.nodeId})` : ''} [${issue.stage}]: ${issue.message}`)
     }
-  }
-  else {
-    consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
   }
   if (result.diff.added.length) {
     consola.info(`added: ${result.diff.added.join(', ')}`)
@@ -112,7 +114,7 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--config <path>', 'Path to iconctl config')
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
-  cli.option('--continue', 'Write partial outputs despite icon import, processing or validation failures')
+  cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
 
   cli
     .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')

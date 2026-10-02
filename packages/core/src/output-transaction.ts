@@ -1,115 +1,156 @@
-import { lstat, mkdir, mkdtemp, realpath, rename, rm, rmdir } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, realpath, rename, rm, rmdir } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
+import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 
-interface OutputOperation {
-  target: string
-  kind: 'file' | 'directory' | 'delete' | 'keep'
-  prepare?: (staged: string) => Promise<void>
+interface Target {
+  path: string
+  directory?: boolean
 }
 
-interface PreparedOperation extends OutputOperation {
-  workspace: string
+interface Entry {
+  target: string
+  temporary: string
   staged: string
   backup: string
   backedUp: boolean
   installed: boolean
+  preserve: boolean
 }
 
-async function statIfPresent(target: string) {
+function contains(parent: string, child: string): boolean {
+  return child === parent || child.startsWith(`${parent}${sep}`)
+}
+
+async function exists(path: string): Promise<boolean> {
   try {
-    return await lstat(target)
+    await lstat(path)
+    return true
   }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return undefined
+      return false
     }
     throw error
   }
 }
 
-async function existingParent(target: string): Promise<string> {
-  let parent = dirname(target)
-  while (!(await statIfPresent(parent))) {
-    parent = dirname(parent)
+async function canonicalTarget(path: string): Promise<{ path: string, parent: string }> {
+  let ancestor = dirname(path)
+  while (!(await exists(ancestor))) {
+    ancestor = dirname(ancestor)
   }
-  // Resolve directory aliases before comparing destinations or staging files.
-  return await realpath(parent)
+  const parent = await realpath(ancestor)
+  return { path: join(parent, relative(ancestor, path)), parent }
 }
 
-/** Stage every output before replacing any destination; roll back caught failures. */
+/** Stage related paths together, so nested outputs cannot overwrite each other at commit. */
 export class OutputTransaction {
-  private readonly operations: OutputOperation[] = []
+  private readonly entries: Entry[] = []
+  private readonly paths = new Map<string, string>()
+  private readonly createdParents: string[] = []
+  private committed = false
 
-  add(target: string, kind: OutputOperation['kind'], prepare?: OutputOperation['prepare']) {
-    this.operations.push({ target: resolve(target), kind, ...(prepare ? { prepare } : {}) })
-  }
-
-  async commit(): Promise<void> {
-    const destinations: { operation: OutputOperation, parent: string }[] = []
-    for (const operation of this.operations) {
-      let ancestor = dirname(operation.target)
-      while (!(await statIfPresent(ancestor))) {
-        ancestor = dirname(ancestor)
-      }
-      const parent = await existingParent(operation.target)
-      const target = join(parent, relative(ancestor, operation.target))
-      const stat = await statIfPresent(target)
-      if (stat && (stat.isSymbolicLink() || (operation.kind === 'directory' ? !stat.isDirectory() : !stat.isFile()))) {
-        throw new IconctlError(`Output target has the wrong file type: ${target}`)
-      }
-      for (const item of destinations) {
-        const other = item.operation.target
-        if (target === other || target.startsWith(`${other}${sep}`) || other.startsWith(`${target}${sep}`)) {
-          throw new IconctlError(`Conflicting output targets: ${other} and ${target}`)
+  static async create(targets: Target[], signal?: AbortSignal): Promise<OutputTransaction> {
+    const transaction = new OutputTransaction()
+    const normalized: (Target & { parent: string })[] = []
+    for (const target of targets) {
+      await checkpoint(signal)
+      const absolute = resolve(target.path)
+      const canonical = await canonicalTarget(absolute)
+      if (await exists(canonical.path)) {
+        const stat = await lstat(canonical.path)
+        if (stat.isSymbolicLink() || (target.directory ? !stat.isDirectory() : !stat.isFile())) {
+          throw new IconctlError(`Output target has the wrong file type: ${absolute}`)
         }
       }
-      destinations.push({ operation: { ...operation, target }, parent })
+      for (const other of normalized) {
+        if (canonical.path === other.path
+          || (!other.directory && contains(other.path, canonical.path))
+          || (!target.directory && contains(canonical.path, other.path))) {
+          throw new IconctlError(`Conflicting output targets: ${other.path} and ${canonical.path}`)
+        }
+      }
+      transaction.paths.set(absolute, canonical.path)
+      normalized.push({ ...target, ...canonical })
     }
-
-    const prepared: PreparedOperation[] = []
-    const createdParents: string[] = []
-    let preserveBackups = false
+    const roots = normalized.filter((target, index) => !normalized.some((other, otherIndex) =>
+      otherIndex !== index && ((other.directory && other.path !== target.path && contains(other.path, target.path))
+        || (other.path === target.path && otherIndex < index))))
     try {
-      for (const { operation, parent } of destinations) {
-        if (operation.kind === 'keep' || (operation.kind === 'delete' && !(await statIfPresent(operation.target)))) {
-          continue
-        }
-        const workspace = await mkdtemp(join(parent, '.iconctl-transaction-'))
-        const entry: PreparedOperation = {
-          ...operation,
-          workspace,
-          staged: join(workspace, 'next'),
-          backup: join(workspace, 'previous'),
+      for (const root of roots) {
+        await checkpoint(signal)
+        const temporary = await mkdtemp(join(root.parent, '.iconctl-stage-'))
+        const entry: Entry = {
+          target: root.path,
+          temporary,
+          staged: join(temporary, 'output'),
+          backup: join(temporary, 'backup'),
           backedUp: false,
           installed: false,
+          preserve: false,
         }
-        prepared.push(entry)
-        await entry.prepare?.(entry.staged)
+        transaction.entries.push(entry)
+        if (await exists(root.path)) {
+          // Dereference links in the copy: generation must never write through a
+          // staged symlink into the live output tree.
+          await cp(root.path, entry.staged, {
+            recursive: true,
+            dereference: true,
+            filter: async () => {
+              await checkpoint(signal)
+              return true
+            },
+          })
+        }
       }
-      for (const entry of prepared) {
+      return transaction
+    }
+    catch (error) {
+      await transaction.dispose()
+      throw error
+    }
+  }
+
+  path(target: string): string {
+    const requested = resolve(target)
+    const ancestor = [...this.paths.keys()].sort((a, b) => b.length - a.length).find(path => contains(path, requested))
+    const absolute = ancestor ? join(this.paths.get(ancestor)!, relative(ancestor, requested)) : requested
+    const entry = this.entries.find(entry => contains(entry.target, absolute))
+    if (!entry) {
+      throw new IconctlError(`Output path was not staged: ${absolute}`)
+    }
+    return join(entry.staged, relative(entry.target, absolute))
+  }
+
+  /** The last cancellation boundary. Once passed, finish or roll back every write. */
+  async commit(signal?: AbortSignal): Promise<void> {
+    await checkpoint(signal)
+    try {
+      for (const entry of this.entries) {
         const created = await mkdir(dirname(entry.target), { recursive: true })
         if (created) {
           const parents = [dirname(entry.target)]
           while (parents.at(-1) !== created) {
             parents.push(dirname(parents.at(-1)!))
           }
-          createdParents.push(...parents.reverse())
+          this.createdParents.push(...parents.reverse())
         }
-        if (await statIfPresent(entry.target)) {
+        if (await exists(entry.target)) {
           await rename(entry.target, entry.backup)
           entry.backedUp = true
         }
-        if (entry.kind !== 'delete') {
+        if (await exists(entry.staged)) {
           await rename(entry.staged, entry.target)
           entry.installed = true
         }
       }
+      this.committed = true
     }
     catch (error) {
-      const rollbackErrors: unknown[] = []
-      for (const entry of [...prepared].reverse()) {
+      const recoveryErrors: unknown[] = []
+      for (const entry of [...this.entries].reverse()) {
         try {
           if (entry.installed) {
             await rm(entry.target, { recursive: true, force: true })
@@ -118,38 +159,39 @@ export class OutputTransaction {
             await rename(entry.backup, entry.target)
           }
         }
-        catch (rollbackError) {
-          rollbackErrors.push(rollbackError)
+        catch (recoveryError) {
+          entry.preserve = true
+          recoveryErrors.push(recoveryError)
         }
       }
-      // Only remove empty directories created by this transaction.
-      for (const parent of createdParents.reverse()) {
+      if (recoveryErrors.length) {
+        throw new IconctlError(`Output commit and recovery failed. Recover backups from: ${this.entries.filter(entry => entry.preserve).map(entry => entry.temporary).join(', ')}`, {
+          cause: new AggregateError([error, ...recoveryErrors], 'Output commit and recovery failed'),
+        })
+      }
+      throw new IconctlError('Output commit failed; previous outputs were restored.', { cause: error })
+    }
+  }
+
+  async dispose(): Promise<void> {
+    const removable = this.entries.filter(entry => !entry.preserve)
+    const cleanup = await Promise.allSettled(removable.map(entry => rm(entry.temporary, { recursive: true, force: true })))
+    const retained = removable.filter((_, index) => cleanup[index]?.status === 'rejected').map(entry => entry.temporary)
+    if (!this.committed) {
+      for (const parent of [...this.createdParents].reverse()) {
         try {
           await rmdir(parent)
         }
-        catch (cleanupError) {
-          const code = (cleanupError as NodeJS.ErrnoException).code
+        catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
           if (code !== 'ENOENT' && code !== 'ENOTEMPTY') {
-            rollbackErrors.push(cleanupError)
+            retained.push(parent)
           }
         }
       }
-      if (rollbackErrors.length) {
-        preserveBackups = true
-        throw new AggregateError([error, ...rollbackErrors], `Output rollback failed; recovery files retained in: ${prepared.map(item => item.workspace).join(', ')}`)
-      }
-      throw error
     }
-    finally {
-      if (!preserveBackups) {
-        const cleanup = await Promise.allSettled(prepared.map(entry => rm(entry.workspace, { recursive: true, force: true })))
-        const retained = prepared.filter((_, index) => cleanup[index]?.status === 'rejected')
-        if (retained.length) {
-          // Cleanup is after the commit/rollback boundary. It must neither turn
-          // a committed sync into a failure nor hide the original failure.
-          process.emitWarning(`Could not remove temporary output files. Remove these directories manually: ${retained.map(entry => entry.workspace).join(', ')}`, { code: 'ICONCTL_OUTPUT_CLEANUP' })
-        }
-      }
+    if (retained.length) {
+      process.emitWarning(`Could not remove temporary output files. Remove these directories manually: ${retained.join(', ')}`, { code: 'ICONCTL_OUTPUT_CLEANUP' })
     }
   }
 }
