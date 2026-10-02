@@ -25,8 +25,17 @@ export interface PreflightItem {
   issues: string[]
 }
 
-export function inspectComponent(input: PreflightInput): PreflightItem {
-  if (shouldSkipName(input.name)) {
+export interface PreflightRules {
+  width?: number | undefined
+  height?: number | undefined
+  name?: string | undefined
+  skipPrefix?: string[]
+  namingMode?: 'default' | 'server'
+}
+const legacyRules: PreflightRules = { width: DEFAULT_SIZE, height: DEFAULT_SIZE }
+
+export function inspectComponent(input: PreflightInput, rules: PreflightRules = legacyRules): PreflightItem {
+  if (shouldSkipName(input.name, rules.skipPrefix)) {
     return {
       id: input.id,
       name: input.name,
@@ -45,14 +54,15 @@ export function inspectComponent(input: PreflightInput): PreflightItem {
   const iconName = toIconName(raw) || null
   const issues: string[] = []
 
-  if (!iconName || !DEFAULT_NAME_PATTERN.test(iconName)) {
+  const pattern = rules.name === undefined ? DEFAULT_NAME_PATTERN : new RegExp(rules.name)
+  if (rules.namingMode !== 'server' && (!iconName || !pattern.test(iconName))) {
     issues.push(
-      `Name "${input.name}" is not kebab-case English (got ${iconName || '(empty)'})`,
+      `Name "${input.name}" does not match the naming rule (got ${iconName || '(empty)'})`,
     )
   }
-  if (input.width !== DEFAULT_SIZE || input.height !== DEFAULT_SIZE) {
+  if ((rules.width !== undefined && input.width !== rules.width) || (rules.height !== undefined && input.height !== rules.height)) {
     issues.push(
-      `Canvas is ${input.width}×${input.height}, expected ${DEFAULT_SIZE}×${DEFAULT_SIZE}`,
+      `Canvas is ${input.width}×${input.height}, expected ${rules.width ?? 'any'}×${rules.height ?? 'any'}`,
     )
   }
 
@@ -67,8 +77,8 @@ export function inspectComponent(input: PreflightInput): PreflightItem {
   }
 }
 
-export function inspectComponents(nodes: PreflightInput[]): PreflightItem[] {
-  return nodes.map(inspectComponent)
+export function inspectComponents(nodes: PreflightInput[], rules?: PreflightRules): PreflightItem[] {
+  return nodes.map(node => inspectComponent(node, rules))
 }
 
 export function canSubmit(items: PreflightItem[]): boolean {

@@ -89,3 +89,14 @@ it('blocks empty or invalid preflight submissions', () => {
   expect(canSubmit([valid])).toBe(true)
   expect(canSubmit([valid, invalid])).toBe(false)
 })
+
+it('uses optional project dimensions, custom names and draft prefixes', () => {
+  const node = { id: '1', name: 'arrow', type: 'COMPONENT', width: 16, height: 32 }
+  expect(inspectComponent(node, {}).issues).toEqual([])
+  expect(inspectComponent(node, { width: 16, height: 32 }).issues).toEqual([])
+  expect(inspectComponent(node, { name: '^brand-' }).issues).toHaveLength(1)
+  expect(inspectComponent({ ...node, name: 'draft-arrow' }, { skipPrefix: ['draft-'] }).skipped).toBe(true)
+  expect(inspectComponent({ ...node, name: '_arrow' }, { skipPrefix: [] }).skipped).toBe(false)
+  expect(inspectComponent({ ...node, name: '箭头' }, { namingMode: 'server' }).issues).toEqual([])
+  expect(inspectComponent(node).issues).toHaveLength(1)
+})

@@ -24,7 +24,7 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 2. Figma → Plugins → Development → Import plugin from manifest → `packages/figma-plugin/manifest.json`
 3. 插件设置：
    - GitHub 仓库 `owner/name`
-   - 只对该仓库有 **Actions: write** 的 fine-grained PAT（不是 `FIGMA_TOKEN`）
+   - 只对该仓库有 **Contents: write** 的 fine-grained PAT（不是 `FIGMA_TOKEN`）
    - Event 类型 `iconctl-publish`
 
 ## 每次发版

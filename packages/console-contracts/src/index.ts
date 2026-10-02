@@ -282,3 +282,12 @@ export function iconDiff(before: IconJSON | undefined, after: IconJSON) {
       .sort(),
   }
 }
+
+/** Public device context deliberately omits source credentials and repository configuration. */
+export interface PluginContext {
+  projectId: string
+  name: string
+  revision: number
+  validate: ProjectInput['validate']
+  namingMode: 'default' | 'server'
+}

@@ -1203,3 +1203,8 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.linked-job {
+  outline: 2px solid var(--accent, #5373ff);
+  outline-offset: -2px;
+}

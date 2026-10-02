@@ -190,3 +190,31 @@ test('supports narrow screens and editing an existing reactive project', async (
     fullPage: true,
   })
 })
+
+test('opens a task link in its owning project and reports missing tasks', async ({ page }) => {
+  const other = { ...project, id: '44444444-4444-4444-8444-444444444444', name: 'other-project' }
+  const linked = {
+    id: snapshot.jobId,
+    projectId: other.id,
+    project: other,
+    operation: 'sync',
+    status: 'running',
+    sourceCommit: 'a'.repeat(40),
+    workflowCommit: 'a'.repeat(40),
+    executorCommit: 'a'.repeat(40),
+    workflowDigest: 'digest',
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.createdAt,
+    dispatchAttempts: 1,
+    attempt: 1,
+    stage: 'fetching',
+  }
+  await page.route('**/api/session', route => route.fulfill({ json: { csrf: 'test' } }))
+  await page.route('**/api/state', route => route.fulfill({ json: { ...state, projects: [project, other], jobs: [linked] } }))
+  await page.goto(`/app/?job=${linked.id}`)
+  await expect(page.locator(`#job-${linked.id}`)).toBeVisible()
+  await expect(page.locator(`#job-${linked.id}`)).toBeFocused()
+  await expect(page.locator('select').first()).toHaveValue(other.id)
+  await page.goto('/app/?job=missing')
+  await expect(page.getByRole('alert')).toHaveText('任务链接无效，或该任务已不可用。')
+})

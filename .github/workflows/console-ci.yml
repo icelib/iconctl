@@ -35,7 +35,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build console, runner and dependencies
-        run: pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console-runner...
+        run: pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console-runner... --filter=@iconctl/figma-plugin
 
       - name: Check console and runner types
         run: pnpm exec turbo run typecheck --filter=@iconctl/console --filter=@iconctl/console-runner --filter=@iconctl/console-contracts

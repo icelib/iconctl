@@ -287,11 +287,17 @@ app.get('/api/plugin/pair/:id', async c =>
       bearer(c),
     ),
   ))
+app.get('/api/plugin/devices/:id/context', async c =>
+  c.json(await account(c.env).deviceContext(identifier.parse(c.req.param('id')), bearer(c))))
 app.post('/api/plugin/devices/:id/jobs', async (c) => {
+  // Older plugins sent an empty object (or no body).
+  const text = new TextDecoder().decode(await limitedBody(c.req.raw, 4096))
+  const input = z.object({ expectedRevision: z.number().int().positive().optional() }).strict().parse(text ? JSON.parse(text) : {})
   const job = await account(c.env).deviceJob(
     identifier.parse(c.req.param('id')),
     bearer(c),
     identifier.parse(c.req.header('Idempotency-Key')),
+    input.expectedRevision,
   )
   return c.json(
     { id: job.id, url: `${c.env.APP_ORIGIN}/app/?job=${job.id}` },

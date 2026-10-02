@@ -2,7 +2,7 @@ import type { Job, Project, SnapshotContent } from '@iconctl/console-contracts'
 import type { RunnerIdentity } from '../worker/github'
 import { OWNER_ID, projectInput } from '@iconctl/console-contracts'
 import { reset, runInDurableObject } from 'cloudflare:test'
-import { env } from 'cloudflare:workers'
+import { env, exports } from 'cloudflare:workers'
 import { afterEach, expect, it, vi } from 'vitest'
 import { base64, digest, encrypt } from '../worker/security'
 import { runnerWorkflow } from '../worker/workflow'
@@ -104,6 +104,12 @@ function mockGithub() {
     }
     return new Response(null, { status: 404 })
   })
+}
+async function paired(saved: Project) {
+  await seed(`project:${saved.id}`, saved)
+  const pair = await account().startPairing()
+  await account().approvePairing(pair.code, saved.id, 'Figma')
+  return await account().pollPairing(pair.id, pair.pollToken) as { deviceId: string, token: string }
 }
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -512,6 +518,60 @@ it('plugin pairing is scoped, revocable, and never grants publication', async ()
     ),
   ).toContain('not found')
 })
+
+it('returns only the plugin project rules without source credentials', async () => {
+  const saved = project()
+  saved.validate = { width: 16, height: 32, name: '^brand-', skipPrefix: ['draft-'] }
+  saved.advancedConfig = { path: 'iconctl.config.ts', commit: sha }
+  const device = await paired(saved)
+  expect(await account().deviceContext(device.deviceId, device.token)).toEqual({
+    projectId: saved.id,
+    name: saved.name,
+    revision: 1,
+    validate: saved.validate,
+    namingMode: 'server',
+  })
+  expect(await failure(instance => instance.deviceContext(device.deviceId, 'wrong'))).toContain('revoked')
+  await account().revokeDevice(device.deviceId)
+  expect(await failure(instance => instance.deviceContext(device.deviceId, device.token))).toContain('not found')
+})
+
+it('pins plugin preflight revisions and replays a saved request across rule changes', async () => {
+  mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const key = crypto.randomUUID()
+  const job = await account().deviceJob(device.deviceId, device.token, key, 1)
+  await seed(`project:${saved.id}`, { ...saved, revision: 2 })
+  expect((await account().deviceJob(device.deviceId, device.token, key, 1)).id).toBe(job.id)
+  expect(await failure(instance => instance.deviceJob(device.deviceId, device.token, key, 2))).toContain('different project revision')
+  expect(await failure(instance => instance.deviceJob(device.deviceId, device.token, crypto.randomUUID(), 1))).toContain('rules changed')
+  expect((await account().deviceJob(device.deviceId, device.token, key)).id).toBe(job.id)
+})
+
+it('rejects device revocation or a rule change while preparing a plugin task', async () => {
+  const fetch = mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const normal = fetch.getMockImplementation()!
+  await runInDurableObject(account(), async (instance) => {
+    fetch.mockImplementationOnce(async (...args) => {
+      instance.revokeDevice(device.deviceId)
+      return normal(...args)
+    })
+    await expect(instance.deviceJob(device.deviceId, device.token, crypto.randomUUID(), 1)).rejects.toThrow('not found')
+  })
+  expect((await account().state()).jobs).toEqual([])
+  const next = await paired(saved)
+  await runInDurableObject(account(), async (instance, state) => {
+    fetch.mockImplementationOnce(async (...args) => {
+      state.storage.sql.exec('UPDATE records SET value=? WHERE key=?', JSON.stringify({ ...saved, revision: 2 }), `project:${saved.id}`)
+      return normal(...args)
+    })
+    await expect(instance.deviceJob(next.deviceId, next.token, crypto.randomUUID(), 1)).rejects.toThrow('Project changed')
+  })
+  expect((await account().state()).jobs).toEqual([])
+})
 it('encrypts backups and excludes login and OAuth secrets from exported rows', async () => {
   await account().newSession(OWNER_ID)
   await account().saveOAuth('state', {
@@ -645,4 +705,21 @@ it('recovers a prepared commit after a lost ref update without creating another 
   expect(await account().finishRelease(jobId)).toBe(true)
   expect((await account().state()).releases).toHaveLength(1)
   expect((await read<Job>(`job:${jobId}`)).status).toBe('succeeded')
+})
+
+it('serves device context and accepts legacy requests while enforcing new revisions over HTTP', async () => {
+  mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const base = `${env.APP_ORIGIN}/api/plugin/devices/${device.deviceId}`
+  const headers = { 'Authorization': `Bearer ${device.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }
+  expect((await exports.default.fetch(`${base}/context`)).status).toBe(401)
+  const response = await exports.default.fetch(`${base}/context`, { headers })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ projectId: saved.id, name: saved.name, revision: 1, validate: saved.validate, namingMode: 'default' })
+  expect((await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: 2 }) })).status).toBe(409)
+  const legacy = await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: '{}' })
+  expect(legacy.status).toBe(202)
+  const replay = await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: 1 }) })
+  expect(await replay.json()).toEqual(await legacy.json())
 })

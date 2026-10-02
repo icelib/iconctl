@@ -9,7 +9,7 @@ import type {
   SnapshotContent,
   Source,
 } from '@iconctl/console-contracts'
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, initializeSession, restoreBackup, upload } from './api'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
@@ -40,6 +40,9 @@ const busy = ref(false)
 const ready = ref(false)
 const error = ref('')
 const notice = ref('')
+const linkedJobId = new URLSearchParams(location.search).get('job')
+const linkedJobError = ref('')
+let linkedJobLocated = false
 const selectedId = ref('')
 const editing = ref<Project>()
 function blank(): ProjectInput {
@@ -158,6 +161,20 @@ function date(value: number) {
 }
 async function refresh() {
   data.value = await api<ConsoleState>('state')
+  if (linkedJobId && !linkedJobLocated) {
+    const job = data.value.jobs.find(item => item.id === linkedJobId)
+    if (job && data.value.projects.some(project => project.id === job.projectId)) {
+      selectedId.value = job.projectId
+      view.value = 'history'
+      linkedJobError.value = ''
+      linkedJobLocated = true
+      await nextTick()
+      const row = document.getElementById(`job-${job.id}`)
+      row?.scrollIntoView({ block: 'center' })
+      row?.focus()
+    }
+    else { linkedJobError.value = '任务链接无效，或该任务已不可用。' }
+  }
   if (!selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
   }
@@ -461,6 +478,9 @@ onUnmounted(() => clearInterval(poll))
           </button>
         </div>
       </header>
+      <div v-if="linkedJobError" role="alert" class="message error">
+        {{ linkedJobError }}
+      </div>
       <div v-if="error" role="alert" class="message error">
         {{ error }}
       </div>
@@ -987,7 +1007,7 @@ onUnmounted(() => clearInterval(poll))
               </tr>
             </thead>
             <tbody>
-              <tr v-for="job in jobs" :key="job.id">
+              <tr v-for="job in jobs" :id="`job-${job.id}`" :key="job.id" :tabindex="job.id === linkedJobId ? -1 : undefined" :class="{ 'linked-job': job.id === linkedJobId }">
                 <td>
                   <strong>{{ labels[job.operation] }}</strong><small>{{ date(job.createdAt) }}</small>
                 </td>

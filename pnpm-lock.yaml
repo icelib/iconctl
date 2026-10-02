@@ -407,6 +407,9 @@ importers:
       '@figma/plugin-typings':
         specifier: ^1.139.0
         version: 1.139.0
+      '@iconctl/console-contracts':
+        specifier: workspace:*
+        version: link:../console-contracts
 
   packages/icons:
     devDependencies:

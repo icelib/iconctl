@@ -24,7 +24,7 @@ Figma Library “Publish” is still for other **design** files. This button is 
 2. Figma → Plugins → Development → Import plugin from manifest → `packages/figma-plugin/manifest.json`
 3. Plugin settings:
    - GitHub repo `owner/name`
-   - Fine-grained PAT with **Actions: write** on that repo (not `FIGMA_TOKEN`)
+   - Fine-grained PAT with **Contents: write** on that repo (not `FIGMA_TOKEN`)
    - Event type `iconctl-publish`
 
 ## Each release

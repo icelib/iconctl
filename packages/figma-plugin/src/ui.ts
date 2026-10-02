@@ -8,6 +8,8 @@ interface PluginMessage {
   origin?: string
   url?: string
   error?: boolean
+  busy?: boolean
+  connected?: boolean
   items?: PreflightItem[]
   settings?: {
     repo?: string
@@ -15,7 +17,6 @@ interface PluginMessage {
     eventType?: string
   }
 }
-
 const modeInput = document.querySelector<HTMLSelectElement>('#mode')!
 const originInput = document.querySelector<HTMLInputElement>('#origin')!
 const consoleStatus = document.querySelector<HTMLElement>('#console-status')!
@@ -28,28 +29,28 @@ const statusEl = document.querySelector('#status')!
 const listEl = document.querySelector('#list')!
 const publishBtn = document.querySelector<HTMLButtonElement>('#publish')!
 const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
-
 let items: PreflightItem[] = []
-
+let consoleBusy = false
+let consoleConnected = false
+let githubBusy = false
+function updateSubmit() {
+  publishBtn.disabled = !canSubmit(items) || (modeInput.value === 'console'
+    ? consoleBusy || !consoleConnected
+    : githubBusy)
+}
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
   statusEl.className = kind
 }
-
 function escapeHtml(value: string) {
-  return value.replace(
-    /[&<>"']/g,
-    char =>
-      ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        '\'': '&#39;',
-      })[char] || char,
-  )
+  return value.replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\'': '&#39;',
+  })[char] || char)
 }
-
 function render() {
   const visible = items.filter(item => !item.skipped)
   const skipped = items.filter(item => item.skipped).length
@@ -66,13 +67,9 @@ function render() {
   const summary = errors.length
     ? `${errors.length} of ${visible.length} icons need fixes`
     : `${visible.length} icons ready`
-  setStatus(
-    skipped ? `${summary} · ${skipped} drafts skipped` : summary,
-    errors.length ? 'err' : 'ok',
-  )
-  publishBtn.disabled = !canSubmit(items)
+  setStatus(skipped ? `${summary} · ${skipped} drafts skipped` : summary, errors.length ? 'err' : 'ok')
+  updateSubmit()
 }
-
 function readSettings() {
   const { owner, repo } = parseRepo(repoInput.value)
   const token = tokenInput.value.trim()
@@ -82,37 +79,37 @@ function readSettings() {
   }
   return { owner, repo, token, eventType }
 }
-
-parent.postMessage({ pluginMessage: { type: 'rescan' } }, '*')
-
+parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 rescanBtn.addEventListener('click', () => {
-  parent.postMessage({ pluginMessage: { type: 'rescan' } }, '*')
+  parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 })
-
 publishBtn.addEventListener('click', async () => {
   try {
     if (!canSubmit(items)) {
       throw new Error('Fix all preflight errors before submitting')
     }
     if (modeInput.value === 'console') {
+      if (consoleBusy || !consoleConnected) {
+        return
+      }
+      consoleBusy = true
+      updateSubmit()
       parent.postMessage({ pluginMessage: { type: 'console-sync' } }, '*')
       return
     }
     const settings = readSettings()
-    parent.postMessage(
-      {
-        pluginMessage: {
-          type: 'save-settings',
-          settings: {
-            repo: repoInput.value.trim(),
-            token: settings.token,
-            eventType: settings.eventType,
-          },
+    parent.postMessage({
+      pluginMessage: {
+        type: 'save-settings',
+        settings: {
+          repo: repoInput.value.trim(),
+          token: settings.token,
+          eventType: settings.eventType,
         },
       },
-      '*',
-    )
-    publishBtn.disabled = true
+    }, '*')
+    githubBusy = true
+    updateSubmit()
     setStatus('Dispatching GitHub Action…')
     await dispatchPublish(settings)
     setStatus(`Workflow started. ${actionsUrl(settings)}`, 'ok')
@@ -121,17 +118,28 @@ publishBtn.addEventListener('click', async () => {
     setStatus(error instanceof Error ? error.message : String(error), 'err')
   }
   finally {
-    publishBtn.disabled = !canSubmit(items)
+    githubBusy = false
+    updateSubmit()
   }
 })
-
-window.onmessage = (event: MessageEvent<{ pluginMessage?: PluginMessage }>) => {
+window.onmessage = (event: MessageEvent<{
+  pluginMessage?: PluginMessage
+}>) => {
   if (event.source !== parent) {
     return
   }
   const message = event.data.pluginMessage
   if (!message) {
     return
+  }
+  if (message.type === 'console-status' || message.type === 'console-state') {
+    if (message.busy !== undefined) {
+      consoleBusy = message.busy
+    }
+    if (message.connected !== undefined) {
+      consoleConnected = message.connected
+    }
+    updateSubmit()
   }
   if (message.type === 'console-status') {
     consoleStatus.textContent = message.text ?? ''
@@ -140,10 +148,8 @@ window.onmessage = (event: MessageEvent<{ pluginMessage?: PluginMessage }>) => {
     }
     if (message.url) {
       const url = new URL(message.url)
-      if (
-        url.protocol === 'https:'
-        && url.origin === new URL(originInput.value).origin
-      ) {
+      if (url.protocol === 'https:'
+        && url.origin === new URL(originInput.value).origin) {
         const link = document.createElement('a')
         link.href = url.href
         link.textContent = ' Open task ↗'
@@ -163,7 +169,6 @@ window.onmessage = (event: MessageEvent<{ pluginMessage?: PluginMessage }>) => {
     eventInput.value = message.settings.eventType ?? 'iconctl-publish'
   }
 }
-
 modeInput.addEventListener('change', () => {
   const consoleMode = modeInput.value === 'console'
   consoleFields.hidden = !consoleMode
@@ -171,16 +176,13 @@ modeInput.addEventListener('change', () => {
   publishBtn.textContent = consoleMode
     ? 'Sync to console'
     : 'Dispatch GitHub Action'
+  parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
+  updateSubmit()
 })
 document
   .querySelector('#connect')!
-  .addEventListener('click', () =>
-    parent.postMessage(
-      { pluginMessage: { type: 'console-pair', origin: originInput.value } },
-      '*',
-    ))
+  .addEventListener('click', () => parent.postMessage({ pluginMessage: { type: 'console-pair', origin: originInput.value } }, '*'))
 document
   .querySelector('#disconnect')!
-  .addEventListener('click', () =>
-    parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*'))
+  .addEventListener('click', () => parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*'))
 parent.postMessage({ pluginMessage: { type: 'console-status' } }, '*')

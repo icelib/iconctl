@@ -77,3 +77,11 @@ Keep the secrets JSON outside the repository with mode 0600. Deployment requires
 An optional staging configuration isolates DO and R2 storage. This instance's owner selected direct deployment to the production domain. Real Figma authorization and npm publication still need provider configuration and live acceptance checks.
 
 Use `wrangler versions list` and `wrangler rollback <version-id>` to roll back Worker code. Export encrypted metadata in the console and back up the entire private R2 bucket separately. Preserve the encryption key separately. Restore into an empty isolated environment with the original object keys, verify snapshot digests and npm integrity, reconnect rotated authorizations and re-pair plugins. Reconcile pending npm publications before enabling dispatch. Restoring the database cannot undo npm publication.
+
+### Plugin project preflight and recovery
+
+Console-connected Figma plugins use the project's width, height, naming pattern and draft prefixes. Omitted dimensions are unrestricted; custom naming hooks remain server-side checks. The plugin refreshes these rules before a new sync, and a concurrent configuration update requires a fresh preflight. The legacy GitHub mode still checks 24×24 icons.
+
+Submission intent is saved before the network request. After closing and reopening the plugin, losing a response, or reconnecting to the network, it resumes the same task without another submission. Tracking continues until the server finishes, including tasks longer than twenty minutes. Disconnecting or pairing another device ends the previous local tracker; revoking the device also removes its server permissions. Task links select the owning project and highlight its record; unavailable links display an error.
+
+Deploy the updated console before updating the plugin. The new context endpoint returns only project display information, revision and preflight rules. Older plugins remain compatible with the server, but cannot enforce the new preflight revision check.

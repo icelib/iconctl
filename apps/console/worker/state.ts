@@ -564,13 +564,33 @@ export class AccountState extends DurableObject<Env> {
     operation: Operation,
     idempotency: string,
     confirmationId?: string,
+    plugin?: { deviceId: string, hash: string, expectedRevision?: number },
   ) {
+    const checkDevice = () => {
+      if (plugin) {
+        const device = this.required<Device>(`device:${plugin.deviceId}`)
+        if (device.hash !== plugin.hash || device.projectId !== projectId) {
+          fail(403, 'Plugin credential was revoked')
+        }
+      }
+    }
+    const previousJob = (id: string) => {
+      const job = this.required<Job>(`job:${id}`)
+      if (plugin?.expectedRevision !== undefined && job.project.revision !== plugin.expectedRevision) {
+        fail(409, 'Idempotency key was used with a different project revision')
+      }
+      return job
+    }
+    checkDevice()
     const requestKey = `request:${projectId}:${idempotency}`
     const previous = this.get<string>(requestKey)
     if (previous) {
-      return this.required<Job>(`job:${previous}`)
+      return previousJob(previous)
     }
     const project = this.required<Project>(`project:${projectId}`)
+    if (plugin?.expectedRevision !== undefined && plugin.expectedRevision !== project.revision) {
+      fail(409, 'Project rules changed; refresh the preflight')
+    }
     if (this.locked(projectId)) {
       fail(409, 'This project already has an active task')
     }
@@ -615,9 +635,10 @@ export class AccountState extends DurableObject<Env> {
       fail(409, 'Install or update the pinned runner workflow first')
     }
     const workflowDigest = await digest(expected)
+    checkDevice()
     const duplicate = this.get<string>(requestKey)
     if (duplicate) {
-      return this.required<Job>(`job:${duplicate}`)
+      return previousJob(duplicate)
     }
     if (
       this.locked(projectId)
@@ -1067,7 +1088,23 @@ export class AccountState extends DurableObject<Env> {
     this.remove(`pair:${id}`)
   }
 
-  async deviceJob(id: string, token: string, idempotency: string) {
+  async deviceContext(id: string, token: string) {
+    const hash = await digest(token)
+    const device = this.required<Device>(`device:${id}`)
+    if (device.hash !== hash) {
+      fail(403, 'Plugin credential was revoked')
+    }
+    const project = this.required<Project>(`project:${device.projectId}`)
+    return {
+      projectId: project.id,
+      name: project.name,
+      revision: project.revision,
+      validate: project.validate,
+      namingMode: project.advancedConfig ? 'server' as const : 'default' as const,
+    }
+  }
+
+  async deviceJob(id: string, token: string, idempotency: string, expectedRevision?: number) {
     const hash = await digest(token)
     const device = this.required<Device>(`device:${id}`)
     if (device.hash !== hash) {
@@ -1077,6 +1114,8 @@ export class AccountState extends DurableObject<Env> {
       device.projectId,
       'sync',
       `device:${id}:${idempotency}`,
+      undefined,
+      { deviceId: id, hash, ...(expectedRevision === undefined ? {} : { expectedRevision }) },
     )
   }
 
