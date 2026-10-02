@@ -154,6 +154,37 @@ describe('Figma preflight navigation through the plugin host', () => {
     expect(result()).toMatchObject({ error: false })
   })
 
+  it('cancels a hidden pending lookup while keeping this scan available for another Locate', async () => {
+    const { host, arrow, variant, locate, preflight, result, page } = await fixture()
+    const first = deferred<TestNode | null>()
+    host.getNodeByIdAsync.mockReturnValueOnce(first.promise)
+    const scanId = preflight().scanId!
+    const pending = locate()
+    await host.ui.onmessage!({ type: 'cancel-navigation', scanId })
+    first.resolve(arrow)
+    await pending
+    expect(page.selection).toEqual([])
+    expect(result()).toBeUndefined()
+    expect(preflight().scanId).toBe(scanId)
+    await locate(variant.id, 2)
+    expect(page.selection).toEqual([variant])
+    expect(result()).toMatchObject({ error: false })
+  })
+
+  it('does not let an old scan cancellation stop a new scan lookup', async () => {
+    const { host, arrow, locate, preflight, result, page } = await fixture()
+    const oldScan = preflight().scanId!
+    await host.ui.onmessage!({ type: 'rescan' })
+    const first = deferred<TestNode | null>()
+    host.getNodeByIdAsync.mockReturnValueOnce(first.promise)
+    const pending = locate()
+    await host.ui.onmessage!({ type: 'cancel-navigation', scanId: oldScan })
+    first.resolve(arrow)
+    await pending
+    expect(page.selection).toEqual([arrow])
+    expect(result()).toMatchObject({ error: false })
+  })
+
   it('invalidates a pending lookup on page changes, including changing back', async () => {
     const { host, arrow, otherPage, page, handlers, messages, locate, result } = await fixture()
     const first = deferred<TestNode | null>()

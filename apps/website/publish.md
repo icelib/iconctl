@@ -31,6 +31,8 @@ Figma Library “Publish” is still for other **design** files. This button is 
 
 1. Name components `arrow-left`, 24×24, drafts as `_…`
 2. Open the plugin on the icon page, choose **GitHub dispatch (legacy)**, then use **Locate** beside a red result to find its component. Fix it and choose **Rescan**.
+
+   **Search preflight** matches original/final names and issue text; **Problems only** narrows the list to errors. Hidden errors still block dispatch. Filtering preserves workflow feedback, and rescanning preserves your filters. The problems-only preference is saved locally; search text is session-only. Settings restore without overwriting edits, and local storage failures offer a separate retry action.
 3. Choose **Dispatch GitHub Action**
 4. Open the Actions URL the plugin prints; the workflow opens `chore: sync icons`
 

@@ -31,6 +31,8 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 
 1. 组件名 `arrow-left`，24×24，草稿 `_…`
 2. 在图标页打开插件，选择 **GitHub dispatch (legacy)**。点击标红结果旁的 **Locate** 找到组件，修正后点击 **Rescan**。
+
+   **Search preflight** 可搜索原始名称、最终名称和问题文本，**Problems only** 只显示错误。隐藏的错误仍会阻止派发。筛选保留工作流反馈，重新扫描保留筛选条件；问题筛选偏好会保存在本地，搜索文字仅用于当前会话。设置恢复不会覆盖已编辑字段，存储失败会提供独立的重试操作。
 3. 点击 **Dispatch GitHub Action**
 4. 打开插件给出的 Actions 链接；workflow 会开 `chore: sync icons`
 

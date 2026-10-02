@@ -19,6 +19,12 @@ export class PreflightNavigation {
 
   get scanId() { return this.scan }
 
+  cancel(scanId: unknown) {
+    if (!this.disposed && scanId === this.scan) {
+      this.request++
+    }
+  }
+
   capture(pageId: string, items: PreflightItem[]) {
     this.scan++
     this.request++
