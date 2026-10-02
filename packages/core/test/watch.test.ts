@@ -7,9 +7,17 @@ import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError, watch } from '../src'
 import { sync } from '../src/sync'
 
+const timing = vi.hoisted(() => ({ startedAt: 0, syncEntries: [] as number[] }))
+
 vi.mock('../src/sync', async (original) => {
   const actual = await original<typeof import('../src/sync')>()
-  return { ...actual, sync: vi.fn(actual.sync) }
+  return {
+    ...actual,
+    sync: vi.fn((options) => {
+      timing.syncEntries.push(Date.now() - timing.startedAt)
+      return actual.sync(options)
+    }),
+  }
 })
 vi.mock('chokidar', async (original) => {
   const actual = await original<typeof import('chokidar')>()
@@ -17,11 +25,12 @@ vi.mock('chokidar', async (original) => {
 })
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>'
+let fixtureRoot: string
 let cwd: string
 let events: WatchEvent[]
+let eventTimes: number[]
 let controller: AbortController
 let finished: Promise<unknown> | undefined
-let externalDirectories: string[]
 
 function config(input = 'raw', extra: Partial<IconctlConfig> = {}): IconctlConfig {
   return { prefix: 'watch', sources: [{ type: 'directory', dir: input }], output: { json: 'icons.json', svg: 'svg' }, ...extra }
@@ -33,19 +42,25 @@ async function source(directory = 'raw', name = 'home') {
   await mkdir(join(cwd, directory), { recursive: true })
   await writeFile(join(cwd, directory, `${name}.svg`), svg)
 }
+function recordEvent(event: WatchEvent) {
+  eventTimes.push(Date.now() - timing.startedAt)
+  events.push(event)
+}
 function start() {
-  finished = watch({ cwd, signal: controller.signal, onEvent: event => events.push(event) }).catch(error => error)
+  finished = watch({ cwd, signal: controller.signal, onEvent: recordEvent }).catch(error => error)
   return finished
 }
-async function until(predicate: () => boolean) {
+async function until(predicate: () => boolean, phase = 'watch condition') {
+  const startedAt = Date.now()
   await vi.waitFor(() => {
-    const summary = events.map(event => ({
+    const summary = events.map((event, index) => ({
+      elapsed: eventTimes[index],
       type: event.type,
       ...('runId' in event ? { runId: event.runId } : {}),
       ...('reason' in event ? { reason: event.reason } : {}),
       ...('phase' in event ? { phase: event.phase } : {}),
     }))
-    expect(predicate(), JSON.stringify({ results: events.filter(event => event.type === 'result').length, events: summary })).toBe(true)
+    expect(predicate(), JSON.stringify({ phase, waitElapsed: Date.now() - startedAt, syncCalls: vi.mocked(sync).mock.calls.length, syncEntries: timing.syncEntries, results: events.filter(event => event.type === 'result').length, events: summary })).toBe(true)
   }, { timeout: 8000, interval: 20 })
 }
 function results() {
@@ -53,11 +68,16 @@ function results() {
 }
 
 beforeEach(async () => {
-  cwd = await mkdtemp(join(tmpdir(), 'iconctl-watch-'))
+  timing.startedAt = Date.now()
+  timing.syncEntries = []
+  // External targets stay outside cwd, with parent scans confined to our fixture.
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'iconctl-watch-'))
+  cwd = join(fixtureRoot, 'project')
+  await mkdir(cwd)
   events = []
+  eventTimes = []
   controller = new AbortController()
   finished = undefined
-  externalDirectories = []
   vi.mocked(sync).mockClear()
   vi.mocked(watchFiles).mockClear()
   await source()
@@ -66,8 +86,7 @@ beforeEach(async () => {
 afterEach(async () => {
   controller.abort()
   await finished
-  await rm(cwd, { recursive: true, force: true })
-  await Promise.all(externalDirectories.map(directory => rm(directory, { recursive: true, force: true })))
+  await rm(fixtureRoot, { recursive: true, force: true })
 })
 
 it('runs initially, debounces SVG edits, ignores outputs and closes on cancellation', async () => {
@@ -94,6 +113,7 @@ it('coalesces changes during a run into one serial follow-up', async () => {
   let release!: () => void
   let entered = false
   vi.mocked(sync).mockImplementationOnce(async (options) => {
+    timing.syncEntries.push(Date.now() - timing.startedAt)
     entered = true
     await new Promise<void>((resolve) => {
       release = resolve
@@ -183,6 +203,7 @@ it('aborts a stale run before reloading configuration', async () => {
   const actual = await vi.importActual<typeof import('../src/sync')>('../src/sync')
   let entered = false
   vi.mocked(sync).mockImplementationOnce(async (options) => {
+    timing.syncEntries.push(Date.now() - timing.startedAt)
     entered = true
     await new Promise<void>(resolve => options.signal!.addEventListener('abort', () => resolve(), { once: true }))
     return actual.sync(options)
@@ -199,6 +220,7 @@ it('cancels and drains an active run before resolving cleanup', async () => {
   const actual = await vi.importActual<typeof import('../src/sync')>('../src/sync')
   let entered = false
   vi.mocked(sync).mockImplementationOnce(async (options) => {
+    timing.syncEntries.push(Date.now() - timing.startedAt)
     entered = true
     await new Promise<void>(resolve => options.signal!.addEventListener('abort', () => resolve(), { once: true }))
     return actual.sync(options)
@@ -304,8 +326,7 @@ it('invalidates all path aliases when a directory is removed and rediscovered', 
 })
 
 it('ignores a late initial link discovery while still observing its target changes', async () => {
-  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-late-link-'))
-  externalDirectories.push(external)
+  const external = await mkdtemp(join(fixtureRoot, 'iconctl-watch-late-link-'))
   await writeFile(join(external, 'external.svg'), svg)
   const link = join(cwd, 'raw/linked')
   await symlink(external, link, 'dir')
@@ -358,20 +379,19 @@ it.each(['ancestor', 'self'])('recovers from a %s directory link added after rea
 })
 
 it('adds and removes explicit watches for valid external SVG directory links', async () => {
-  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-svg-target-'))
-  externalDirectories.push(external)
+  const external = await mkdtemp(join(fixtureRoot, 'iconctl-watch-svg-target-'))
   await writeFile(join(external, 'external.svg'), svg)
   start()
-  await until(() => results().length === 1)
+  await until(() => results().length === 1, 'initial source import')
   const link = join(cwd, 'raw', 'linked')
   await symlink(external, link, 'dir')
-  await until(() => results().length === 2)
+  await until(() => results().length === 2, 'external directory link added')
   expect(results()[1]!.result.processed).toBe(2)
   await writeFile(join(external, 'added.svg'), svg)
-  await until(() => results().length === 3)
+  await until(() => results().length === 3, 'SVG added inside external directory')
   expect(results()[2]!.result.processed).toBe(3)
   await rm(link)
-  await until(() => results().length === 4)
+  await until(() => results().length === 4, 'external directory link removed')
   expect(results()[3]!.result.processed).toBe(1)
   await writeFile(join(external, 'unobserved.svg'), svg)
   await setTimeout(350)
@@ -379,8 +399,7 @@ it('adds and removes explicit watches for valid external SVG directory links', a
 })
 
 it('observes an SVG symlink target with a different extension and a dangling target being repaired', async () => {
-  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-svg-file-'))
-  externalDirectories.push(external)
+  const external = await mkdtemp(join(fixtureRoot, 'iconctl-watch-svg-file-'))
   const target = join(external, 'icon.asset')
   await writeFile(target, svg)
   await symlink(target, join(cwd, 'raw', 'linked.svg'))
@@ -397,7 +416,7 @@ it('observes an SVG symlink target with a different extension and a dangling tar
 
 it('does not start a run when cancelled from the ready event', async () => {
   finished = watch({ cwd, signal: controller.signal, onEvent(event) {
-    events.push(event)
+    recordEvent(event)
     if (event.type === 'ready') {
       controller.abort()
     }
@@ -461,8 +480,7 @@ it('rejects a JSON input symlink that points to an output', async () => {
 })
 
 it('observes a valid JSON symlink target changing outside the project, including atomic saves', async () => {
-  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-target-'))
-  externalDirectories.push(external)
+  const external = await mkdtemp(join(fixtureRoot, 'iconctl-watch-target-'))
   const target = join(external, 'icons.json')
   const vendor = (name: string) => JSON.stringify({ prefix: 'vendor', icons: { [name]: { body: '<path d="M0 0h8v8H0z"/>' } } })
   await writeFile(target, vendor('first'))
@@ -480,8 +498,7 @@ it('observes a valid JSON symlink target changing outside the project, including
 })
 
 it('recovers a configured JSON link after self-reference, retargeting and target recreation', async () => {
-  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-json-link-'))
-  externalDirectories.push(external)
+  const external = await mkdtemp(join(fixtureRoot, 'iconctl-watch-json-link-'))
   const target = join(external, 'icons.json')
   const vendor = (name: string) => JSON.stringify({ prefix: 'vendor', icons: { [name]: { body: '<path d="M0 0h8v8H0z"/>' } } })
   await writeFile(target, vendor('first'))
@@ -540,7 +557,7 @@ it.each(['iconify', 'directory', 'config'] as const)('rejects a %s symlink entry
   else {
     await writeFile(join(cwd, 'external.config.ts'), `export default ${JSON.stringify(settings)}`)
     await symlink(join(cwd, 'external.config.ts'), join(cwd, 'package', 'config.ts'))
-    finished = watch({ cwd, configFile: 'package/config.ts', signal: controller.signal, onEvent: event => events.push(event) }).catch(error => error)
+    finished = watch({ cwd, configFile: 'package/config.ts', signal: controller.signal, onEvent: recordEvent }).catch(error => error)
     expect(await finished).toBeInstanceOf(Error)
     expect(sync).not.toHaveBeenCalled()
     return

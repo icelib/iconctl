@@ -61,6 +61,7 @@ export interface WatchPaths extends WatchLocations {
   observedSourceFiles: string[]
   observedConfigFiles: string[]
   links: Set<string>
+  missingLinks: Set<string>
   linkTargets: Map<string, string>
   entryVersions: Map<string, string>
   ignored: (file: string) => boolean
@@ -154,13 +155,48 @@ async function validatePathIsolation(paths: WatchLocations) {
 }
 
 /** Resolve links ourselves so the filesystem watcher never follows an unchecked graph. */
-export async function validateWatchInputs(paths: WatchLocations, signal?: AbortSignal): Promise<WatchPaths> {
+export async function validateWatchInputs(paths: WatchLocations, signal?: AbortSignal, onLink?: (file: string, version: string, target: string) => void): Promise<WatchPaths> {
   await checkpoint(signal)
+  const links = new Set<string>()
+  let rootTargets: (readonly [string, string])[] = []
+  const rememberLink = async (file: string, info: Stats, entries = [file]) => {
+    const aliases = new Set(entries)
+    for (const [root, canonicalRoot] of rootTargets) {
+      if (containsPath(canonicalRoot, file)) {
+        aliases.add(join(root, relative(canonicalRoot, file)))
+      }
+    }
+    for (const alias of aliases) {
+      links.add(alias)
+    }
+    // Retain discoveries before validating their targets so an active watcher
+    // can recognize removal or repair even when this scan rejects the graph.
+    if (onLink) {
+      const version = watchEntryVersion(info)
+      const target = await readlink(file)
+      for (const alias of aliases) {
+        onLink(alias, version, target)
+      }
+    }
+  }
+  for (const root of paths.roots) {
+    const info = await lstat(root).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error
+      }
+      return undefined
+    })
+    if (info?.isSymbolicLink()) {
+      // Even canonical path validation can reject a replaced root's target.
+      const entry = join(await canonical(dirname(root)), basename(root))
+      await rememberLink(root, info, [root, entry])
+    }
+  }
   const variants = await validatePathIsolation(paths)
+  rootTargets = await Promise.all(variants.roots.map(async root => [root, await canonical(root)] as const))
   const { directories, files, caches } = variants
   const observedRoots = new Set(variants.roots)
   const observedSourceFiles = new Set(variants.sourceFiles)
-  const links = new Set<string>()
   const entryVersions = new Map<string, string>()
   const ancestors = new Set<string>()
   const visited = new Set<string>()
@@ -169,8 +205,9 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
     let target: string
     let entries: string[]
     try {
-      if ((await lstat(directory)).isSymbolicLink()) {
-        links.add(directory)
+      const directoryInfo = await lstat(directory)
+      if (directoryInfo.isSymbolicLink()) {
+        await rememberLink(directory, directoryInfo)
       }
       target = await realpath(directory)
       entries = await readdir(target)
@@ -206,7 +243,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
         const entryInfo = await lstat(file)
         const linked = entryInfo.isSymbolicLink()
         if (linked) {
-          links.add(file)
+          await rememberLink(file, entryInfo)
         }
         const info = linked
           ? await stat(file).catch(async (error: NodeJS.ErrnoException) => {
@@ -251,8 +288,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
   for (const root of paths.roots) {
     await visit(root)
   }
-  for (const root of variants.roots) {
-    const target = await canonical(root)
+  for (const [root, target] of rootTargets) {
     for (const file of [...links]) {
       if (containsPath(target, file)) {
         links.add(join(root, relative(target, file)))
@@ -273,6 +309,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
     observedSourceFiles: [...observedSourceFiles],
     observedConfigFiles: variants.configFiles,
     links,
+    missingLinks: new Set<string>(),
     linkTargets: await captureLinkTargets([...links, ...variants.roots, ...variants.sourceFiles, ...variants.configFiles]),
     entryVersions,
   }

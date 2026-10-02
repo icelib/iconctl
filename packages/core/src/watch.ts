@@ -110,6 +110,23 @@ export async function watch(options: WatchOptions): Promise<void> {
       throw error
     }
     watchers.add(listener)
+    const forgetEntry = (file: string) => {
+      const previous = next.entryVersions.get(file)
+      const aliases = previous === undefined
+        ? [file]
+        : [...next.entryVersions].filter(([, version]) => version === previous).map(([entry]) => entry)
+      for (const alias of aliases) {
+        if (next.links.has(alias) || next.linkTargets.has(alias)) {
+          next.missingLinks.add(alias)
+        }
+        next.linkTargets.delete(alias)
+      }
+      for (const entry of next.entryVersions.keys()) {
+        if (aliases.some(alias => containsPath(alias, entry))) {
+          next.entryVersions.delete(entry)
+        }
+      }
+    }
     listener.on('error', failWatcher)
     listener.on('all', (event, input, stats) => {
       if (closing || !watchers.has(listener)) {
@@ -126,17 +143,15 @@ export async function watch(options: WatchOptions): Promise<void> {
         return
       }
       if (event === 'unlink' || event === 'unlinkDir') {
-        const previous = next.entryVersions.get(file)
-        const aliases = previous === undefined
-          ? [file]
-          : [...next.entryVersions].filter(([, version]) => version === previous).map(([entry]) => entry)
-        for (const entry of next.entryVersions.keys()) {
-          if (aliases.some(alias => containsPath(alias, entry))) {
-            next.entryVersions.delete(entry)
-          }
+        // Raw rename and delayed unlink can describe one deletion through
+        // different aliases while a replacement listener is still starting.
+        if (next.missingLinks.has(file)) {
+          return
         }
+        forgetEntry(file)
       }
       else if (stats) {
+        next.missingLinks.delete(file)
         const version = watchEntryVersion(stats)
         const previous = next.entryVersions.get(file)
         next.entryVersions.set(file, version)
@@ -199,10 +214,10 @@ export async function watch(options: WatchOptions): Promise<void> {
           return
         }
         if (target === undefined) {
-          next.linkTargets.delete(file)
-          next.entryVersions.delete(file)
+          forgetEntry(file)
         }
         else {
+          next.missingLinks.delete(file)
           next.linkTargets.set(file, target)
           next.links.add(file)
           next.entryVersions.set(file, version!)
@@ -333,16 +348,26 @@ export async function watch(options: WatchOptions): Promise<void> {
       active = new AbortController()
       emit({ type: 'start', runId: id, reason: nextReason })
       try {
-        const nextPaths = await validateWatchInputs(paths, active.signal)
         const topology = (item: WatchPaths) => JSON.stringify([
           item.observedRoots,
           item.observedSourceFiles,
           item.observedConfigFiles,
           [...item.links],
         ].map(items => [...items].sort()))
-        if (topology(paths) !== topology(nextPaths)) {
+        const rememberLink = (file: string, version: string, target: string) => {
+          paths!.missingLinks.delete(file)
+          paths!.links.add(file)
+          paths!.entryVersions.set(file, version)
+          paths!.linkTargets.set(file, target)
+        }
+        let nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
+        while (topology(paths) !== topology(nextPaths)) {
           await install(nextPaths, active.signal)
           paths = nextPaths
+          // Discovery runs asynchronously. A new link may appear in an external
+          // directory before its replacement watcher is ready; validate that
+          // graph again before importing or publishing any of its contents.
+          nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
         }
         const result = await sync({
           cwd,
