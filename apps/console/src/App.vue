@@ -5,7 +5,6 @@ import type {
   Job,
   Project,
   ProjectInput,
-  ReleasePreview,
   SnapshotComparison,
   SnapshotPreview,
   Source,
@@ -14,7 +13,10 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { api, initializeSession, restoreBackup, upload } from './api'
 import JobAttempts from './features/history/JobAttempts.vue'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
+import { upsertSubmittedJob } from './features/history/submitted-job'
 import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
+import { createReleaseReview } from './features/review/release-review'
+import { createSnapshotReview } from './features/review/snapshot-review'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
 const navigation: { id: View, name: string, symbol: string }[] = [
@@ -90,19 +92,62 @@ const releases = computed(() =>
     release => !selectedId.value || release.projectId === selectedId.value,
   ),
 )
+async function revealJob(job: Job) {
+  selectedId.value = job.projectId
+  clearTaskFilters()
+  view.value = 'history'
+  await nextTick()
+  const row = document.getElementById(`job-${job.id}`)
+  if (!row) {
+    return false
+  }
+  row.scrollIntoView({ block: 'center' })
+  row.focus()
+  return document.activeElement === row
+}
+function recordSubmittedJob(job: Job) {
+  // The mutation response is authoritative, including a retry's new attempt.
+  // Discard any older state request still in flight before displaying it.
+  stateRequest++
+  data.value.jobs = upsertSubmittedJob(data.value.jobs, job)
+}
 const sourceType = ref<Source['type']>('figma')
 const mastergo = reactive({ label: 'MasterGo', token: '' })
 const pairing = reactive({ code: '', projectId: '', label: '我的 Figma 插件' })
-const snapshotId = ref('')
-const comparisonTarget = ref('')
 const search = ref('')
 const filter = ref('all')
 const bump = ref<'patch' | 'minor' | 'major'>('patch')
-const preview = ref<SnapshotPreview>()
-const confirmation = ref<ReleasePreview>()
+const review = createSnapshotReview((id, compareTo, signal) => api<SnapshotPreview>(
+  `snapshots/${id}${compareTo ? `?compareTo=${encodeURIComponent(compareTo)}` : ''}`,
+  undefined,
+  'GET',
+  { signal },
+))
+const reviewState = review.state
+const preview = computed(() => reviewState.value.committed?.preview)
+const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
+const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
+const latePublication = ref<Job>()
+const publication = createReleaseReview({
+  preview: (context, signal) => api(`projects/${context.projectId}/release/preview`, { snapshotId: context.snapshotId, bump: context.bump }, 'POST', { signal }),
+  publish: (context, confirmationId, idempotencyKey) => api<Job>(`projects/${context.projectId}/release/confirm`, { confirmationId }, 'POST', { idempotencyKey }),
+  async published(job, current) {
+    recordSubmittedJob(job)
+    if (current) {
+      await revealJob(job)
+      notice.value = '发布任务已创建'
+    }
+    else {
+      latePublication.value = job
+    }
+  },
+})
+const releaseState = publication.state
+const confirmation = computed(() => releaseState.value.confirmation)
+const releaseOpen = computed(() => releaseState.value.open)
 const releaseDialog = ref<HTMLDialogElement>()
 watch(
-  confirmation,
+  releaseOpen,
   (value) => {
     if (value) {
       releaseDialog.value?.showModal()
@@ -111,16 +156,18 @@ watch(
   },
   { flush: 'post' },
 )
+watch(selectedId, () => {
+  review.invalidate(true)
+  publication.close()
+}, { flush: 'sync' })
+watch(view, () => {
+  review.invalidate()
+  publication.close()
+}, { flush: 'sync' })
 function selectProject(event: Event) {
   selectedId.value = (event.target as HTMLSelectElement).value
   if (view.value === 'config') {
     edit(activeProject.value)
-  }
-  if (view.value === 'preview') {
-    preview.value = undefined
-    snapshotId.value = ''
-    comparisonTarget.value = ''
-    confirmation.value = undefined
   }
 }
 const iconNames = computed(() => {
@@ -143,19 +190,6 @@ function date(value: number) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(value)
-}
-async function revealJob(job: Job) {
-  selectedId.value = job.projectId
-  clearTaskFilters()
-  view.value = 'history'
-  await nextTick()
-  const row = document.getElementById(`job-${job.id}`)
-  if (!row) {
-    return false
-  }
-  row.scrollIntoView({ block: 'center' })
-  row.focus()
-  return document.activeElement === row
 }
 async function locateLinkedJob() {
   if (locatingLinkedJob) {
@@ -191,12 +225,14 @@ async function refresh() {
   }
 }
 async function showSubmittedJob(job: Job) {
-  // The mutation response is authoritative, including a retry's new attempt.
-  // Discard any older state request still in flight before displaying it.
-  stateRequest++
-  data.value.jobs = [job, ...data.value.jobs.filter(item => item.id !== job.id)]
-    .sort((left, right) => right.createdAt - left.createdAt)
+  recordSubmittedJob(job)
   await revealJob(job)
+}
+async function locatePublication() {
+  const job = latePublication.value
+  if (job && await revealJob(job)) {
+    latePublication.value = undefined
+  }
 }
 async function perform(action: () => Promise<void>) {
   if (busy.value) {
@@ -324,14 +360,23 @@ async function install() {
   })
 }
 async function openSnapshot(id: string, compareTo = '') {
-  await perform(async () => {
-    preview.value = await api(`snapshots/${id}${compareTo ? `?compareTo=${encodeURIComponent(compareTo)}` : ''}`)
-    snapshotId.value = id
-    comparisonTarget.value = compareTo
-    selectedId.value = preview.value!.snapshot.projectId
-    view.value = 'preview'
-    confirmation.value = undefined
-  })
+  if (!id) {
+    return
+  }
+  const snapshot = data.value.snapshots.find(item => item.id === id)
+  if (snapshot) {
+    selectedId.value = snapshot.projectId
+  }
+  view.value = 'preview'
+  publication.close()
+  await review.open(id, compareTo)
+}
+function selectSnapshot(event: Event, comparison = false) {
+  const element = event.target as HTMLSelectElement
+  const value = element.value
+  // Keep the controls bound to the committed content while the next pair loads.
+  element.value = comparison ? comparisonTarget.value : snapshotId.value
+  void openSnapshot(comparison ? snapshotId.value : value, comparison ? value : '')
 }
 function comparisonLabel(comparison: SnapshotComparison) {
   if (comparison.release) {
@@ -351,25 +396,10 @@ function iconImage(json: IconJSON | undefined, name: string) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 async function previewRelease() {
-  await perform(async () => {
-    confirmation.value = await api(
-      `projects/${selectedId.value}/release/preview`,
-      { snapshotId: snapshotId.value, bump: bump.value },
-    )
-  })
-}
-async function publish() {
-  if (!confirmation.value) {
+  if (busy.value || reviewState.value.pending || !preview.value || preview.value.snapshot.issues > 0) {
     return
   }
-  await perform(async () => {
-    const job = await api<Job>(`projects/${selectedId.value}/release/confirm`, {
-      confirmationId: confirmation.value!.id,
-    })
-    confirmation.value = undefined
-    await showSubmittedJob(job)
-    notice.value = '发布任务已创建'
-  })
+  await publication.open({ projectId: selectedId.value, snapshotId: snapshotId.value, bump: bump.value })
 }
 async function connectFigma(connectionId?: string) {
   await perform(async () => {
@@ -441,7 +471,11 @@ onMounted(async () => {
     }
   }, 10_000)
 })
-onUnmounted(() => clearInterval(poll))
+onUnmounted(() => {
+  clearInterval(poll)
+  review.invalidate(true)
+  publication.dispose()
+})
 </script>
 
 <template>
@@ -518,6 +552,12 @@ onUnmounted(() => clearInterval(poll))
       </div>
       <div v-if="notice" role="status" class="message notice">
         {{ notice }}
+      </div>
+      <div v-if="latePublication" role="status" class="message notice" aria-label="发布任务已创建">
+        发布任务已创建：{{ latePublication.id }}。当前审核位置已保留。
+        <button @click="locatePublication">
+          定位发布任务
+        </button>
       </div>
       <p v-if="!ready && !error" class="loading">
         正在载入工作空间…
@@ -847,7 +887,7 @@ onUnmounted(() => clearInterval(poll))
           <select
             :value="snapshotId"
             aria-label="选择快照"
-            @change="openSnapshot(($event.target as HTMLSelectElement).value)"
+            @change="selectSnapshot($event)"
           >
             <option value="" disabled>
               选择一个同步快照
@@ -863,9 +903,8 @@ onUnmounted(() => clearInterval(poll))
           <select
             v-if="preview"
             :value="comparisonTarget"
-            :disabled="busy"
             aria-label="比较基准"
-            @change="openSnapshot(snapshotId, ($event.target as HTMLSelectElement).value)"
+            @change="selectSnapshot($event, true)"
           >
             <option value="">
               上次同步
@@ -882,6 +921,12 @@ onUnmounted(() => clearInterval(poll))
             placeholder="搜索图标名称…"
           >
         </div>
+        <p v-if="reviewState.pending" role="status" aria-label="快照加载状态" class="help">
+          正在加载快照与比较结果…{{ preview ? '当前仍显示上次审核内容，加载完成后可发布。' : '' }}
+        </p>
+        <p v-if="reviewState.error" role="alert" aria-label="快照加载失败" class="message error">
+          {{ reviewState.error }}。{{ preview ? '已保留上次审核内容，请重新选择后重试。' : '请重新选择快照后重试。' }}
+        </p>
         <div v-if="!preview" class="empty-state">
           <h3>同步之后，在这里审核变化</h3>
           <p>选择上次同步、最近发布或指定快照，检查新增、修改和删除的图标。</p>
@@ -991,7 +1036,7 @@ onUnmounted(() => clearInterval(poll))
               </option>
             </select><button
               class="primary"
-              :disabled="busy || preview.snapshot.issues > 0"
+              :disabled="busy || !!reviewState.pending || preview.snapshot.issues > 0"
               @click="previewRelease"
             >
               查看发布确认
@@ -1000,8 +1045,12 @@ onUnmounted(() => clearInterval(poll))
           <dialog
             ref="releaseDialog"
             class="release-dialog"
-            @cancel.prevent="confirmation = undefined"
+            aria-label="发布确认"
+            @cancel.prevent="publication.close()"
           >
+            <p v-if="releaseState.pending" role="status" aria-label="发布请求状态">
+              {{ releaseState.pending === 'preview' ? '正在获取发布确认…' : '正在提交发布请求…' }}
+            </p>
             <template v-if="confirmation">
               <p class="eyebrow">
                 确认公开发布
@@ -1027,14 +1076,27 @@ onUnmounted(() => clearInterval(poll))
                 SHA-256 {{ confirmation.release.digest }}
               </p>
               <p>发布后会生成 Git 提交、版本标签和 GitHub Release。</p>
-              <div class="inline-controls">
-                <button :disabled="busy" @click="confirmation = undefined">
-                  返回审核
-                </button><button class="primary" :disabled="busy" @click="publish">
-                  确认发布 {{ confirmation.release.version }}
-                </button>
-              </div>
             </template>
+            <div v-if="releaseState.error" role="alert" aria-label="发布失败" class="message error">
+              <p>{{ releaseState.error }}</p>
+              <p v-if="releaseState.needsPreview">
+                请重新获取发布确认并检查版本和差异。如项目配置已变更，请返回审核并选择新的同步快照。
+              </p>
+              <p v-else>
+                请求结果尚未确认。可使用同一次确认重试，已创建的任务不会重复创建。
+              </p>
+            </div>
+            <div class="inline-controls">
+              <button @click="publication.close()">
+                返回审核
+              </button>
+              <button v-if="releaseState.needsPreview" :disabled="!!releaseState.pending" @click="publication.preview()">
+                重新获取发布确认
+              </button>
+              <button v-if="confirmation" class="primary" :disabled="!!releaseState.pending || releaseState.needsPreview" @click="publication.publish()">
+                {{ releaseState.failedPublish && !releaseState.needsPreview ? '重试发布请求' : `确认发布 ${confirmation.release.version}` }}
+              </button>
+            </div>
           </dialog>
         </template>
       </section>

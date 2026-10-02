@@ -1,8 +1,26 @@
+import { readApiResponse } from './api-response'
+
+export { ApiError } from './api-response'
+
 let csrf = ''
+
+interface RequestOptions {
+  signal?: AbortSignal
+  idempotencyKey?: string
+}
+
+async function readResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    location.assign('/login')
+  }
+  return await readApiResponse<T>(response)
+}
+
 export async function api<T>(
   path: string,
   body?: unknown,
   method = body === undefined ? 'GET' : 'POST',
+  options: RequestOptions = {},
 ): Promise<T> {
   const response = await fetch(`/api/${path}`, {
     method,
@@ -10,19 +28,12 @@ export async function api<T>(
     headers: {
       'Content-Type': 'application/json',
       'X-CSRF-Token': csrf,
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': options.idempotencyKey ?? crypto.randomUUID(),
     },
+    signal: options.signal,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
-  if (response.status === 401) {
-    location.assign('/login')
-    throw new Error('请重新登录')
-  }
-  const result = await response.json()
-  if (!response.ok) {
-    throw new Error(result.error ?? `请求失败（${response.status}）`)
-  }
-  return result as T
+  return await readResponse<T>(response)
 }
 export async function initializeSession() {
   const session = await api<{ csrf: string }>('session')
@@ -35,10 +46,7 @@ export async function upload(file: File) {
     headers: { 'Content-Type': 'application/zip', 'X-CSRF-Token': csrf },
     body: file,
   })
-  const result = (await response.json()) as { id: string, error?: string }
-  if (!response.ok) {
-    throw new Error(result.error ?? '上传失败')
-  }
+  const result = await readResponse<{ id: string }>(response)
   return result.id
 }
 
@@ -52,12 +60,6 @@ export async function restoreBackup(file: File) {
     },
     body: file,
   })
-  const result = (await response.json()) as {
-    restored: number
-    error?: string
-  }
-  if (!response.ok) {
-    throw new Error(result.error ?? '恢复失败')
-  }
+  const result = await readResponse<{ restored: number }>(response)
   return result.restored
 }
