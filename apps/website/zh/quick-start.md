@@ -141,6 +141,40 @@ catch (error) {
 
 长期运行的 Promise 会在取消清理完成、发出 `stopped` 事件后以 `IconctlAbortError` 拒绝；结束后不会继续写入。已有同步提交边界仍然适用：提交若已开始，会先完成，再继续配置重载或退出。
 
+### 校验已有产物
+
+可直接校验本地 Iconify 集合，无需先创建 iconctl 配置：
+
+```bash
+pnpm exec iconctl check --input ./icons.json
+pnpm exec iconctl check --input ./icons.json --width 24 --height 24 --name '^[a-z0-9]+(-[a-z0-9]+)*$' --json
+```
+
+`--input` 接收本地文件路径，不加载或执行配置、不读取配置来源、不请求网络、不写文件；不能与 `--config` 同用。默认命名规则为 kebab-case；未传尺寸时不限制画布大小，`--width`／`--height` 必须为有限正数。`--name` 是正则源码字符串，不带斜杠分隔符和 flags。
+
+省略 `--input` 时，`check` 加载配置：设置了 `output.svg` 就检查该目录，否则检查 `output.json`；已配置的 SVG 目录不存在时直接报错。上述参数同样可以覆盖配置中的校验规则。此模式不请求配置来源、不生成产物，但加载用户配置会执行其中的代码。
+
+JSON 别名作为独立命名图标计数。检查前先解析别名链、翻转、旋转和继承几何信息，再校验实际画布；省略尺寸时使用 Iconify 默认的 16×16。所有名称都参与检查，包括隐藏 JSON 图标，以及嵌套或隐藏目录内的原始 SVG 文件名。检查不会重命名 SVG，也不会应用来源的 `skipPrefix` 排除规则；重复 SVG basename 会报错。
+
+`--json` 输出一份报告，保留原有 `prefix`、`count`、`source`，新增 `valid` 和 `issues`。每条问题包含 `stage`（`options`、`read`、`import`、`process` 或 `validation`）、`message`，以及可用的 `name`、`file`。导入、SVG 处理失败会与其余图标的校验失败一起保留。`count` 包括发现的图标／别名或 SVG 文件，失败项也计入；无法确定前缀或来源时，相应字段可为 null。失败退出码为 1，成功为 0；`--continue` 不会使失败检查变为成功。
+
+公开 API 保持原有成功返回结构，可捕获 `IconctlCheckError` 获取结构化诊断：
+
+```ts
+import { check, IconctlCheckError } from 'iconctl'
+
+try {
+  const result = await check({ input: './icons.json', validate: { width: 24, height: 24 } })
+  console.log(result.prefix, result.count, result.source)
+}
+catch (error) {
+  if (!(error instanceof IconctlCheckError)) throw error
+  console.error(error.report, error.issues)
+}
+```
+
+已有 `check({ config })` 调用继续可用。API 命名规则也支持 `RegExp`；带 `g`／`y` 的表达式会在每个名称上从索引零开始匹配，不改变调用方的 `lastIndex`。
+
 ### 离线比较
 
 直接比较两份本地 Iconify JSON，不加载配置、凭据或远程来源：

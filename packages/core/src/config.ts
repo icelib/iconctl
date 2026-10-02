@@ -53,6 +53,15 @@ export interface ResolvedIconctlConfig {
 
 const defaultNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+export function resolveValidation(config: IconctlValidateConfig = {}): ResolvedIconctlConfig['validate'] {
+  return {
+    name: config.name instanceof RegExp ? config.name : new RegExp(config.name ?? defaultNamePattern.source),
+    skipPrefix: config.skipPrefix ?? ['_', '.'],
+    ...(config.width != null ? { width: config.width } : {}),
+    ...(config.height != null ? { height: config.height } : {}),
+  }
+}
+
 export function defineConfig<T extends IconctlConfig>(config: T): T {
   return config
 }
@@ -191,7 +200,6 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
     throw new IconctlError('iconctl config is missing `sources`')
   }
 
-  const name = config.validate?.name
   const output: ResolvedIconctlConfig['output'] = {
     json: config.output?.json ?? 'icons.json',
   }
@@ -211,16 +219,7 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
     output.changelog = config.output.changelog
   }
 
-  const validate: ResolvedIconctlConfig['validate'] = {
-    name: name instanceof RegExp ? name : new RegExp(name ?? defaultNamePattern.source),
-    skipPrefix: config.validate?.skipPrefix ?? ['_', '.'],
-  }
-  if (config.validate?.width != null) {
-    validate.width = config.validate.width
-  }
-  if (config.validate?.height != null) {
-    validate.height = config.validate.height
-  }
+  const validate = resolveValidation(config.validate)
 
   const resolved: ResolvedIconctlConfig = {
     prefix: config.prefix.trim(),

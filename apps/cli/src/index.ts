@@ -5,6 +5,7 @@ export {
   defineConfig,
   diffIconSets,
   IconctlAbortError,
+  IconctlCheckError,
   IconctlError,
   IconctlSyncError,
   loadConfig,
@@ -15,6 +16,12 @@ export {
   writeDiffHtml,
 } from '@iconctl/core'
 export type {
+  CheckInputOptions,
+  CheckIssue,
+  CheckOptions,
+  CheckReport,
+  CheckResult,
+  CheckValidation,
   IconComparisonEntry,
   IconctlConfig,
   IconDiff,

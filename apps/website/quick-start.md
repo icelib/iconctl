@@ -141,6 +141,40 @@ catch (error) {
 
 The long-running Promise rejects with `IconctlAbortError` after cancellation cleanup and a `stopped` event. Once it settles, it performs no later writes. The existing sync commit boundary still applies: a commit already in progress finishes before configuration reload or shutdown continues.
 
+### Check existing artifacts
+
+Check a local Iconify collection directly, including in a folder with no iconctl configuration:
+
+```bash
+pnpm exec iconctl check --input ./icons.json
+pnpm exec iconctl check --input ./icons.json --width 24 --height 24 --name '^[a-z0-9]+(-[a-z0-9]+)*$' --json
+```
+
+`--input` accepts a local file path and does not load or execute configuration, read configured sources, make network requests or write files. It cannot be combined with `--config`. The default name rule is kebab-case; dimensions are unrestricted unless `--width` or `--height` specifies a finite positive number. `--name` is a regular-expression source string, without slash delimiters or flags.
+
+Without `--input`, `check` loads your configuration and inspects `output.svg` when configured, otherwise `output.json`; a missing configured SVG directory is an error. The same flags can override configured validation rules. This mode does not contact configured sources or generate outputs, although loading a user configuration executes its code.
+
+JSON aliases count as named icons. Alias chains, flips, rotations and inherited geometry are resolved before checking the rendered canvas; Iconify's default canvas is 16×16 when dimensions are omitted. All names are checked, including hidden JSON icons and original SVG basenames in nested or hidden directories. Checks do not rename SVG files or apply source `skipPrefix` exclusions. Duplicate SVG basenames are errors.
+
+`--json` writes one report with the existing `prefix`, `count` and `source` fields plus `valid` and `issues`. Each issue has a `stage` (`options`, `read`, `import`, `process` or `validation`), a `message` and, when available, `name` and `file`. Import and SVG processing failures are retained alongside validation failures for the remaining icons. `count` includes discovered icons/aliases or SVG files, including failed ones. A report may have a null prefix or source if failure occurs before they can be determined. A failed check exits with status 1; a successful check exits with status 0. `--continue` does not turn a failed check into success.
+
+The public API keeps the original successful result shape. Catch `IconctlCheckError` for structured diagnostics:
+
+```ts
+import { check, IconctlCheckError } from 'iconctl'
+
+try {
+  const result = await check({ input: './icons.json', validate: { width: 24, height: 24 } })
+  console.log(result.prefix, result.count, result.source)
+}
+catch (error) {
+  if (!(error instanceof IconctlCheckError)) throw error
+  console.error(error.report, error.issues)
+}
+```
+
+Existing `check({ config })` callers remain supported. API name rules also accept `RegExp`; global and sticky expressions start at index zero for every name without changing the caller's `lastIndex`.
+
 ### Offline comparison
 
 Compare two local Iconify JSON files without loading configuration, credentials or remote sources:

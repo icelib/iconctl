@@ -1,6 +1,6 @@
-import type { IconDiff, IconSetComparison, SyncIssue, SyncResult } from '..'
-import { expectType } from 'tsd'
-import { compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, resolveConfig, sync, watch, writeDiffHtml } from '..'
+import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SyncIssue, SyncResult } from '..'
+import { expectError, expectType } from 'tsd'
+import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, resolveConfig, sync, watch, writeDiffHtml } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
 const comparison = compareIconSets(undefined, { prefix: 'brand', icons: { arrow: { body: '<path/>' } } })
@@ -15,6 +15,19 @@ expectType<{ prefix: string, sources: [{ type: 'figma', file: string }] }>(defin
 }))
 
 const config = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: 'svg' }] })
+interface ExtendedCheckOptions extends CheckOptions { extra: boolean }
+declare const checkOptions: ExtendedCheckOptions
+expectType<typeof config>(checkOptions.config)
+expectType<Promise<CheckResult>>(check(checkOptions))
+const inputOptions: CheckInputOptions = { input: 'icons.json', validate: { name: /^[a-z]+$/g, width: 16 } }
+expectType<Promise<CheckResult>>(check(inputOptions))
+expectError(check({ input: 'icons.json', config }))
+expectError(check({}))
+declare const checked: CheckResult
+expectType<string>(checked.prefix)
+declare const report: CheckReport
+expectType<CheckIssue[]>(new IconctlCheckError(report).issues)
+expectType<CheckReport>(new IconctlCheckError(report).report)
 expectType<Promise<SyncResult>>(sync({ config, signal: new AbortController().signal }))
 declare const result: SyncResult
 expectType<boolean>(result.complete)

@@ -2,13 +2,13 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import process from 'node:process'
 import {
-  check,
   IconctlError,
   loadConfig,
   sync,
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
+import { reportCheckError, runCheck } from './check'
 import { runDiff } from './diff'
 import { runFigmaAuth } from './figma-auth'
 import { syncSummary } from './sync-summary'
@@ -154,21 +154,12 @@ export async function runCli(argv: string[] = process.argv) {
     })
 
   cli
-    .command('check', 'Validate generated SVG or JSON without loading remote sources')
-    .action(async (options: GlobalOptions) => {
-      try {
-        const config = await loadOptions(options)
-        const result = await check({ cwd: process.cwd(), config })
-        if (options.json) {
-          process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
-          return
-        }
-        consola.success(`Checked ${result.count} icons from ${result.source}`)
-      }
-      catch (error) {
-        printError(error)
-      }
-    })
+    .command('check', 'Validate configured output or a standalone Iconify JSON file')
+    .option('--input <file>', 'Check a local Iconify JSON file without a config')
+    .option('--name <pattern>', 'Override the icon-name regular expression source')
+    .option('--width <number>', 'Require this positive canvas width')
+    .option('--height <number>', 'Require this positive canvas height')
+    .action(runCheck)
 
   cli
     .command('preview', 'Generate a static HTML gallery from the current config')
@@ -269,5 +260,13 @@ export async function runCli(argv: string[] = process.argv) {
     cli.outputHelp()
     return
   }
-  await cli.runMatchedCommand()
+  try {
+    await cli.runMatchedCommand()
+  }
+  catch (error) {
+    if (cli.matchedCommand?.name === 'check') {
+      reportCheckError(error, parsed.options)
+    }
+    throw error
+  }
 }
