@@ -34,12 +34,15 @@ pnpm exec iconctl sync
 | `iconctl watch` | 持续同步本地 SVG 目录，自动重载配置 |
 | `iconctl check` | 校验已有产物，不打远程来源 |
 | `iconctl preview` | 生成静态 HTML 画廊 |
+| `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
 
 `sync --json` 输出 `added`、`removed`、`changed`、`skipped`、`sources`、`fileVersion`、`outputFiles`。校验失败默认非 0 退出，并且不写半成品。
 
 `sync({ signal })` 支持调用方取消。单项导入／处理失败现在也会默认阻止产物替换。显式设置 `continueOnError: true` 可导出成功项，结果带有 `complete: false`、诊断 `issues` 和 `diff.deletionsReliable: false`，不报告删除、不更新 changelog。产物先暂存再提交：提交前取消保留旧产物，提交开始后取消会等待提交成功；共享 OAuth 刷新安全结束后才返回取消。不保证跨路径原子发布，完整契约见[同步完整性与取消](apps/website/zh/quick-start.md#同步完整性与取消)。
 
 本地开发可运行 `iconctl watch`：启动时同步一次，随后监听 SVG 变更。请将 `raw-svg` 等输入与生成的 SVG／包目录分开。支持 `directory`、`jsdesign.dir` 和 `iconfont.dir` 本地来源；远程来源继续使用 `sync`。`watch --json` 输出 NDJSON 事件。配置恢复、取消和 API 详见[本地监听](apps/website/zh/quick-start.md#本地监听)。
+
+运行 `iconctl diff before.json after.json --html diff.html` 可审核两份导出集合，比较时解析别名、继承尺寸和变换，并单独报告前缀变化，无需配置或凭据。CI 可加 `--check --json`；图标或前缀存在变化时 `--check` 以 1 退出。报告、dry-run 和 API 详见[离线比较](apps/website/zh/quick-start.md#离线比较)。
 
 ## 配置
 

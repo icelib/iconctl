@@ -141,6 +141,42 @@ catch (error) {
 
 长期运行的 Promise 会在取消清理完成、发出 `stopped` 事件后以 `IconctlAbortError` 拒绝；结束后不会继续写入。已有同步提交边界仍然适用：提交若已开始，会先完成，再继续配置重载或退出。
 
+### 离线比较
+
+直接比较两份本地 Iconify JSON，不加载配置、凭据或远程来源：
+
+```bash
+pnpm exec iconctl diff before.json after.json
+pnpm exec iconctl diff before.json after.json --html reports/diff.html
+pnpm exec iconctl diff before.json after.json --json --check
+pnpm exec iconctl diff before.json after.json --html reports/diff.html --dry-run
+```
+
+比较包括图标和别名，会解析别名链、继承尺寸（省略时默认 16 × 16）、偏移、旋转、翻转及隐藏状态。别名与具体图标解析后的值相同时视为未变化；父图标变化会影响依赖它的别名。SVG body 在应用变换后按文本比较，因此语义等价的不同路径写法、不同优化结果仍可能被报告为变化；它不进行像素或几何等价比较。
+
+前缀变化单独报告：同名图标可以保持未变化，但 `prefixChanged` 和 `hasChanges` 为 true。图标或前缀变化时，`--check` 在写入请求的报告后以 1 退出；未加此选项的有效比较以 0 退出。JSON、尺寸、缺失或循环别名等错误会使整个比较失败，以 1 退出并保留已有报告。
+
+`--json` 输出一个对象，包含 `before`、`after`（绝对 `file` 路径和 `prefix`）、`prefixChanged`、`hasChanges`、排序后的 `added`、`removed`、`changed`、`unchanged` 数组及 `outputFiles`，不改变 `sync --json`。`--dry-run` 执行比较和目标路径检查，返回 `dryRun: true`、`outputFiles: []`，不创建文件、目录或缓存。
+
+HTML 报告可离线搜索名称、筛选变化、查看数量和前后预览，无外部资源。元数据经过转义，SVG body 作为独立图片文档展示，内容安全策略只允许报告固定的脚本和样式。普通 `preview` 画廊也使用相同的图片隔离和别名渲染。报告不能覆盖任一输入，包括符号链接或硬链接别名；写入使用暂存替换，同一目标请串行写入。
+
+`iconctl` 和 `@iconctl/core` 均提供以下 API：
+
+```ts
+import { compareIconSets, diffIconSets, renderDiffHtml, writeDiffHtml } from 'iconctl'
+
+const comparison = compareIconSets(beforeJson, afterJson)
+console.log(comparison.hasChanges, comparison.prefixChanged)
+const html = renderDiffHtml(comparison)
+await writeDiffHtml('reports/diff.html', comparison, {
+  inputs: ['before.json', 'after.json'],
+})
+// 已有同步 API 保持四个数组的返回结构。
+const diff = diffIconSets(beforeJson, afterJson)
+```
+
+`compareIconSets(undefined, afterJson)` 将全部图标视为新增。`writeDiffHtml` 支持 `dryRun: true`；在自定义集成中传入 `inputs` 可保护来源文件。渲染函数只返回字符串，不写文件。
+
 ## 5. 使用 JSON
 
 在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体。

@@ -141,6 +141,42 @@ catch (error) {
 
 The long-running Promise rejects with `IconctlAbortError` after cancellation cleanup and a `stopped` event. Once it settles, it performs no later writes. The existing sync commit boundary still applies: a commit already in progress finishes before configuration reload or shutdown continues.
 
+### Offline comparison
+
+Compare two local Iconify JSON files without loading configuration, credentials or remote sources:
+
+```bash
+pnpm exec iconctl diff before.json after.json
+pnpm exec iconctl diff before.json after.json --html reports/diff.html
+pnpm exec iconctl diff before.json after.json --json --check
+pnpm exec iconctl diff before.json after.json --html reports/diff.html --dry-run
+```
+
+The comparison includes icon names and aliases, resolves alias chains, inherited dimensions (16 × 16 when omitted), offsets, rotations and flips, and detects hidden-state changes. An alias and a concrete icon with the same resolved values are unchanged. Changing an alias parent also changes affected aliases. SVG bodies are compared as text after applying transforms; equivalent path syntax or differently optimized markup can still be reported as changed. This is not a pixel or geometric-equivalence comparison.
+
+Prefix changes are reported independently: matching local names remain unchanged, while `prefixChanged` and `hasChanges` become true. `--check` exits 1 when an icon or prefix changes, after writing any requested report; without it, a valid comparison exits 0. Invalid JSON, dimensions, missing or cyclic aliases fail the entire comparison with exit 1 and preserve any previous report.
+
+`--json` prints one object with `before` and `after` (absolute `file` and `prefix`), `prefixChanged`, `hasChanges`, sorted `added`, `removed`, `changed`, `unchanged` arrays, and `outputFiles`. This does not change `sync --json`. `--dry-run` performs the comparison and destination checks, reports `dryRun: true` and `outputFiles: []`, and creates no files, directories or caches.
+
+The HTML report works offline with name search, change filters, counts and before/after images. It contains no external assets. Metadata is escaped, SVG bodies are isolated as image documents, and a Content Security Policy permits only the report's fixed script and styles. The ordinary `preview` gallery uses the same image isolation and alias rendering. A report cannot replace either input, including through a symlink or hard-link alias. Reports use staged replacement; serialize writes to the same destination.
+
+The APIs are available from both `iconctl` and `@iconctl/core`:
+
+```ts
+import { compareIconSets, diffIconSets, renderDiffHtml, writeDiffHtml } from 'iconctl'
+
+const comparison = compareIconSets(beforeJson, afterJson)
+console.log(comparison.hasChanges, comparison.prefixChanged)
+const html = renderDiffHtml(comparison)
+await writeDiffHtml('reports/diff.html', comparison, {
+  inputs: ['before.json', 'after.json'],
+})
+// Existing synchronous API keeps its four-array result shape.
+const diff = diffIconSets(beforeJson, afterJson)
+```
+
+`compareIconSets(undefined, afterJson)` treats all icons as added. `writeDiffHtml` accepts `dryRun: true`; pass `inputs` when protecting source files in your own integration. The render function returns a string without writing files.
+
 ## 5. Use the JSON
 
 With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font.

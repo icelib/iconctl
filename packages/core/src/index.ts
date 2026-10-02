@@ -17,7 +17,8 @@ export {
   type ResolvedIconctlConfig,
   resolveJsonPackage,
 } from './config'
-export { diffIconSets, type IconDiff } from './diff'
+export { compareIconSets, diffIconSets, type IconComparisonEntry, type IconDiff, type IconSetComparison } from './diff'
+export { renderDiffHtml, writeDiffHtml, type WriteDiffHtmlOptions } from './diff-preview'
 export { IconctlAbortError, IconctlError, IconctlSyncError, type SyncIssue } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
 export { getFigmaAuthStatus, logoutFigma } from './figma/auth'

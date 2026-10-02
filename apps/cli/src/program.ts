@@ -9,6 +9,7 @@ import {
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
+import { runDiff } from './diff'
 import { runFigmaAuth } from './figma-auth'
 import { syncSummary } from './sync-summary'
 import { runWatch } from './watch'
@@ -103,6 +104,19 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
+
+  cli
+    .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')
+    .option('--html <path>', 'Write a standalone offline HTML comparison')
+    .option('--check', 'Exit with status 1 when icons or the prefix differ')
+    .action(async (before: string, after: string, options) => {
+      try {
+        await runDiff(before, after, options)
+      }
+      catch (error) {
+        printError(error)
+      }
+    })
 
   cli
     .command('watch', 'Watch local SVG sources and reload config on change')

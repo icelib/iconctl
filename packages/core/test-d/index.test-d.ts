@@ -1,8 +1,14 @@
-import type { SyncIssue, SyncResult } from '..'
+import type { IconDiff, IconSetComparison, SyncIssue, SyncResult } from '..'
 import { expectType } from 'tsd'
-import { defineConfig, IconctlAbortError, IconctlSyncError, parseFigmaFileKey, resolveConfig, sync, watch } from '..'
+import { compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, resolveConfig, sync, watch, writeDiffHtml } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
+const comparison = compareIconSets(undefined, { prefix: 'brand', icons: { arrow: { body: '<path/>' } } })
+expectType<IconSetComparison>(comparison)
+expectType<IconDiff>(diffIconSets(undefined, { prefix: 'brand', icons: {} }))
+expectType<boolean>(comparison.prefixChanged)
+expectType<string>(renderDiffHtml(comparison))
+expectType<Promise<void>>(writeDiffHtml('diff.html', comparison, { inputs: ['icons.json'], dryRun: true }))
 expectType<{ prefix: string, sources: [{ type: 'figma', file: string }] }>(defineConfig({
   prefix: 'brand',
   sources: [{ type: 'figma', file: 'AbCdEfGhIjKlMnOpQrStUv' }],

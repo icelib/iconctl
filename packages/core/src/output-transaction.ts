@@ -36,7 +36,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function canonicalTarget(path: string): Promise<{ path: string, parent: string }> {
+export async function canonicalTarget(path: string): Promise<{ path: string, parent: string }> {
   let ancestor = dirname(path)
   while (!(await exists(ancestor))) {
     ancestor = dirname(ancestor)
