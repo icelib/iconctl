@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs'
 import type { ResolvedIconctlConfig } from './config'
 import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -61,7 +62,27 @@ export interface WatchPaths extends WatchLocations {
   observedConfigFiles: string[]
   links: Set<string>
   linkTargets: Map<string, string>
+  entryVersions: Map<string, string>
   ignored: (file: string) => boolean
+}
+
+/** Directory contents have their own events; reading a file only changes atime. */
+export function watchEntryVersion(info: Stats): string {
+  return info.isDirectory()
+    ? `directory:${info.dev}:${info.ino}:${info.birthtimeMs}`
+    : `${info.isSymbolicLink() ? 'link' : 'file'}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`
+}
+
+async function captureEntryVersions(files: string[]) {
+  const versions = new Map<string, string>()
+  await Promise.all(files.map(async (file) => {
+    // Unknown or missing entries have no baseline: their notifications must run.
+    const info = await lstat(file).catch(() => undefined)
+    if (info) {
+      versions.set(file, watchEntryVersion(info))
+    }
+  }))
+  return versions
 }
 
 async function pathVariants(paths: string[]): Promise<string[]> {
@@ -95,6 +116,7 @@ export async function watchConfigFiles(paths: WatchPaths, configFiles: string[])
     configFiles,
     observedConfigFiles,
     linkTargets,
+    entryVersions: new Map([...paths.entryVersions, ...await captureEntryVersions(observedConfigFiles)]),
     ignored: file => !observedConfigFiles.some(config => containsPath(file, config)) && paths.ignored(file),
   }
 }
@@ -139,6 +161,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
   const observedRoots = new Set(variants.roots)
   const observedSourceFiles = new Set(variants.sourceFiles)
   const links = new Set<string>()
+  const entryVersions = new Map<string, string>()
   const ancestors = new Set<string>()
   const visited = new Set<string>()
   const visit = async (directory: string) => {
@@ -151,6 +174,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
       }
       target = await realpath(directory)
       entries = await readdir(target)
+      entryVersions.set(target, watchEntryVersion(await stat(target)))
     }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -214,6 +238,9 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
           if (actual !== file) {
             observedSourceFiles.add(actual)
           }
+          if (!linked) {
+            entryVersions.set(file, watchEntryVersion(info))
+          }
         }
       }
     }
@@ -224,13 +251,22 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
   for (const root of paths.roots) {
     await visit(root)
   }
-  for (const root of paths.roots) {
+  for (const root of variants.roots) {
     const target = await canonical(root)
     for (const file of [...links]) {
       if (containsPath(target, file)) {
         links.add(join(root, relative(target, file)))
       }
     }
+    for (const [file, version] of [...entryVersions]) {
+      if (containsPath(target, file)) {
+        entryVersions.set(join(root, relative(target, file)), version)
+      }
+    }
+  }
+  const explicitFiles = [...observedSourceFiles, ...variants.configFiles, ...links, ...variants.roots]
+  for (const [file, version] of await captureEntryVersions([...explicitFiles, ...explicitFiles.map(dirname)])) {
+    entryVersions.set(file, version)
   }
   const observed = {
     observedRoots: [...observedRoots],
@@ -238,6 +274,7 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
     observedConfigFiles: variants.configFiles,
     links,
     linkTargets: await captureLinkTargets([...links, ...variants.roots, ...variants.sourceFiles, ...variants.configFiles]),
+    entryVersions,
   }
   const excludedDirs = [...directories, ...caches]
   const ignored = (input: string): boolean => {

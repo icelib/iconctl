@@ -2,14 +2,14 @@ import type { FSWatcher } from 'chokidar'
 import type { ResolvedIconctlConfig } from './config'
 import type { SyncResult } from './sync'
 import type { WatchPaths } from './watch-paths'
-import { access, readlink } from 'node:fs/promises'
+import { access, lstat, readlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError } from './errors'
 import { loadConfigDetails } from './load-config'
 import { sync } from './sync'
-import { containsPath, isWatchSourceEvent, validateWatchInputs, watchConfigFiles, watchPaths } from './watch-paths'
+import { containsPath, isWatchSourceEvent, validateWatchInputs, watchConfigFiles, watchEntryVersion, watchPaths } from './watch-paths'
 
 export type WatchEvent
   = | { type: 'ready', configFile: string, roots: string[] }
@@ -121,10 +121,35 @@ export async function watch(options: WatchOptions): Promise<void> {
         return
       }
       const file = resolve(input)
-      if (next.observedConfigFiles.includes(file)) {
+      const configuration = next.observedConfigFiles.includes(file)
+      if (!configuration && (!config || !isWatchSourceEvent(next, event, file, stats?.isSymbolicLink()))) {
+        return
+      }
+      if (event === 'unlink' || event === 'unlinkDir') {
+        const previous = next.entryVersions.get(file)
+        const aliases = previous === undefined
+          ? [file]
+          : [...next.entryVersions].filter(([, version]) => version === previous).map(([entry]) => entry)
+        for (const entry of next.entryVersions.keys()) {
+          if (aliases.some(alias => containsPath(alias, entry))) {
+            next.entryVersions.delete(entry)
+          }
+        }
+      }
+      else if (stats) {
+        const version = watchEntryVersion(stats)
+        const previous = next.entryVersions.get(file)
+        next.entryVersions.set(file, version)
+        // Native queues can replay discovery or emit change after a read without
+        // a new input version. Keep same-content saves via mtime/ctime/identity.
+        if (previous === version) {
+          return
+        }
+      }
+      if (configuration) {
         dirtyConfig()
       }
-      else if (config && isWatchSourceEvent(next, event, file, stats?.isSymbolicLink())) {
+      else {
         dirtySource()
       }
     })
@@ -153,16 +178,34 @@ export async function watch(options: WatchOptions): Promise<void> {
           return undefined
         }
         throw error
-      }).then((target) => {
-        if (closing || !watchers.has(listener) || next.linkTargets.get(file) === target) {
+      }).then(async (target) => {
+        let version: string | undefined
+        if (target !== undefined) {
+          const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+              return undefined
+            }
+            throw error
+          })
+          if (info?.isSymbolicLink()) {
+            version = watchEntryVersion(info)
+          }
+          else {
+            target = undefined
+          }
+        }
+        if (closing || !watchers.has(listener)
+          || (next.linkTargets.get(file) === target && (target === undefined || next.entryVersions.get(file) === version))) {
           return
         }
         if (target === undefined) {
           next.linkTargets.delete(file)
+          next.entryVersions.delete(file)
         }
         else {
           next.linkTargets.set(file, target)
           next.links.add(file)
+          next.entryVersions.set(file, version!)
         }
         if (configuration) {
           dirtyConfig()
