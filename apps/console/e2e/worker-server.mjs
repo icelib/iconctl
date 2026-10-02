@@ -1,9 +1,10 @@
+import { Buffer } from 'node:buffer'
 import { generateKeyPairSync } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare'
 
@@ -12,6 +13,7 @@ async function main() {
     ['history', './fixtures/history-worker.mjs'],
     ['provenance', './fixtures/provenance-worker.mjs'],
     ['release-comparison', './fixtures/release-comparison-worker.mjs'],
+    ['review-recovery', './fixtures/review-recovery-worker.mjs'],
   ]).get(process.argv[2])
   if (!entrypoint) {
     throw new Error('Select a known browser test fixture')
@@ -42,6 +44,20 @@ async function main() {
   process.once('SIGINT', () => void stop())
 
   try {
+    const recoveryOrigin = process.argv[2] === 'review-recovery' ? 'https://review-recovery.test' : undefined
+    let workflowContent
+    if (recoveryOrigin) {
+      const workflowBundle = join(directory, 'workflow.mjs')
+      await build({
+        entryPoints: [fileURLToPath(new URL('../worker/workflow.ts', import.meta.url))],
+        outfile: workflowBundle,
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+      })
+      const { runnerWorkflow } = await import(pathToFileURL(workflowBundle).href)
+      workflowContent = Buffer.from(runnerWorkflow(recoveryOrigin, 'fixture/icons', 'a'.repeat(40))).toString('base64')
+    }
     const bundle = join(directory, 'worker.mjs')
     await build({
       entryPoints: [fileURLToPath(new URL(entrypoint, import.meta.url))],
@@ -65,7 +81,7 @@ async function main() {
       compatibilityDate: '2026-09-24',
       compatibilityFlags: ['nodejs_compat'],
       bindings: {
-        APP_ORIGIN: 'http://127.0.0.1',
+        APP_ORIGIN: recoveryOrigin ?? 'http://127.0.0.1',
         GITHUB_APP_ID: 'browser-fixture',
         GITHUB_PRIVATE_KEY: generateKeyPairSync('rsa', { modulusLength: 2048 })
           .privateKey
@@ -91,6 +107,12 @@ async function main() {
           if (request.method === 'GET' && decodeURIComponent(url.pathname) === '/repos/fixture/icons/git/ref/heads/iconctl/release-comparison') {
             return WorkerResponse.json({ object: { sha: 'b'.repeat(40) } })
           }
+          if (recoveryOrigin && request.method === 'GET' && decodeURIComponent(url.pathname) === '/repos/fixture/icons/git/ref/heads/iconctl/review-recovery') {
+            return WorkerResponse.json({ object: { sha: 'b'.repeat(40) } })
+          }
+          if (workflowContent && request.method === 'GET' && url.pathname === '/repos/fixture/icons/contents/.github/workflows/iconctl-console.yml' && url.searchParams.get('ref') === 'a'.repeat(40)) {
+            return WorkerResponse.json({ content: workflowContent })
+          }
           if (request.method === 'GET' && url.pathname === '/repos/fixture/icons/git/ref/heads/main') {
             return WorkerResponse.json({ object: { sha: 'a'.repeat(40) } })
           }
@@ -106,7 +128,7 @@ async function main() {
     await runtime.setOptions(convertV4MiniflareOptions({
       ...options,
       port: Number(url.port),
-      bindings: { ...options.bindings, APP_ORIGIN: url.origin },
+      bindings: { ...options.bindings, APP_ORIGIN: recoveryOrigin ?? url.origin },
     }))
     process.send?.({ type: 'ready', origin: url.origin })
   }

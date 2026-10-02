@@ -839,6 +839,7 @@ label {
 .release-dialog p {
   margin-bottom: 15px;
   line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 
 .release-version {

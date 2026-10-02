@@ -2,14 +2,14 @@
 import type { SnapshotIssue } from '@iconctl/console-contracts'
 
 defineProps<{ issues: SnapshotIssue[], failed: string[] }>()
-const stages: Record<string, string> = {
+const stages: Record<string, string> = Object.assign(Object.create(null), {
   'export-url': '获取导出地址',
   'download': '下载',
   'import': '导入',
   'process': '加工',
   'validation': '校验',
   'validate': '校验',
-}
+})
 function figmaLink(issue: SnapshotIssue) {
   if (issue.sourceType !== 'figma' || !issue.fileKey || !issue.nodeId) {
     return undefined
