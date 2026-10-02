@@ -87,7 +87,8 @@ describe('offline diff CLI', () => {
     await writeFile(report, 'previous report')
     await expect(runCli(['node', 'iconctl', 'diff', before, after, '--html', report, '--json'])).rejects.toThrow()
     expect(process.exitCode).toBe(1)
-    expect(output).toBe('')
+    expect(JSON.parse(output)).toMatchObject({ success: false, command: 'diff', error: { name: 'IconctlError', message: expect.any(String), phase: 'execution' } })
+    expect(consola.error).not.toHaveBeenCalled()
     expect(await readFile(report, 'utf8')).toBe('previous report')
   })
 

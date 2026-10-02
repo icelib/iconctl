@@ -1,3 +1,4 @@
+import type { CommandContext } from './failure'
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { getFigmaAuthStatus, IconctlError, loginFigma, logoutFigma } from '@iconctl/core'
@@ -18,10 +19,15 @@ async function openBrowser(url: string): Promise<void> {
   })
 }
 
-export async function runFigmaAuth(provider: string, action: string, options: FigmaAuthOptions): Promise<void> {
+export async function runFigmaAuth(provider: string, action: string, options: FigmaAuthOptions, context: CommandContext): Promise<void> {
+  context.phase = 'arguments'
   if (provider !== 'figma') {
     throw new IconctlError('Supported auth provider: figma.')
   }
+  if (!['login', 'status', 'logout'].includes(action)) {
+    throw new IconctlError('Use `iconctl auth figma login`, `status`, or `logout`.')
+  }
+  context.phase = 'authentication'
   if (action === 'login') {
     const controller = new AbortController()
     const cancel = () => controller.abort()
@@ -57,7 +63,5 @@ export async function runFigmaAuth(provider: string, action: string, options: Fi
   if (action === 'logout') {
     await logoutFigma()
     process.stdout.write(options.json ? `${JSON.stringify({ success: true, action: 'logout' })}\n` : 'Local Figma credentials removed. Remote authorization and environment credentials are unchanged.\n')
-    return
   }
-  throw new IconctlError('Use `iconctl auth figma login`, `status`, or `logout`.')
 }

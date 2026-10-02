@@ -66,6 +66,39 @@ CI:
 pnpm exec iconctl sync --json
 ```
 
+### JSON failures
+
+Fatal failures from `sync`, `preview`, `diff`, `check` and `auth` with `--json` write one JSON report to stdout and exit with status 1. The CLI does not repeat the same error on stderr. For example, a sync validation failure includes the known source coordinates:
+
+```json
+{
+  "success": false,
+  "command": "sync",
+  "error": {
+    "name": "IconctlSyncError",
+    "message": "Icon processing or validation failed: ...",
+    "phase": "execution",
+    "issues": [
+      {
+        "name": "arrow-left",
+        "message": "Expected width 24, received 16",
+        "stage": "validation",
+        "sourceType": "figma",
+        "sourceIndex": 0,
+        "fileKey": "example-file",
+        "nodeId": "12:34"
+      }
+    ]
+  }
+}
+```
+
+`error.phase` describes the known command boundary: `arguments` for invalid arguments or options, `configuration` for loading config, `authentication` for an `auth` operation, and `execution` for other command work. It does not guess the cause of an arbitrary error: credential or network failures thrown inside a sync remain `execution`. Per-icon `issues[].stage` describes that icon's import, processing or validation stage independently. Issues and source coordinates are omitted when unavailable; errors do not invent a diff or output files.
+
+Successful JSON stays unchanged, including explicitly continued partial results. A valid `diff --check` comparison with changes still emits the normal diff report and exits 1; it is not a fatal error. Failed `check` reports retain their original top-level `prefix`, `count`, `source`, `valid` and `issues` and add `success`, `command` and `error`; `error.issues` contains the same issues as the top-level field. Consumers with strict schemas should allow these added failure fields. Fatal JSON previously left stdout empty for other commands; consumers can now parse the failure report.
+
+`init --json` uses the same fatal report, but initialization remains interactive and has no successful JSON protocol. Watch keeps its separate NDJSON lifecycle described below. `--no-json` or `--json=false` selects human diagnostics. Library callers of `runCli()` still receive the original rejected error after it has been reported.
+
 ### Sync integrity and cancellation
 
 `sync()` rejects individual Figma export-URL, SVG download/import, processing and validation failures before replacing outputs. Malformed directory SVGs, MasterGo entries and iconfont symbols are reported with the remaining source icons. `IconctlSyncError.issues` identifies the icon, failure stage, and source index, file key and Figma node ID when available. The CLI exits non-zero and preserves previous outputs by default.
@@ -162,7 +195,7 @@ Without `--input`, `check` loads your configuration and inspects `output.svg` wh
 
 JSON aliases count as named icons. Alias chains, flips, rotations and inherited geometry are resolved before checking the rendered canvas; Iconify's default canvas is 16×16 when dimensions are omitted. All names are checked, including hidden JSON icons and original SVG basenames in nested or hidden directories. Checks do not rename SVG files or apply source `skipPrefix` exclusions. Duplicate SVG basenames are errors.
 
-`--json` writes one report with the existing `prefix`, `count` and `source` fields plus `valid` and `issues`. Each issue has a `stage` (`options`, `read`, `import`, `process` or `validation`), a `message` and, when available, `name` and `file`. Import and SVG processing failures are retained alongside validation failures for the remaining icons. `count` includes discovered icons/aliases or SVG files, including failed ones. A report may have a null prefix or source if failure occurs before they can be determined. A failed check exits with status 1; a successful check exits with status 0. `--continue` does not turn a failed check into success.
+`--json` writes one report with the existing `prefix`, `count` and `source` fields plus `valid` and `issues`. Failed reports also include the [JSON failure fields](#json-failures). Each issue has a `stage` (`options`, `read`, `import`, `process` or `validation`), a `message` and, when available, `name` and `file`. Import and SVG processing failures are retained alongside validation failures for the remaining icons. `count` includes discovered icons/aliases or SVG files, including failed ones. A report may have a null prefix or source if failure occurs before they can be determined. A failed check exits with status 1; a successful check exits with status 0. `--continue` does not turn a failed check into success.
 
 The public API keeps the original successful result shape. Catch `IconctlCheckError` for structured diagnostics:
 
