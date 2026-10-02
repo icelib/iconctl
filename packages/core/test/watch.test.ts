@@ -1,5 +1,5 @@
 import type { IconctlConfig, WatchEvent } from '../src'
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
@@ -38,7 +38,15 @@ function start() {
   return finished
 }
 async function until(predicate: () => boolean) {
-  await vi.waitFor(() => expect(predicate()).toBe(true), { timeout: 8000, interval: 20 })
+  await vi.waitFor(() => {
+    const summary = events.map(event => ({
+      type: event.type,
+      ...('runId' in event ? { runId: event.runId } : {}),
+      ...('reason' in event ? { reason: event.reason } : {}),
+      ...('phase' in event ? { phase: event.phase } : {}),
+    }))
+    expect(predicate(), JSON.stringify({ results: events.filter(event => event.type === 'result').length, events: summary })).toBe(true)
+  }, { timeout: 8000, interval: 20 })
 }
 function results() {
   return events.filter(event => event.type === 'result')
@@ -246,6 +254,77 @@ it('allows non-SVG output files and hidden cache inside sources without loops', 
   await setTimeout(350)
   expect(results()).toHaveLength(1)
   expect(events.filter(event => event.type === 'error')).toEqual([])
+})
+
+it('ignores replayed discovery and access-only notifications while preserving real edits', async () => {
+  start()
+  await until(() => results().length === 1)
+  const listener = vi.mocked(watchFiles).mock.results[0]!.value
+  for (const file of ['raw/home.svg', 'iconctl.config.ts']) {
+    const target = join(cwd, file)
+    const info = await stat(target)
+    // Chokidar can emit change with the same file version after access updates.
+    const accessed = Object.assign(Object.create(info), { atimeMs: info.atimeMs + 1000 })
+    listener.emit('all', 'change', target, accessed)
+    listener.emit('all', 'add', target, info)
+  }
+  listener.emit('all', 'addDir', join(cwd, 'raw'), await stat(join(cwd, 'raw')))
+  await setTimeout(350)
+  expect(results()).toHaveLength(1)
+  await writeFile(join(cwd, 'raw/home.svg'), svg.replace('h24', 'h12'))
+  await until(() => results().length === 2)
+  expect(results()[1]!.result.diff.changed).toEqual(['home'])
+})
+
+it('reloads an unchanged config saved again and preserves atomic file replacement', async () => {
+  start()
+  await until(() => results().length === 1)
+  await saveConfig()
+  await until(() => results().length === 2)
+  expect(events.filter(event => event.type === 'start').at(-1)).toMatchObject({ reason: 'config' })
+  // Replacing with identical bytes still creates a new filesystem entry.
+  await writeFile(join(cwd, 'raw/temporary'), svg)
+  await rename(join(cwd, 'raw/temporary'), join(cwd, 'raw/home.svg'))
+  await until(() => results().length === 3)
+  expect(events.filter(event => event.type === 'start').at(-1)).toMatchObject({ reason: 'source' })
+})
+
+it('invalidates all path aliases when a directory is removed and rediscovered', async () => {
+  await symlink(cwd, join(cwd, 'alias'), 'dir')
+  await saveConfig(config('raw', { sources: [{ type: 'directory', dir: 'raw' }, { type: 'directory', dir: 'alias/raw' }] }))
+  start()
+  await until(() => results().length === 1)
+  const listener = vi.mocked(watchFiles).mock.results[0]!.value
+  // Native notifications may use different spellings for the same entry. A
+  // moved-out/moved-back directory can retain its inode and birthtime.
+  listener.emit('all', 'unlinkDir', join(cwd, 'raw'))
+  await until(() => results().length === 2)
+  listener.emit('all', 'addDir', join(cwd, 'alias/raw'), await stat(join(cwd, 'alias/raw')))
+  await until(() => results().length === 3)
+})
+
+it('ignores a late initial link discovery while still observing its target changes', async () => {
+  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-late-link-'))
+  externalDirectories.push(external)
+  await writeFile(join(external, 'external.svg'), svg)
+  const link = join(cwd, 'raw/linked')
+  await symlink(external, link, 'dir')
+  start()
+  await until(() => results().length === 1)
+  const listener = vi.mocked(watchFiles).mock.results.at(-1)!.value
+  expect(listener.closed).toBe(false)
+  expect(listener.listenerCount('all')).toBeGreaterThan(0)
+  listener.emit('all', 'add', link, await lstat(link))
+  await setTimeout(350)
+  expect(events.filter(event => event.type === 'start')).toHaveLength(1)
+  expect(results()).toHaveLength(1)
+  await writeFile(join(external, 'external.svg'), svg.replace('h24', 'h12'))
+  await until(() => results().length === 2)
+  expect(results()[1]!.result.diff.changed).toEqual(['external'])
+  await symlink(external, join(cwd, 'replacement-link'), 'dir')
+  await rename(join(cwd, 'replacement-link'), link)
+  await until(() => results().length === 3)
+  expect(events.filter(event => event.type === 'start').at(-1)).toMatchObject({ reason: 'source' })
 })
 
 it('rejects an output alias through an existing ancestor before creating the output', async () => {
