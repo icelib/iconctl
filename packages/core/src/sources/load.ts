@@ -8,6 +8,7 @@ import { IconctlError } from '../errors'
 import { loadDirectorySource } from './directory'
 import { loadFigmaSource } from './figma'
 import { loadIconfontSource } from './iconfont'
+import { loadIconifySource } from './iconify'
 import { loadJsdesignSource } from './jsdesign'
 import { loadMastergoSource } from './mastergo'
 
@@ -43,6 +44,13 @@ export interface LoadSourcesOptions {
 async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
   const cancellation = options.signal ? { signal: options.signal } : {}
   switch (source.type) {
+    case 'iconify':
+      return await loadIconifySource(source, {
+        cwd: options.cwd,
+        prefix: options.config.prefix,
+        skipPrefix: options.config.validate.skipPrefix,
+        ...cancellation,
+      })
     case 'directory':
       return await loadDirectorySource(source, {
         cwd: options.cwd,

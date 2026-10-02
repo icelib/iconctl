@@ -71,7 +71,7 @@ export async function watch(options: WatchOptions): Promise<void> {
   const install = async (next: WatchPaths) => {
     let listener: FSWatcher
     try {
-      listener = watchFiles([...new Set([...next.roots, ...next.configFiles].map(dirname))], {
+      listener = watchFiles([...new Set([...next.roots, ...next.sourceFiles, ...next.configFiles].map(dirname))], {
         ignoreInitial: true,
         atomic: true,
         ignored: next.ignored,
@@ -174,7 +174,7 @@ export async function watch(options: WatchOptions): Promise<void> {
           paths = nextPaths
           configFile = loaded.config.configFile
           initialized = true
-          emit({ type: 'ready', configFile: configFile!, roots: paths.roots })
+          emit({ type: 'ready', configFile: configFile!, roots: [...paths.roots, ...paths.sourceFiles] })
         }
         catch (error) {
           if (options.signal?.aborted) {
