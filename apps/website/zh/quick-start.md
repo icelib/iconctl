@@ -122,6 +122,8 @@ pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
 
 来源根目录不能包含、等于或位于生成的 SVG／JSON 包目录内，也不能位于缓存内。任何输出和缓存都不能覆盖配置文件，生成的 `.svg` 文件也不能放在来源内。开始监听和每次导入前都会校验链接及其目标，拒绝指向产物／缓存的别名及链接循环。启动时链接结构无效会失败；运行期间新增的无效链接会暂停同步，修复后恢复。合法的外部 SVG 和 JSON 目标会持续监听，包括目标替换和删除后重建。推荐使用彼此分离的 `raw-svg`、`svg` 和 `packages/icons`。JSON、TypeScript、HTML 输出文件可以位于 SVG 来源内，但不能替换配置或 Iconify 输入文件。配置的 Iconify 输入不能与任何输出文件、产物目录或缓存重叠。`ready.roots` 事件同时列出 SVG 目录和 Iconify 文件。自定义缓存应放在来源外或隐藏目录内，因为导入器会遍历可见子目录。
 
+外部链接改变监听范围时，会等待新的监听器就绪，再次检查链接后才开始导入。即使没有收到发现通知，启动过程中新增的链接也会在本轮纳入监听或被拒绝；删除或修复无效链接后会恢复同步，无需重启监听。
+
 `--json` 在 stdout 每行输出一个紧凑 JSON 对象：`ready`、`start`、`result`、`error` 或 `stopped`。每轮有递增的 `runId`；`start.reason` 为 `initial`、`source` 或 `config`。`result` 与 `sync --json` 使用相同摘要，不包含 SVG 内容；错误只序列化 `name`、`message` 和可用的 `issues`。人类可读日志写入 stderr。可恢复错误不会结束进程，致命错误退出码为 1。SIGINT／SIGTERM 等待当前同步结束、关闭监听后分别以 130／143 退出。
 
 ```ts
