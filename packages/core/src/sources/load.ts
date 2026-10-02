@@ -114,18 +114,35 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
   return loaded
 }
 
-export async function mergeIconSetsAsync(prefix: string, sets: IconSet[], signal?: AbortSignal): Promise<IconSet> {
-  const merged = blankIconSet(prefix)
-  for (const iconSet of sets) {
-    await iconSet.forEach(async (name, type) => {
+export interface IconOrigin {
+  sourceType: LoadedSource['type']
+  sourceIndex: number
+  fileKey?: string
+  nodeId?: string
+}
+
+export async function mergeLoadedSources(prefix: string, loaded: LoadedSource[], signal?: AbortSignal): Promise<{ iconSet: IconSet, origins: Map<string, IconOrigin> }> {
+  const iconSet = blankIconSet(prefix)
+  const origins = new Map<string, IconOrigin>()
+  for (const [sourceIndex, source] of loaded.entries()) {
+    await checkpoint(signal)
+    const sourceSet = source.iconSet
+    await sourceSet?.forEach(async (name, type) => {
       await checkpoint(signal)
       if (type === 'icon') {
-        const svg = iconSet.toSVG(name)
-        if (svg) {
-          merged.fromSVG(name, svg)
+        const svg = sourceSet.toSVG(name)
+        if (svg && iconSet.fromSVG(name, svg)) {
+          // Replace the entire origin when this icon wins, including removing
+          // Figma coordinates when a later local source supplies the icon.
+          origins.set(name, {
+            sourceType: source.type,
+            sourceIndex,
+            ...source.iconOrigins?.get(name),
+          })
         }
       }
     })
   }
-  return merged
+  await checkpoint(signal)
+  return { iconSet, origins }
 }

@@ -70,6 +70,8 @@ pnpm exec iconctl sync --json
 
 默认情况下，`sync()` 遇到 Figma 导出 URL 缺失、SVG 下载／导入失败、处理或校验失败，会在替换产物前拒绝同步。目录中的无效 SVG、MasterGo 条目和 iconfont symbol 会与其余来源图标一并报告。`IconctlSyncError.issues` 提供图标名称、失败阶段，以及可用的来源索引、文件标识和 Figma 节点 ID。CLI 默认非 0 退出并保留原有产物。
 
+处理与校验问题指向最终成功提供该图标的来源。`sourceIndex` 对应 `sources` 中从零开始的位置；Figma 图标即使经过自定义命名或同名覆盖，也会保留对应的 `fileKey` 和 `nodeId`。后续本地来源成功覆盖时会更新归属并移除旧 Figma 坐标。导入失败保留其自身诊断，不会夺取先前有效图标的归属。抛出的错误、继续执行和 dry-run 的结果均包含这些信息；调用方直接传入 `iconSet` 时不推测来源坐标。
+
 仅在需要部分产物时启用 `continueOnError: true`（CLI：`--continue`）。此时返回 `complete: false`，`failed`／`issues` 包含失败明细，`diff.deletionsReliable: false` 且 `removed: []`；不更新 changelog，也不保留完整同步缓存标记。认证失败、来源不可读取或 Figma 来源没有任何成功导入的图标时仍然拒绝。CLI 通过警告说明部分结果；`--json` 提供 `complete`、`deletionsReliable`、`skipped` 和 `issues`。显式请求部分成功时保持成功退出状态。
 
 修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
