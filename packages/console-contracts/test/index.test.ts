@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { iconDiff, nextVersion, projectInput, safePath } from '../src'
+import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo } from '../src'
 
 describe('console contracts', () => {
+  it('accepts only an omitted, published or explicit snapshot comparison', () => {
+    const id = crypto.randomUUID()
+    expect(snapshotCompareTo.parse(undefined)).toBeUndefined()
+    expect(snapshotCompareTo.parse('release')).toBe('release')
+    expect(snapshotCompareTo.parse(id)).toBe(id)
+    for (const value of ['', 'previous', '../snapshot', ['release']]) {
+      expect(() => snapshotCompareTo.parse(value)).toThrow()
+    }
+  })
   it('uses stable semantic versions and starts at 0.1.0', () => {
     expect(nextVersion(undefined, 'major')).toBe('0.1.0')
     expect(nextVersion('1.2.3', 'patch')).toBe('1.2.4')

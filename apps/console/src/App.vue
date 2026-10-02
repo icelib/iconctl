@@ -5,8 +5,9 @@ import type {
   Job,
   Project,
   ProjectInput,
-  Snapshot,
-  SnapshotContent,
+  ReleasePreview,
+  SnapshotComparison,
+  SnapshotPreview,
   Source,
 } from '@iconctl/console-contracts'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -77,21 +78,12 @@ const sourceType = ref<Source['type']>('figma')
 const mastergo = reactive({ label: 'MasterGo', token: '' })
 const pairing = reactive({ code: '', projectId: '', label: '我的 Figma 插件' })
 const snapshotId = ref('')
+const comparisonTarget = ref('')
 const search = ref('')
 const filter = ref('all')
 const bump = ref<'patch' | 'minor' | 'major'>('patch')
-const preview = ref<{
-  snapshot: Snapshot
-  content: SnapshotContent
-  previous?: IconJSON
-  diff: { added: string[], changed: string[], removed: string[] }
-}>()
-const confirmation = ref<{
-  id: string
-  packageName: string
-  iconCount: number
-  release: { version: string, digest: string }
-}>()
+const preview = ref<SnapshotPreview>()
+const confirmation = ref<ReleasePreview>()
 const releaseDialog = ref<HTMLDialogElement>()
 watch(
   confirmation,
@@ -111,6 +103,7 @@ function selectProject(event: Event) {
   if (view.value === 'preview') {
     preview.value = undefined
     snapshotId.value = ''
+    comparisonTarget.value = ''
     confirmation.value = undefined
   }
 }
@@ -289,14 +282,24 @@ async function install() {
     notice.value = `安装 PR 已创建：${result.url}`
   })
 }
-async function openSnapshot(id: string) {
+async function openSnapshot(id: string, compareTo = '') {
   await perform(async () => {
-    preview.value = await api(`snapshots/${id}`)
+    preview.value = await api(`snapshots/${id}${compareTo ? `?compareTo=${encodeURIComponent(compareTo)}` : ''}`)
     snapshotId.value = id
+    comparisonTarget.value = compareTo
     selectedId.value = preview.value!.snapshot.projectId
     view.value = 'preview'
     confirmation.value = undefined
   })
+}
+function comparisonLabel(comparison: SnapshotComparison) {
+  if (comparison.release) {
+    return `发布版本 v${comparison.release.version}`
+  }
+  if (!comparison.snapshot) {
+    return comparison.mode === 'release' ? '首次发布 · 空图标集' : '无历史快照 · 空图标集'
+  }
+  return `${comparison.mode === 'previous' ? '上次同步' : '指定快照'} · ${date(comparison.snapshot.createdAt)}`
 }
 function iconImage(json: IconJSON | undefined, name: string) {
   const icon = json?.icons[name]
@@ -807,6 +810,23 @@ onUnmounted(() => clearInterval(poll))
             >
               {{ date(snapshot.createdAt) }} · {{ snapshot.iconCount }} 个图标
             </option>
+          </select>
+          <select
+            v-if="preview"
+            :value="comparisonTarget"
+            :disabled="busy"
+            aria-label="比较基准"
+            @change="openSnapshot(snapshotId, ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">
+              上次同步
+            </option>
+            <option value="release">
+              最近发布
+            </option>
+            <option v-for="snapshot in snapshots" :key="snapshot.id" :value="snapshot.id">
+              快照 {{ date(snapshot.createdAt) }} · {{ snapshot.iconCount }} 个图标
+            </option>
           </select><input
             v-model="search"
             aria-label="搜索图标"
@@ -815,7 +835,7 @@ onUnmounted(() => clearInterval(poll))
         </div>
         <div v-if="!preview" class="empty-state">
           <h3>同步之后，在这里审核变化</h3>
-          <p>比较上一次成功快照，检查新增、修改和删除的图标。</p>
+          <p>选择上次同步、最近发布或指定快照，检查新增、修改和删除的图标。</p>
           <button
             v-if="activeProject"
             class="primary"
@@ -826,6 +846,9 @@ onUnmounted(() => clearInterval(poll))
           </button>
         </div>
         <template v-else>
+          <p v-if="preview.comparison" class="help" aria-label="当前比较基准">
+            比较基准：{{ comparisonLabel(preview.comparison) }}
+          </p>
           <div class="diff-header">
             <div class="diff-tabs">
               <button
@@ -949,6 +972,18 @@ onUnmounted(() => clearInterval(poll))
                 v{{ confirmation.release.version }}
               </div>
               <p>{{ confirmation.iconCount }} 个图标 · npm / latest</p>
+              <template v-if="confirmation.comparison && confirmation.diff">
+                <p aria-label="发布比较基准">
+                  相对{{ comparisonLabel(confirmation.comparison) }}的累计变化
+                </p>
+                <p aria-label="发布累计差异">
+                  新增 {{ confirmation.diff.added.length }} · 修改 {{ confirmation.diff.changed.length }} · 删除 {{ confirmation.diff.removed.length }}
+                </p>
+                <details v-if="confirmation.diff.removed.length">
+                  <summary>查看将删除的图标</summary>
+                  <p>{{ confirmation.diff.removed.join('、') }}</p>
+                </details>
+              </template>
               <p class="help mono">
                 SHA-256 {{ confirmation.release.digest }}
               </p>

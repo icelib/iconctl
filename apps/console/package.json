@@ -52,6 +52,8 @@
     "@playwright/test": "latest",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/tsconfig": "^0.9.1",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20260921.0-alpha",
     "vite": "^8.3.0",
     "vitest": "^4.1.0",
     "vue-tsc": "^3.3.11",
