@@ -17,6 +17,27 @@ Same conventions as Figma: kebab-case names (`arrow-left`, `userFilled.svg` beco
 
 `iconctl sync` writes Iconify JSON the same way as a Figma source.
 
+## Local Iconify JSON
+
+Import a vendor collection or the `icons.json` from an installed `@iconify-json/*` package:
+
+```ts
+{
+  type: 'iconify',
+  file: './vendor/icons.json',
+  include: ['arrow-left', 'home'], // Omit to import all names; [] imports none.
+  namePrefix: 'vendor-', // Literal prefix: home becomes vendor-home.
+}
+```
+
+`file` is a local path resolved from the command's working directory. The project `prefix` controls the output collection; the input prefix does not rename it. `include` uses exact original icon or alias names, with duplicates removed. Unselected invalid icons do not block a selected subset. `validate.skipPrefix` applies to original names before `namePrefix`; names are then checked by the usual project validation. Names shared by multiple sources follow the existing order: the later source wins. A distinct `namePrefix` avoids those collisions.
+
+Aliases are resolved through their full parent chain and flattened into independent icons, including horizontal/vertical flips, quarter-turn rotations and inherited dimensions. Missing dimensions default to Iconify's 16×16. Selected hidden icons are imported too; their `hidden` flag and collection/search metadata are not copied to generated outputs. All imported SVGs use the normal cleanup, color conversion and validation pipeline. Set `color: false` to retain vendor colors, and choose canvas validation that fits the vendor set.
+
+Unreadable files, invalid JSON, malformed collection structure and invalid default dimensions stop the source even with `--continue`. Invalid selected entries, broken/cyclic aliases, missing explicit selections and API `not_found` entries produce per-icon issues. The default sync preserves previous outputs; `--continue` exports available icons with `complete: false`, unreliable deletions and no changelog update. `--dry-run` and caller cancellation follow the existing sync contract.
+
+`iconctl watch` supports local Iconify JSON together with local SVG directories. File edits and deletion/recreation trigger serial syncs. Inputs must be separate from all configured output files, SVG/package output directories and caches, including through symlinks; watch rejects conflicting paths. It does not fetch remote Iconify endpoints.
+
 ## MasterGo
 
 ```ts

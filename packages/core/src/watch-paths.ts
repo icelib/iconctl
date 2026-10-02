@@ -33,71 +33,99 @@ async function canonical(file: string): Promise<string> {
   }
 }
 
-export interface WatchPaths {
+interface WatchLocations {
   roots: string[]
+  sourceFiles: string[]
   configFiles: string[]
   directories: string[]
   files: string[]
   cache: string
+}
+
+export interface WatchPaths extends WatchLocations {
   ignored: (file: string) => boolean
 }
 
+async function pathVariants(paths: string[]): Promise<string[]> {
+  return [...new Set([...paths, ...await Promise.all(paths.map(canonical))])]
+}
+
+/** Protect both the link entry and its target: publication can replace either. */
+async function validatePathIsolation(paths: WatchLocations) {
+  const [roots, sourceFiles, configFiles, directories, files, caches] = await Promise.all([
+    pathVariants(paths.roots),
+    pathVariants(paths.sourceFiles),
+    pathVariants(paths.configFiles),
+    pathVariants(paths.directories),
+    pathVariants(paths.files),
+    pathVariants([paths.cache]),
+  ])
+  const overwritesFile = (file: string) => directories.some(directory => containsPath(directory, file))
+    || files.some(output => comparable(output) === comparable(file)) || caches.some(cache => containsPath(cache, file))
+  for (const file of sourceFiles) {
+    if (overwritesFile(file)) {
+      throw new IconctlError(`Watch Iconify input overlaps an output or cache path: ${file}`)
+    }
+  }
+  for (const root of roots) {
+    if (directories.some(directory => overlaps(directory, root)) || caches.some(cache => containsPath(cache, root)
+      || (containsPath(root, cache) && !relative(root, cache).split(sep).some(part => part.startsWith('.'))))
+    || files.some(file => comparable(file) === comparable(root) || (extname(file).toLowerCase() === '.svg' && containsPath(root, file)))) {
+      throw new IconctlError(`Watch input overlaps an output or cache path: ${root}. Use separate input (for example raw-svg) and output directories.`)
+    }
+  }
+  for (const file of configFiles) {
+    if (overwritesFile(file)) {
+      throw new IconctlError(`Watch configuration would be overwritten by an output: ${file}`)
+    }
+  }
+  return { roots, sourceFiles, configFiles, directories, files, caches }
+}
+
 export async function watchPaths(config: ResolvedIconctlConfig, cwd: string, configFiles: string[]): Promise<WatchPaths> {
-  const roots = [...new Set(config.sources.map((source) => {
+  const sourceFiles = [...new Set(config.sources.filter(source => source.type === 'iconify').map(source => resolve(cwd, source.file)))]
+  const roots = [...new Set(config.sources.flatMap((source) => {
+    if (source.type === 'iconify') {
+      return []
+    }
     if (source.type === 'directory' || (source.type === 'jsdesign' && source.dir) || (source.type === 'iconfont' && source.dir && !source.url)) {
       return resolve(cwd, source.dir!)
     }
-    throw new IconctlError(`Watch supports local directory sources only; ${source.type} requires a one-shot sync.`)
+    throw new IconctlError(`Watch supports local SVG directories and Iconify JSON files only; ${source.type} requires a one-shot sync.`)
   }))]
   const output = config.output
   const directories = [output.svg, output.jsonPackage?.dir].filter((file): file is string => Boolean(file)).map(file => resolve(cwd, file))
   const files = [output.json, output.types, output.preview, output.changelog].filter((file): file is string => Boolean(file)).map(file => resolve(cwd, file))
   const cache = resolve(cwd, config.cacheDir)
   const watchedConfig = configFiles.map(file => resolve(cwd, file))
-  const resolvedRoots = await Promise.all(roots.map(canonical))
-  const resolvedDirectories = await Promise.all(directories.map(canonical))
-  const resolvedFiles = await Promise.all(files.map(canonical))
-  const resolvedConfig = await Promise.all(watchedConfig.map(canonical))
-  const resolvedCache = await canonical(cache)
-  for (const root of resolvedRoots) {
-    if (resolvedDirectories.some(directory => overlaps(directory, root)) || containsPath(resolvedCache, root)
-      || (containsPath(root, resolvedCache) && !relative(root, resolvedCache).split(sep).some(part => part.startsWith('.')))
-      || resolvedFiles.some(file => file === root || (extname(file).toLowerCase() === '.svg' && containsPath(root, file)))) {
-      throw new IconctlError(`Watch input overlaps an output or cache path: ${root}. Use separate input (for example raw-svg) and output directories.`)
-    }
-  }
-  for (const file of resolvedConfig) {
-    if (resolvedDirectories.some(directory => containsPath(directory, file)) || resolvedFiles.includes(file) || containsPath(resolvedCache, file)) {
-      throw new IconctlError(`Watch configuration would be overwritten by an output: ${file}`)
-    }
-  }
-  const allowedRoots = [...new Set([...roots, ...resolvedRoots])]
-  const allowedConfig = [...new Set([...watchedConfig, ...resolvedConfig])]
-  const excludedDirs = [...directories, ...resolvedDirectories, cache, resolvedCache]
-  const excludedFiles = [...files, ...resolvedFiles]
+  const locations = { roots, sourceFiles, configFiles: watchedConfig, directories, files, cache }
+  const variants = await validatePathIsolation(locations)
+  const excludedDirs = [...variants.directories, ...variants.caches]
   const ignored = (input: string): boolean => {
     const file = resolve(input)
-    if (allowedConfig.includes(file) || allowedConfig.some(item => containsPath(file, item))) {
+    if (variants.configFiles.some(item => containsPath(file, item))) {
       return false
     }
-    if (excludedDirs.some(directory => containsPath(directory, file)) || excludedFiles.includes(file)) {
+    if (excludedDirs.some(directory => containsPath(directory, file)) || variants.files.includes(file)) {
       return true
     }
-    return !allowedRoots.some((root) => {
+    if (variants.sourceFiles.some(item => containsPath(file, item))) {
+      return false
+    }
+    return !variants.roots.some((root) => {
       if (containsPath(file, root)) {
         return true
       }
       return containsPath(root, file) && !relative(root, file).split(sep).some(part => part.startsWith('.'))
     })
   }
-  return { roots, configFiles: watchedConfig, directories, files, cache, ignored }
+  return { ...locations, ignored }
 }
 
 /** Also inspect directory links: ignoring generated events alone cannot prevent re-imports. */
 export async function validateWatchInputs(paths: WatchPaths, signal?: AbortSignal): Promise<void> {
-  const directories = await Promise.all(paths.directories.map(canonical))
-  const files = await Promise.all(paths.files.map(canonical))
-  const cache = await canonical(paths.cache)
+  await checkpoint(signal)
+  const { directories, files, caches } = await validatePathIsolation(paths)
   const ancestors = new Set<string>()
   const visit = async (directory: string) => {
     await checkpoint(signal)
@@ -113,7 +141,7 @@ export async function validateWatchInputs(paths: WatchPaths, signal?: AbortSigna
       }
       throw error
     }
-    if (directories.some(output => overlaps(output, target)) || containsPath(cache, target)) {
+    if (directories.some(output => overlaps(output, target)) || caches.some(cache => containsPath(cache, target))) {
       throw new IconctlError(`Watch input links to an output or cache directory: ${directory}`)
     }
     if (ancestors.has(target)) {
@@ -133,7 +161,7 @@ export async function validateWatchInputs(paths: WatchPaths, signal?: AbortSigna
         }
         else if (info.isFile() && extname(entry).toLowerCase() === '.svg') {
           const actual = await canonical(file)
-          if (files.includes(actual) || directories.some(output => containsPath(output, actual)) || containsPath(cache, actual)) {
+          if (files.includes(actual) || directories.some(output => containsPath(output, actual)) || caches.some(cache => containsPath(cache, actual))) {
             throw new IconctlError(`Watch SVG input links to a generated file: ${file}`)
           }
         }
@@ -153,7 +181,10 @@ export function isWatchSourceEvent(paths: WatchPaths, event: string, file: strin
     return false
   }
   if (event === 'addDir' || event === 'unlinkDir') {
-    return paths.roots.some(root => containsPath(root, file) || containsPath(file, root))
+    return paths.roots.some(root => containsPath(root, file) || containsPath(file, root)) || paths.sourceFiles.some(source => containsPath(file, source))
+  }
+  if (paths.sourceFiles.includes(file)) {
+    return ['add', 'change', 'unlink'].includes(event)
   }
   return ['add', 'change', 'unlink'].includes(event) && extname(basename(file)).toLowerCase() === '.svg'
     && paths.roots.some(root => containsPath(root, file))

@@ -40,6 +40,7 @@ export {
   type DirectorySourceConfig,
   type FigmaSourceConfig,
   type IconfontSourceConfig,
+  type IconifySourceConfig,
   type JsdesignSourceConfig,
   type MastergoSourceConfig,
   type SourceConfig,

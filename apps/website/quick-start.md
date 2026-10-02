@@ -103,20 +103,20 @@ This is not a cross-path atomic publish or crash-recovery protocol. Serialize sy
 
 ### Local watch
 
-For a config containing only local SVG folders:
+For a config containing only local SVG folders or Iconify JSON files:
 
 ```bash
 pnpm exec iconctl watch
 pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
 ```
 
-Watch supports `directory`, `jsdesign` with `dir`, and `iconfont` with `dir` and no `url`. Figma, MasterGo and remote iconfont URLs require a one-shot `sync`. There is no remote polling or preview server. `init` now defaults to `raw-svg` for source SVGs and `svg` for generated SVGs.
+Watch supports `directory`, `jsdesign` with `dir`, `iconfont` with `dir` and no `url`, and `iconify` with a local `file`. Figma, MasterGo and remote iconfont URLs require a one-shot `sync`. There is no remote polling or preview server. `init` now defaults to `raw-svg` for source SVGs and `svg` for generated SVGs.
 
-The watcher becomes ready before the initial sync. SVG additions, edits, deletions and source directory recreation trigger a sync after 150 ms of quiet. Runs are serial; changes during a run coalesce into a follow-up. Non-SVG files, hidden source directories, generated outputs and caches do not trigger source syncs. As with `sync`, source directories may overlap.
+The watcher becomes ready before the initial sync. SVG or configured Iconify JSON additions, edits, deletions and source directory recreation trigger a sync after 150 ms of quiet. Runs are serial; changes during a run coalesce into a follow-up. Unrelated non-SVG files, hidden SVG source directories, generated outputs and caches do not trigger source syncs. As with `sync`, source directories may overlap.
 
 Saving the main config or a local `extends` layer cancels the current run, waits for it to drain, reloads without the module cache and rebuilds the watched paths. Local relative or absolute `extends` paths are supported. Arbitrary imported helper files are not watched: save the main config or restart watch after editing them. An invalid initial configuration is fatal. Later syntax errors, missing config files and unsupported sources pause syncing until the configuration is repaired; stale configuration is never reused to keep writing. Source import and validation errors are recoverable. `--continue` explicitly permits partial results, and `--dry-run` keeps its usual sync behavior.
 
-Source roots must not contain, equal or sit inside generated SVG or JSON-package directories, or sit inside the cache. Config files must not be overwritten by any output or cache. A generated `.svg` file cannot live inside a source. Real paths and reachable directory links are checked before importing to reject output/cache aliases and link cycles. Use separate paths such as `raw-svg`, `svg` and `packages/icons`. JSON, TypeScript and HTML output files can be inside a source, provided they do not replace a config file. Keep custom cache directories outside sources or hidden, because the importer traverses visible directories.
+Source roots must not contain, equal or sit inside generated SVG or JSON-package directories, or sit inside the cache. Config files must not be overwritten by any output or cache. A generated `.svg` file cannot live inside a source. Real paths and reachable directory links are checked before importing to reject output/cache aliases and link cycles. Use separate paths such as `raw-svg`, `svg` and `packages/icons`. JSON, TypeScript and HTML output files can be inside an SVG source, provided they do not replace a config or Iconify input file. Configured Iconify inputs cannot overlap any output file, generated directory or cache. The `ready.roots` event lists both SVG directories and Iconify files. Keep custom cache directories outside sources or hidden, because the importer traverses visible directories.
 
 `--json` writes one compact object per stdout line: `ready`, `start`, `result`, `error` or `stopped`. Each run has an increasing `runId`; `start.reason` is `initial`, `source` or `config`. A `result` contains the same summary as `sync --json`, without SVG bodies. Errors contain only `name`, `message` and available `issues`. Human-readable output goes to stderr. Recoverable failures keep the process running; fatal failures exit 1. SIGINT and SIGTERM drain the current run, close watchers and exit 130 and 143 respectively.
 

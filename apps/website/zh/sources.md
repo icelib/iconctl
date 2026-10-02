@@ -17,6 +17,27 @@ Figma 只是一种输入。本地 SVG 目录、MasterGo、iconfont、即时设�
 
 `iconctl sync` 写出的 Iconify JSON 和 Figma 来源同一条流水线。
 
+## 本地 Iconify JSON
+
+可导入已有图标集，或已安装的 `@iconify-json/*` 包内的 `icons.json`：
+
+```ts
+{
+  type: 'iconify',
+  file: './vendor/icons.json',
+  include: ['arrow-left', 'home'], // 省略时导入全部名称；[] 不导入任何图标。
+  namePrefix: 'vendor-', // 按字面拼接：home 变为 vendor-home。
+}
+```
+
+`file` 是相对于命令工作目录的本地路径。输出集合使用项目的 `prefix`，不会被输入集合前缀覆盖。`include` 精确匹配原始图标或别名，重复名称会去重；未选中的无效图标不会阻塞子集导入。`validate.skipPrefix` 先匹配原始名称，再拼接 `namePrefix`，最后按项目规则校验名称。多来源同名图标沿用已有顺序：后面的来源覆盖前面的来源；使用不同的 `namePrefix` 可以避免冲突。
+
+别名会沿完整父链解析，平铺成独立图标，支持水平／垂直翻转、以 90° 为单位的旋转和尺寸继承。缺失尺寸时采用 Iconify 默认的 16×16。选中的隐藏图标也会导入；其 `hidden` 标记、集合和搜索元数据不复制到生成产物。所有 SVG 继续使用已有清洗、颜色转换和校验流程；保留彩色图标时设置 `color: false`，画板校验应与来源尺寸一致。
+
+文件不可读、JSON 语法错误、集合结构无效或默认尺寸无效时，即使启用 `--continue` 也会拒绝该来源。选中条目损坏、别名断链／循环、显式选择的名称不存在，以及 API `not_found` 条目会产生逐图标诊断。默认同步保留旧产物；`--continue` 导出可用图标，标记 `complete: false`、删除不可靠，并跳过 changelog 更新。`--dry-run` 和调用方取消沿用现有同步契约。
+
+`iconctl watch` 支持将本地 Iconify JSON 与本地 SVG 目录混合监听。文件修改、删除后重建均会触发串行同步。输入必须与所有输出文件、SVG／包输出目录和缓存隔离，软链接也会校验；路径冲突时拒绝监听。不请求远程 Iconify 接口。
+
 ## MasterGo
 
 ```ts

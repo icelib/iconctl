@@ -1,5 +1,5 @@
 import type { IconctlConfig, WatchEvent } from '../src'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
@@ -21,6 +21,7 @@ let cwd: string
 let events: WatchEvent[]
 let controller: AbortController
 let finished: Promise<unknown> | undefined
+let externalDirectories: string[]
 
 function config(input = 'raw', extra: Partial<IconctlConfig> = {}): IconctlConfig {
   return { prefix: 'watch', sources: [{ type: 'directory', dir: input }], output: { json: 'icons.json', svg: 'svg' }, ...extra }
@@ -48,6 +49,7 @@ beforeEach(async () => {
   events = []
   controller = new AbortController()
   finished = undefined
+  externalDirectories = []
   vi.mocked(sync).mockClear()
   vi.mocked(watchFiles).mockClear()
   await source()
@@ -57,6 +59,7 @@ afterEach(async () => {
   controller.abort()
   await finished
   await rm(cwd, { recursive: true, force: true })
+  await Promise.all(externalDirectories.map(directory => rm(directory, { recursive: true, force: true })))
 })
 
 it('runs initially, debounces SVG edits, ignores outputs and closes on cancellation', async () => {
@@ -289,4 +292,95 @@ it('closes the watcher after an asynchronous watcher failure', async () => {
   expect(listener.closed).toBe(true)
   expect(events.at(-2)).toMatchObject({ type: 'error', phase: 'watch', fatal: true })
   expect(events.at(-1)).toEqual({ type: 'stopped', reason: 'error' })
+})
+
+it('watches an Iconify JSON file, recovers after deletion and ignores other JSON outputs', async () => {
+  const vendor = (name: string) => JSON.stringify({ prefix: 'vendor', icons: { [name]: { body: '<path d="M0 0h8v8H0z"/>' } } })
+  await writeFile(join(cwd, 'vendor.json'), vendor('first'))
+  await saveConfig(config('raw', { sources: [{ type: 'iconify', file: 'vendor.json' }] }))
+  start()
+  await until(() => results().length === 1)
+  await writeFile(join(cwd, 'vendor.json'), vendor('second'))
+  await until(() => results().length === 2)
+  expect(Object.keys(results()[1]!.result.json.icons)).toEqual(['second'])
+  await writeFile(join(cwd, 'unrelated.json'), '{}')
+  await setTimeout(250)
+  expect(results()).toHaveLength(2)
+  await rm(join(cwd, 'vendor.json'))
+  await until(() => events.some(event => event.type === 'error' && event.phase === 'sync'))
+  await writeFile(join(cwd, 'vendor.json'), vendor('restored'))
+  await until(() => results().length === 3)
+  expect(Object.keys(results()[2]!.result.json.icons)).toEqual(['restored'])
+})
+
+it.each(['icons.json', 'svg/vendor.json', '.iconctl-cache/vendor.json'])('rejects an Iconify source overwritten by an output/cache path: %s', async (file) => {
+  await saveConfig(config('raw', { sources: [{ type: 'iconify', file }] }))
+  expect(await start()).toBeInstanceOf(Error)
+  expect(sync).not.toHaveBeenCalled()
+})
+
+it('rejects a JSON input symlink that points to an output', async () => {
+  await writeFile(join(cwd, 'icons.json'), '{"prefix":"vendor","icons":{}}')
+  await symlink(join(cwd, 'icons.json'), join(cwd, 'vendor.json'))
+  await saveConfig(config('raw', { sources: [{ type: 'iconify', file: 'vendor.json' }] }))
+  expect(await start()).toBeInstanceOf(Error)
+  expect(sync).not.toHaveBeenCalled()
+})
+
+it('observes a valid JSON symlink target changing outside the project, including atomic saves', async () => {
+  const external = await mkdtemp(join(tmpdir(), 'iconctl-watch-target-'))
+  externalDirectories.push(external)
+  const target = join(external, 'icons.json')
+  const vendor = (name: string) => JSON.stringify({ prefix: 'vendor', icons: { [name]: { body: '<path d="M0 0h8v8H0z"/>' } } })
+  await writeFile(target, vendor('first'))
+  await symlink(target, join(cwd, 'vendor.json'))
+  await saveConfig(config('raw', { sources: [{ type: 'iconify', file: 'vendor.json' }] }))
+  start()
+  await until(() => results().length === 1)
+  await writeFile(target, vendor('edited'))
+  await until(() => results().length === 2)
+  expect(Object.keys(results()[1]!.result.json.icons)).toEqual(['edited'])
+  await writeFile(join(external, 'temporary.json'), vendor('atomic'))
+  await rename(join(external, 'temporary.json'), target)
+  await until(() => results().length === 3)
+  expect(Object.keys(results()[2]!.result.json.icons)).toEqual(['atomic'])
+})
+
+it('recovers when the JSON source parent is removed and recreated', async () => {
+  await mkdir(join(cwd, 'vendor'))
+  const vendor = JSON.stringify({ prefix: 'vendor', icons: { home: { body: '<path d="M0 0h8v8H0z"/>' } } })
+  await writeFile(join(cwd, 'vendor', 'icons.json'), vendor)
+  await saveConfig(config('raw', { sources: [{ type: 'iconify', file: 'vendor/icons.json' }] }))
+  start()
+  await until(() => results().length === 1)
+  await rm(join(cwd, 'vendor'), { recursive: true })
+  await until(() => events.some(event => event.type === 'error' && event.phase === 'sync'))
+  await mkdir(join(cwd, 'vendor'))
+  await writeFile(join(cwd, 'vendor', 'icons.json'), vendor)
+  await until(() => results().length === 2)
+})
+
+it.each(['iconify', 'directory', 'config'] as const)('rejects a %s symlink entry inside a generated package even if its target is outside', async (kind) => {
+  await mkdir(join(cwd, 'package'))
+  const settings = config('raw', { output: { json: 'icons.json', jsonPackage: 'package' } })
+  if (kind === 'iconify') {
+    await writeFile(join(cwd, 'external.json'), '{"prefix":"vendor","icons":{}}')
+    await symlink(join(cwd, 'external.json'), join(cwd, 'package', 'input.json'))
+    settings.sources = [{ type: 'iconify', file: 'package/input.json' }]
+  }
+  else if (kind === 'directory') {
+    await symlink(join(cwd, 'raw'), join(cwd, 'package', 'input'), 'dir')
+    settings.sources = [{ type: 'directory', dir: 'package/input' }]
+  }
+  else {
+    await writeFile(join(cwd, 'external.config.ts'), `export default ${JSON.stringify(settings)}`)
+    await symlink(join(cwd, 'external.config.ts'), join(cwd, 'package', 'config.ts'))
+    finished = watch({ cwd, configFile: 'package/config.ts', signal: controller.signal, onEvent: event => events.push(event) }).catch(error => error)
+    expect(await finished).toBeInstanceOf(Error)
+    expect(sync).not.toHaveBeenCalled()
+    return
+  }
+  await saveConfig(settings)
+  expect(await start()).toBeInstanceOf(Error)
+  expect(sync).not.toHaveBeenCalled()
 })

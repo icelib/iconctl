@@ -16,6 +16,10 @@ expectType<boolean>(result.diff.deletionsReliable)
 expectType<SyncIssue[]>(result.issues)
 expectType<SyncIssue[]>(new IconctlSyncError([]).issues)
 expectType<'ABORT_ERR'>(new IconctlAbortError().code)
+expectType<{ prefix: string, sources: [{ type: 'iconify', file: string, include: string[], namePrefix: string }] }>(defineConfig({
+  prefix: 'brand',
+  sources: [{ type: 'iconify', file: './vendor.json', include: ['home'], namePrefix: 'vendor-' }],
+}))
 expectType<Promise<void>>(watch({ signal: new AbortController().signal, onEvent(event) {
   if (event.type === 'result') {
     expectType<SyncResult>(event.result)

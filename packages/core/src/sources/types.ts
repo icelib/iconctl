@@ -17,6 +17,13 @@ export interface DirectorySourceConfig {
   dir: string
 }
 
+export interface IconifySourceConfig {
+  type: 'iconify'
+  file: string
+  include?: string[]
+  namePrefix?: string
+}
+
 export interface MastergoSourceConfig {
   type: 'mastergo'
   file?: string
@@ -46,6 +53,7 @@ export type SourceConfig
     | MastergoSourceConfig
     | JsdesignSourceConfig
     | IconfontSourceConfig
+    | IconifySourceConfig
 
 export interface ResolvedFigmaSourceConfig {
   type: 'figma'
@@ -60,6 +68,13 @@ export interface ResolvedFigmaSourceConfig {
 export interface ResolvedDirectorySourceConfig {
   type: 'directory'
   dir: string
+}
+
+export interface ResolvedIconifySourceConfig {
+  type: 'iconify'
+  file: string
+  include?: string[]
+  namePrefix: string
 }
 
 export interface ResolvedMastergoSourceConfig {
@@ -90,6 +105,7 @@ export type ResolvedSourceConfig
     | ResolvedMastergoSourceConfig
     | ResolvedJsdesignSourceConfig
     | ResolvedIconfontSourceConfig
+    | ResolvedIconifySourceConfig
 
 export interface LoadedSource {
   issues?: SyncIssue[]

@@ -73,7 +73,7 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
 }
 
-function configTemplate(input: { prefix: string, json: string, sourceBlock: string }) {
+function configTemplate(input: { prefix: string, json: string, sourceBlock: string, fixedSize: boolean }) {
   return `import { defineConfig } from 'iconctl'
 
 export default defineConfig({
@@ -89,8 +89,8 @@ export default defineConfig({
     // jsonPackage: { dir: 'packages/icons', name: '@iconify-json/brand' },
   },
   validate: {
-    width: 24,
-    height: 24,
+    ${input.fixedSize ? '' : '// '}width: 24,
+    ${input.fixedSize ? '' : '// '}height: 24,
   },
 })
 `
@@ -186,6 +186,7 @@ export async function runCli(argv: string[] = process.argv) {
           options: [
             { label: 'Figma file', value: 'figma' },
             { label: 'Local SVG directory', value: 'directory' },
+            { label: 'Local Iconify JSON', value: 'iconify' },
             { label: 'MasterGo file', value: 'mastergo' },
             { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
             { label: '即时设计 exported SVG folder', value: 'jsdesign' },
@@ -221,6 +222,11 @@ export async function runCli(argv: string[] = process.argv) {
           sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
           hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
         }
+        else if (sourceType === 'iconify') {
+          const file = await consola.prompt('Iconify JSON file', { type: 'text', placeholder: './vendor/icons.json', default: './vendor/icons.json' })
+          sourceBlock = `{ type: 'iconify', file: ${JSON.stringify(file || './vendor/icons.json')} }`
+          hint = 'Keep the vendor JSON separate from output paths, then run `iconctl sync` or `iconctl watch`.'
+        }
         else {
           const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './raw-svg', default: './raw-svg' })
           sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './raw-svg')} }`
@@ -229,6 +235,7 @@ export async function runCli(argv: string[] = process.argv) {
           prefix: prefix || 'brand',
           json: json || 'icons.json',
           sourceBlock,
+          fixedSize: sourceType !== 'iconify',
         })
         const target = join(process.cwd(), 'iconctl.config.ts')
         await writeFile(target, contents, 'utf8')
