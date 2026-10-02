@@ -1,7 +1,10 @@
+import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { constants } from 'node:fs'
 import {
   lstat,
   mkdir,
+  open,
   readdir,
   readFile,
   realpath,
@@ -29,6 +32,59 @@ export function resolveInside(root: string, name: string) {
   }
   return result
 }
+
+export class RepositorySourceError extends Error {
+  override name = 'RepositorySourceError'
+}
+
+/** Freeze a bounded repository file before any advanced configuration executes. */
+export async function materializeIconifySource(root: string, name: string, destination: string) {
+  try {
+    const canonicalRoot = await realpath(root)
+    const canonical = await realpath(resolveInside(root, name))
+    if (!canonical.startsWith(`${canonicalRoot}${sep}`)) {
+      throw new RepositorySourceError('Iconify JSON source escapes repository')
+    }
+    // A safe lexical path may still point into Git metadata through a symlink.
+    safePath.parse(relative(canonicalRoot, canonical).split(sep).join('/'))
+    const stat = await lstat(canonical)
+    if (!stat.isFile()) {
+      throw new RepositorySourceError('Iconify JSON source must be a regular file')
+    }
+    const file = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      const opened = await file.stat()
+      if (!opened.isFile()) {
+        throw new RepositorySourceError('Iconify JSON source must be a regular file')
+      }
+      if (opened.size > MAX_ARTIFACT_BYTES) {
+        throw new RepositorySourceError('Iconify JSON source exceeds the 25 MiB size limit')
+      }
+      const chunks: Buffer[] = []
+      let size = 0
+      // Read at most one byte beyond the limit, even if a file grows after stat.
+      for await (const chunk of file.createReadStream({ autoClose: false, end: MAX_ARTIFACT_BYTES })) {
+        size += chunk.length
+        if (size > MAX_ARTIFACT_BYTES) {
+          throw new RepositorySourceError('Iconify JSON source exceeds the 25 MiB size limit')
+        }
+        chunks.push(chunk)
+      }
+      await writeFile(destination, Buffer.concat(chunks, size), { flag: 'wx' })
+    }
+    finally {
+      await file.close()
+    }
+    return destination
+  }
+  catch (error) {
+    if (error instanceof RepositorySourceError) {
+      throw error
+    }
+    throw new RepositorySourceError('Cannot read repository Iconify JSON source', { cause: error })
+  }
+}
+
 export async function validateDirectory(root: string, name: string) {
   const directory = resolveInside(root, name)
   const canonical = await realpath(directory)

@@ -15,6 +15,8 @@ import {
   collectFiles,
   extractSvgArchive,
   integrity,
+  materializeIconifySource,
+  RepositorySourceError,
   resolveInside,
   sha256,
   validateDirectory,
@@ -66,6 +68,18 @@ async function sourcesFor(
           type: 'iconfont',
           url: source.url,
           stripPrefix: source.stripPrefix,
+        },
+      })
+    }
+    else if (source.type === 'iconify') {
+      const file = await materializeIconifySource(root, source.file, join(work, `iconify-${index}.json`))
+      result.push({
+        source,
+        config: {
+          type: 'iconify',
+          file,
+          ...(source.include !== undefined ? { include: source.include } : {}),
+          ...(source.namePrefix !== undefined ? { namePrefix: source.namePrefix } : {}),
         },
       })
     }
@@ -393,6 +407,9 @@ async function publish(job: Job, client: RunnerApi, work: string) {
 }
 export function classifyFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
+  if (error instanceof RepositorySourceError || /(?:Cannot parse|Invalid) Iconify JSON/i.test(message)) {
+    return 'configuration'
+  }
   if (/reconnect|authorization|credentials|HTTP 401/i.test(message)) {
     return 'authorization'
   }

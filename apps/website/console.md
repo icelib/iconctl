@@ -25,15 +25,29 @@ The owner Durable Object refreshes access tokens on demand within five minutes o
 
 ## Project workflow
 
-Create a project with an installed repository, icon prefix and public npm package name. Add Figma, MasterGo, iconfont HTTPS Symbol URLs, repository SVG directories or uploaded SVG ZIP files. Jsdesign uses exported SVG. Multiple sources merge in order; later duplicate names win.
+Create a project with an installed repository, icon prefix and public npm package name. Add Figma, MasterGo, iconfont HTTPS Symbol URLs, repository SVG directories, repository Iconify JSON files or uploaded SVG ZIP files. Jsdesign uses exported SVG. Multiple sources merge in order; later duplicate names win.
 
 Configure naming, dimensions, color, draft prefixes and optional SVG/types/HTML/changelog outputs. Advanced `iconNameForNode` hooks load from a pinned repository commit and execute only in Actions. They cannot change job-bound sources, credentials or output paths.
 
 Create and merge the runner installation PR on the default branch. Protected branches are never bypassed. Start sync, validation, preview or dry-run. Every task pins configuration revision, source SHA and executor SHA. Writes serialize per project; the workflow also uses repository concurrency with `cancel-in-progress: false`.
 
-Uploads allow 10 MB compressed, 25 MB expanded, at most 5000 SVG files and 1 MB per SVG. Traversal paths, non-SVG entries and repository symlinks are rejected. Use `svg` to refer to the uploaded ZIP root. SVG comparisons use image rendering; HTML previews download as attachments rather than running in the application's origin.
+Uploads allow 10 MB compressed, 25 MB expanded, at most 5000 SVG files and 1 MB per SVG. Traversal paths, non-SVG entries and symlinks in SVG sources are rejected. Use `svg` to refer to the uploaded ZIP root. SVG comparisons use image rendering; HTML previews download as attachments rather than running in the application's origin.
 
 Dry-run and validation retain check snapshots but do not write icon outputs, update the successful baseline or permit release. Authentication credentials may still renew.
+
+### Repository Iconify JSON
+
+Choose **Iconify JSON** and enter a path relative to the repository root, such as `vendor/icons.json`. The runner reads the task's pinned source commit. A source may be configured as:
+
+```json
+{ "type": "iconify", "file": "vendor/icons.json", "include": ["home", "arrow-left"], "namePrefix": "vendor-" }
+```
+
+The default **All icons** imports icons and aliases. **Selected icons** accepts one exact name per line; blank lines are ignored, and leaving the list empty stores `include: []` and imports no icons. The name prefix is concatenated literally, so `vendor-` gives `vendor-home`, while `vendor` gives `vendorhome`. No case conversion or separator is added. Project draft-prefix filtering, color processing, dimension/name validation and output settings still apply. Aliases, rotations and inherited dimensions use the same core importer as the CLI.
+
+This source uses only repository files and needs no source credentials or upload. Files must be regular files of at most 25 MiB. Absolute paths, traversal, Git metadata, directories and symlinks escaping the repository are rejected; links that resolve to a regular file inside the repository are allowed. The runner copies validated bytes into its task directory before loading advanced configuration. Invalid JSON or collection structure fails as a configuration error; invalid selected icons appear in the validation snapshot and prevent publication.
+
+After upgrading the console, create and merge an updated runner installation PR in each target repository before selecting this source. The workflow pins its executor commit; older pinned runners do not recognize `type: "iconify"`.
 
 ## npm publishing
 

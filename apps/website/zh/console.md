@@ -34,14 +34,28 @@ access/refresh token 使用 AES-GCM 加密保存；独立的 `CREDENTIAL_ENCRYPT
 ## 项目与任务
 
 1. 创建项目，填写已安装 App 的 GitHub 仓库、图标前缀和公开 npm 包名。
-2. 添加 Figma、MasterGo、iconfont HTTPS Symbol URL、仓库 SVG 目录或上传 SVG ZIP。即时设计使用导出 SVG。多个来源可以组合；后面的同名图标覆盖前面的图标。
+2. 添加 Figma、MasterGo、iconfont HTTPS Symbol URL、仓库 SVG 目录、仓库 Iconify JSON 文件或上传 SVG ZIP。即时设计使用导出 SVG。多个来源可以组合；后面的同名图标覆盖前面的图标。
 3. 配置颜色、名称正则、尺寸、草稿前缀和输出选项。高级配置从固定 Git 提交读取 `iconNameForNode`，仅在 Actions 执行；来源、凭据、输出路径仍由任务固定。
 4. 保存项目后，创建 runner 安装 PR，审查并合并到默认分支。控制台不会绕过分支保护。
 5. 发起同步、仅校验、预览或 dry-run，在任务页面跟踪阶段、Actions 链接和快照。
 
-上传限 10 MB ZIP，最多 5000 个 SVG，单个展开文件限 1 MB，总展开大小限 25 MB。拒绝绝对路径、目录穿越、非 SVG 文件及仓库源中的符号链接。上传 ZIP 根目录在表单中使用 `svg`。图标以浏览器的 SVG image 模式展示；HTML 预览以附件下载，不在站点上下文执行。
+上传限 10 MB ZIP，最多 5000 个 SVG，单个展开文件限 1 MB，总展开大小限 25 MB。拒绝绝对路径、目录穿越、非 SVG 文件及 SVG 来源中的符号链接。上传 ZIP 根目录在表单中使用 `svg`。图标以浏览器的 SVG image 模式展示；HTML 预览以附件下载，不在站点上下文执行。
 
 **Dry run** 和「仅校验」记录检查快照，但不写图标产物、不更新成功基线，也不能直接发版。认证凭据仍可续期。每个任务固定配置版本、源码提交及执行器提交。同一项目的任务串行，工作流还设置仓库级 concurrency 和 `cancel-in-progress: false`。
+
+### 仓库 Iconify JSON
+
+选择「Iconify JSON」，填写相对仓库根目录的路径，例如 `vendor/icons.json`。runner 从任务固定的源码提交读取文件，对应配置为：
+
+```json
+{ "type": "iconify", "file": "vendor/icons.json", "include": ["home", "arrow-left"], "namePrefix": "vendor-" }
+```
+
+默认「全部图标」会导入图标和别名。「指定图标」每行填写一个精确名称，忽略空行；名单留空会保存 `include: []`，不导入任何图标。名称前缀按原文拼接：`vendor-` 得到 `vendor-home`，`vendor` 得到 `vendorhome`，不会转换大小写或自动加分隔符。项目的草稿前缀过滤、颜色处理、尺寸／名称校验和输出配置继续生效。别名、旋转和继承尺寸使用与 CLI 相同的核心导入流程。
+
+此来源只读取仓库文件，无需来源凭据或上传。文件必须是普通文件，大小不超过 25 MiB。拒绝绝对路径、目录穿越、Git 元数据、目录和指向仓库外部的符号链接；允许最终指向仓库内普通文件的链接。runner 在加载高级配置前，将检查后的字节复制到任务目录。JSON 语法或集合结构错误归类为配置错误；选中图标的问题写入校验快照并阻止发布。
+
+升级控制台后，先在各目标仓库创建并合并新版 runner 安装 PR，再启用此来源。工作流固定执行器提交，旧版固定 runner 不认识 `type: "iconify"`。
 
 ## 确认并发布
 

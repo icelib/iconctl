@@ -112,3 +112,5 @@ MIT
 ## 私有控制台
 
 公开文档旁的 `/app` 提供仅所有者可用的 Vue/Hono 图标工作台。参阅[GitHub App、OAuth、插件与部署指南](apps/website/zh/console.md)。
+
+控制台项目可以从任务固定的仓库提交导入 Iconify JSON 文件，按精确名称选择图标／别名，并原样添加名称前缀。参阅[仓库 Iconify JSON](apps/website/zh/console.md#仓库-iconify-json)。
