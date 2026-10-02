@@ -144,20 +144,18 @@ export class PluginConsole {
     this.host.post({ type: 'preflight', items: this.host.scan(rules) })
   }
 
-  private async refresh(generation: number, device: Device, announce = true) {
+  private async refresh(generation: number, device: Device) {
     const context = await this.retry(generation, () => this.request<PluginContext>(generation, device.origin, `devices/${device.deviceId}/context`, device.token))
     if (context.projectId !== device.projectId) {
       throw new Error('The connected project changed. Pair again.')
     }
     this.context = context
     this.rescan()
-    if (announce) {
-      this.status(`Connected to ${context.name} · revision ${context.revision}${context.namingMode === 'server' ? ' · Custom names are validated by the server.' : ''}`, { origin: device.origin })
-    }
+    this.status(`Connected to ${context.name} · revision ${context.revision}${context.namingMode === 'server' ? ' · Custom names are validated by the server.' : ''}`, { origin: device.origin })
     return context
   }
 
-  private async track(generation: number, device: Device, task: Task) {
+  private async track(generation: number, device: Device, task: Task, restore = false) {
     try {
       if (!task.jobId) {
         const result = await this.retry(generation, () => this.request<{
@@ -165,6 +163,11 @@ export class PluginConsole {
         }>(generation, device.origin, `devices/${device.deviceId}/jobs`, device.token, { expectedRevision: task.expectedRevision }, task.requestId))
         task = { ...task, jobId: result.id }
         await this.write(generation, () => this.host.storage.setAsync(TASK_KEY, task))
+      }
+      if (restore) {
+        // Reconcile the saved request first, then show the project's current
+        // preflight while its already-created task continues running.
+        await this.refresh(generation, device)
       }
       const url = `${device.origin}/app/?job=${task.jobId}`
       while (true) {
@@ -203,8 +206,7 @@ export class PluginConsole {
     this.check(generation)
     // Reconcile a saved request before fetching newer project rules.
     if (task?.deviceId === device.deviceId) {
-      await this.track(generation, device, task)
-      await this.refresh(generation, device, false)
+      await this.track(generation, device, task, true)
       return
     }
     const context = await this.refresh(generation, device)

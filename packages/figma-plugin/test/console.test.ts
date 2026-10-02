@@ -119,6 +119,8 @@ it('reopens an existing job without posting it again', async () => {
   const fetch = network()
   await fixture.session.handle({ type: 'console-status' })
   expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  expect(String(fetch.mock.calls[0]?.[0])).toContain('/context')
+  expect(fixture.post).toHaveBeenCalledWith(expect.objectContaining({ type: 'preflight', items: [expect.objectContaining({ issues: [] })] }))
 })
 it('refreshes changed rules without automatically resubmitting', async () => {
   const fixture = host()
