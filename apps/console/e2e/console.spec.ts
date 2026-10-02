@@ -1,4 +1,4 @@
-import type { ConsoleState, Project } from '@iconctl/console-contracts'
+import type { ConsoleState, Job, Project } from '@iconctl/console-contracts'
 import { expect, test } from '@playwright/test'
 
 const project: Project = {
@@ -94,6 +94,22 @@ test('reviews image differences and requires a distinct publication confirmation
   page,
 }) => {
   let published = false
+  const publication: Job = {
+    id: '55555555-5555-4555-8555-555555555555',
+    projectId: project.id,
+    project,
+    operation: 'publish',
+    status: 'queued',
+    sourceCommit: 'a'.repeat(40),
+    workflowCommit: 'b'.repeat(40),
+    executorCommit: 'c'.repeat(40),
+    workflowDigest: 'd'.repeat(64),
+    createdAt: snapshot.createdAt + 1000,
+    updatedAt: snapshot.createdAt + 1000,
+    dispatchAttempts: 1,
+    attempt: 1,
+    stage: 'dispatching',
+  }
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/**', async (route) => {
@@ -102,7 +118,7 @@ test('reviews image differences and requires a distinct publication confirmation
       return route.fulfill({ json: { csrf: 'test-csrf' } })
     }
     if (path === '/api/state') {
-      return route.fulfill({ json: state })
+      return route.fulfill({ json: { ...state, jobs: published ? [publication] : [] } })
     }
     if (path === `/api/snapshots/${snapshot.id}`) {
       return route.fulfill({
@@ -140,7 +156,7 @@ test('reviews image differences and requires a distinct publication confirmation
         confirmationId: 'confirmation',
       })
       published = true
-      return route.fulfill({ json: { id: 'publish-job' } })
+      return route.fulfill({ status: 202, json: publication })
     }
     return route.fulfill({
       status: 404,

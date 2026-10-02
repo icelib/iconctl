@@ -14,6 +14,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { api, initializeSession, restoreBackup, upload } from './api'
 import JobAttempts from './features/history/JobAttempts.vue'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
+import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
 const navigation: { id: View, name: string, symbol: string }[] = [
@@ -45,7 +46,9 @@ const error = ref('')
 const notice = ref('')
 const linkedJobId = new URLSearchParams(location.search).get('job')
 const linkedJobError = ref('')
-let linkedJobLocated = false
+const linkedJobLocated = ref(false)
+let locatingLinkedJob = false
+let stateRequest = 0
 const selectedId = ref('')
 const editing = ref<Project>()
 function blank(): ProjectInput {
@@ -69,11 +72,19 @@ const snapshots = computed(() =>
     snapshot => !selectedId.value || snapshot.projectId === selectedId.value,
   ),
 )
-const jobs = computed(() =>
+const projectJobs = computed(() =>
   data.value.jobs.filter(
-    job => !selectedId.value || job.projectId === selectedId.value,
+    job => job.projectId === selectedId.value,
   ),
 )
+const taskFilters = reactive(emptyTaskFilters())
+const jobs = computed(() => filterTasks(projectJobs.value, taskFilters))
+const hasTaskFilters = computed(() => taskFilters.status !== 'all' || taskFilters.operation !== 'all' || taskFilters.query !== '')
+const linkedJobHidden = computed(() => linkedJobLocated.value && (view.value !== 'history' || !jobs.value.some(job => job.id === linkedJobId)))
+function clearTaskFilters() {
+  Object.assign(taskFilters, emptyTaskFilters())
+}
+watch(selectedId, clearTaskFilters, { flush: 'sync' })
 const releases = computed(() =>
   data.value.releases.filter(
     release => !selectedId.value || release.projectId === selectedId.value,
@@ -127,52 +138,65 @@ const iconNames = computed(() => {
       : preview.value.diff[filter.value as 'added' | 'changed' | 'removed']
   return names.filter(name => name.includes(search.value)).sort()
 })
-const labels: Record<string, string> = {
-  'queued': '等待执行',
-  'running': '运行中',
-  'succeeded': '已完成',
-  'failed': '失败',
-  'reconciling': '核对发布结果',
-  'sync': '同步',
-  'check': '仅校验',
-  'preview': '预览',
-  'dry-run': 'Dry run',
-  'publish': '发布',
-  'claimed': '已领取',
-  'dispatching': '派发 Actions',
-  'dispatched': '等待 Actions 启动',
-  'starting': 'Actions 排队或构建中',
-  'fetching': '抓取来源',
-  'validating': '校验图标',
-  'packing': '组装产物',
-  'publishing': '发布 npm',
-  'complete': '完成',
-}
 function date(value: number) {
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(value)
 }
-async function refresh() {
-  data.value = await api<ConsoleState>('state')
-  if (linkedJobId && !linkedJobLocated) {
+async function revealJob(job: Job) {
+  selectedId.value = job.projectId
+  clearTaskFilters()
+  view.value = 'history'
+  await nextTick()
+  const row = document.getElementById(`job-${job.id}`)
+  if (!row) {
+    return false
+  }
+  row.scrollIntoView({ block: 'center' })
+  row.focus()
+  return document.activeElement === row
+}
+async function locateLinkedJob() {
+  if (locatingLinkedJob) {
+    return
+  }
+  locatingLinkedJob = true
+  try {
     const job = data.value.jobs.find(item => item.id === linkedJobId)
     if (job && data.value.projects.some(project => project.id === job.projectId)) {
-      selectedId.value = job.projectId
-      view.value = 'history'
       linkedJobError.value = ''
-      linkedJobLocated = true
-      await nextTick()
-      const row = document.getElementById(`job-${job.id}`)
-      row?.scrollIntoView({ block: 'center' })
-      row?.focus()
+      if (await revealJob(job)) {
+        linkedJobLocated.value = true
+      }
     }
     else { linkedJobError.value = '任务链接无效，或该任务已不可用。' }
+  }
+  finally {
+    locatingLinkedJob = false
+  }
+}
+async function refresh() {
+  const request = ++stateRequest
+  const state = await api<ConsoleState>('state')
+  if (request !== stateRequest) {
+    return
+  }
+  data.value = state
+  if (linkedJobId && !linkedJobLocated.value) {
+    await locateLinkedJob()
   }
   if (!selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
   }
+}
+async function showSubmittedJob(job: Job) {
+  // The mutation response is authoritative, including a retry's new attempt.
+  // Discard any older state request still in flight before displaying it.
+  stateRequest++
+  data.value.jobs = [job, ...data.value.jobs.filter(item => item.id !== job.id)]
+    .sort((left, right) => right.createdAt - left.createdAt)
+  await revealJob(job)
 }
 async function perform(action: () => Promise<void>) {
   if (busy.value) {
@@ -281,10 +305,8 @@ async function attachUpload(event: Event, source: Source) {
 }
 async function start(operation: string, projectId = selectedId.value) {
   await perform(async () => {
-    await api(`projects/${projectId}/jobs`, { operation })
-    selectedId.value = projectId
-    await refresh()
-    view.value = 'history'
+    const job = await api<Job>(`projects/${projectId}/jobs`, { operation })
+    await showSubmittedJob(job)
     notice.value = '任务已创建，将由 GitHub Actions 执行'
   })
 }
@@ -341,12 +363,11 @@ async function publish() {
     return
   }
   await perform(async () => {
-    await api(`projects/${selectedId.value}/release/confirm`, {
+    const job = await api<Job>(`projects/${selectedId.value}/release/confirm`, {
       confirmationId: confirmation.value!.id,
     })
     confirmation.value = undefined
-    await refresh()
-    view.value = 'history'
+    await showSubmittedJob(job)
     notice.value = '发布任务已创建'
   })
 }
@@ -388,8 +409,8 @@ async function revoke(id: string) {
 }
 async function retry(job: Job) {
   await perform(async () => {
-    await api(`jobs/${job.id}/retry`, {})
-    await refresh()
+    const result = await api<Job>(`jobs/${job.id}/retry`, {})
+    await showSubmittedJob(result)
   })
 }
 async function restoreFile(event: Event) {
@@ -486,6 +507,12 @@ onUnmounted(() => clearInterval(poll))
       <div v-if="linkedJobError" role="alert" class="message error">
         {{ linkedJobError }}
       </div>
+      <p v-if="linkedJobHidden" class="linked-job-navigation">
+        链接任务未显示在当前视图中。
+        <button :disabled="busy" @click="perform(locateLinkedJob)">
+          定位链接任务
+        </button>
+      </p>
       <div v-if="error" role="alert" class="message error">
         {{ error }}
       </div>
@@ -1019,8 +1046,28 @@ onUnmounted(() => clearInterval(poll))
             刷新状态
           </button>
         </div>
-        <p v-if="!jobs.length" class="empty-state">
+        <div class="task-filters" role="search" aria-label="任务筛选">
+          <label>任务状态<select v-model="taskFilters.status">
+            <option value="all">全部状态</option>
+            <option v-for="status in ['queued', 'running', 'succeeded', 'failed', 'reconciling']" :key="status" :value="status">{{ labels[status] }}</option>
+          </select></label>
+          <label>任务操作<select v-model="taskFilters.operation">
+            <option value="all">全部操作</option>
+            <option v-for="operation in ['sync', 'check', 'preview', 'dry-run', 'publish']" :key="operation" :value="operation">{{ labels[operation] }}</option>
+          </select></label>
+          <label class="task-search">搜索任务<input v-model="taskFilters.query" type="search" placeholder="任务 ID、SHA、Actions、阶段或错误"></label>
+          <button :disabled="!hasTaskFilters" @click="clearTaskFilters">
+            清除任务筛选
+          </button>
+        </div>
+        <p class="help task-filter-count" aria-label="任务筛选结果" aria-live="polite">
+          匹配 {{ jobs.length }} / 当前项目 {{ projectJobs.length }}
+        </p>
+        <p v-if="!projectJobs.length" class="empty-state">
           还没有任务。从项目配置中发起一次同步。
+        </p>
+        <p v-else-if="!jobs.length" class="empty-state">
+          没有匹配的任务。调整条件或清除任务筛选。
         </p>
         <div v-else class="table-scroll">
           <table>
@@ -1034,7 +1081,7 @@ onUnmounted(() => clearInterval(poll))
               </tr>
             </thead>
             <tbody>
-              <tr v-for="job in jobs" :id="`job-${job.id}`" :key="job.id" :tabindex="job.id === linkedJobId ? -1 : undefined" :class="{ 'linked-job': job.id === linkedJobId }">
+              <tr v-for="job in jobs" :id="`job-${job.id}`" :key="job.id" tabindex="-1" :class="{ 'linked-job': job.id === linkedJobId }">
                 <td>
                   <strong>{{ labels[job.operation] }}</strong><small>{{ date(job.createdAt) }}</small>
                 </td>

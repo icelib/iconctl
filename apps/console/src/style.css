@@ -846,6 +846,33 @@ label {
   margin-top: 25px;
 }
 
+.task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.task-filters label {
+  flex: 1 1 145px;
+}
+
+.task-filters .task-search {
+  flex: 3 1 260px;
+}
+
+.task-filter-count {
+  margin: 12px 0;
+}
+
+.linked-job-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
 .table-scroll {
   overflow: auto;
   background: white;

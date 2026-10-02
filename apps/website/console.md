@@ -35,6 +35,16 @@ Uploads allow 10 MB compressed, 25 MB expanded, at most 5000 SVG files and 1 MB 
 
 Dry-run and validation retain check snapshots but do not write icon outputs, update the successful baseline or permit release. Authentication credentials may still renew.
 
+### Find a task
+
+In **Tasks and versions** (「任务与版本」), combine status, operation and keyword filters for the current project. Keywords match task IDs, source SHAs, Actions run IDs, the current stage or error, and their displayed labels. Matching ignores case and surrounding whitespace; punctuation is literal, so `[name]` does not act as a regular expression. The count shows matching tasks / all tasks in the current project, with separate messages for an empty project and no matching results.
+
+Polling, **Refresh status**, and opening a snapshot then returning keep your filters. Changing projects clears them. Successfully creating, retrying or confirming publication clears the filters and focuses the returned task, including its new queued or running state. A rejected action preserves your filters. Filtering does not change project execution locks or the published-version list.
+
+A `?job=...` link selects the task's project and focuses its record once. Later updates leave keyboard focus and your selection alone. If you hide the linked task by switching projects, views or filters, **Locate linked task** (「定位链接任务」) restores its project and clears the filters. An unavailable link displays an error.
+
+These filters run in the browser over the complete `/api/state` task list; they do not paginate tasks or reduce the API response. The 500-event limit below applies to each task's stage history, not the number of tasks.
+
 ### Task retries
 
 Retrying a failed task keeps its task ID and event history and starts a new attempt. For sync, validation, preview and dry-run, each attempt owns a separate snapshot. Earlier snapshots remain available for review, but a new attempt cannot reuse their contents or accept a late result from an earlier runner. Repeated delivery of the same result within an attempt is safe; a different result for that attempt is rejected.
