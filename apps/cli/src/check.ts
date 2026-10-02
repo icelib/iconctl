@@ -1,6 +1,7 @@
 import type { CheckReport, CheckValidation } from '@iconctl/core'
+import type { CommandContext } from './failure'
 import process from 'node:process'
-import { check, IconctlCheckError, IconctlError, loadConfig } from '@iconctl/core'
+import { check, IconctlError, loadConfig } from '@iconctl/core'
 import { consola } from 'consola'
 
 export interface CheckCommandOptions {
@@ -12,7 +13,8 @@ export interface CheckCommandOptions {
   json?: boolean
 }
 
-export async function runCheck(options: CheckCommandOptions) {
+export async function runCheck(options: CheckCommandOptions, context: CommandContext) {
+  context.phase = 'arguments'
   if (options.input !== undefined && options.config !== undefined) {
     throw new IconctlError('Use --input or --config, not both.')
   }
@@ -29,32 +31,19 @@ export async function runCheck(options: CheckCommandOptions) {
   if (options.name !== undefined) {
     validate.name = options.name
   }
+  let config
+  if (options.input === undefined) {
+    context.phase = 'configuration'
+    config = await loadConfig({ cwd: process.cwd(), ...(options.config ? { configFile: options.config } : {}) })
+  }
+  context.phase = 'execution'
   const result = options.input !== undefined
     ? await check({ cwd: process.cwd(), input: options.input, validate })
-    : await check({
-        cwd: process.cwd(),
-        config: await loadConfig({ cwd: process.cwd(), ...(options.config ? { configFile: options.config } : {}) }),
-        validate,
-      })
+    : await check({ cwd: process.cwd(), config: config!, validate })
   if (options.json) {
     process.stdout.write(`${JSON.stringify({ ...result, valid: true, issues: [] } satisfies CheckReport, null, 2)}\n`)
   }
   else {
     consola.success(`Checked ${result.count} icons from ${result.source}`)
-  }
-}
-
-/** Include argument-parser failures in the same report as artifact failures. */
-export function reportCheckError(error: unknown, options: CheckCommandOptions) {
-  process.exitCode = 1
-  const message = error instanceof Error ? error.message : String(error)
-  if (options.json) {
-    const report: CheckReport = error instanceof IconctlCheckError
-      ? error.report
-      : { prefix: null, count: 0, source: options.input !== undefined ? 'json' : null, valid: false, issues: [{ stage: 'options', message }] }
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
-  }
-  else {
-    consola.error(message)
   }
 }

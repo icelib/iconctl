@@ -66,6 +66,39 @@ CI：
 pnpm exec iconctl sync --json
 ```
 
+### JSON 失败报告
+
+`sync`、`preview`、`check` 和 `auth` 启用 `--json` 后，致命失败会向 stdout 输出一份 JSON 报告，退出码为 1；CLI 不会在 stderr 重复打印同一错误。例如，同步校验失败会保留已知的来源坐标：
+
+```json
+{
+  "success": false,
+  "command": "sync",
+  "error": {
+    "name": "IconctlSyncError",
+    "message": "Icon processing or validation failed: ...",
+    "phase": "execution",
+    "issues": [
+      {
+        "name": "arrow-left",
+        "message": "Expected width 24, received 16",
+        "stage": "validation",
+        "sourceType": "figma",
+        "sourceIndex": 0,
+        "fileKey": "example-file",
+        "nodeId": "12:34"
+      }
+    ]
+  }
+}
+```
+
+`error.phase` 表示能够确定的命令环节：`arguments` 是参数或选项错误，`configuration` 是配置加载失败，`authentication` 是 `auth` 命令执行鉴权操作失败，其他执行错误使用 `execution`。它不会根据报错文案猜测根因：同步内部抛出的凭据或网络错误仍归为 `execution`。逐图问题的 `issues[].stage` 则独立表示导入、处理或校验阶段。没有问题明细或来源坐标时会省略对应字段，失败报告不会虚构 diff 或输出文件。
+
+成功 JSON 格式保持不变，包括显式 `--continue` 得到的部分成功结果。失败的 `check` 报告保留原有顶层 `prefix`、`count`、`source`、`valid`、`issues`，增加 `success`、`command` 和 `error`；`error.issues` 与顶层 `issues` 内容相同。使用严格 schema 的消费者需要允许这些新增失败字段。其他命令此前在致命失败时不输出 JSON，现在可直接解析失败报告。
+
+`init --json` 的致命失败也使用这一报告，但初始化仍是交互命令，不提供成功 JSON 协议。Watch 保留下文的独立 NDJSON 生命周期。`--no-json` 或 `--json=false` 使用人类可读诊断。作为库调用 `runCli()` 时，报告输出后仍会 reject 原始错误对象。
+
 ### 同步完整性与取消
 
 默认情况下，`sync()` 遇到 Figma 导出 URL 缺失、SVG 下载／导入失败、处理或校验失败，会在替换产物前拒绝同步。目录中的无效 SVG、MasterGo 条目和 iconfont symbol 会与其余来源图标一并报告。`IconctlSyncError.issues` 提供图标名称、失败阶段，以及可用的来源索引、文件标识和 Figma 节点 ID。CLI 默认非 0 退出并保留原有产物。
@@ -162,7 +195,7 @@ pnpm exec iconctl check --input ./icons.json --width 24 --height 24 --name '^[a-
 
 JSON 别名作为独立命名图标计数。检查前先解析别名链、翻转、旋转和继承几何信息，再校验实际画布；省略尺寸时使用 Iconify 默认的 16×16。所有名称都参与检查，包括隐藏 JSON 图标，以及嵌套或隐藏目录内的原始 SVG 文件名。检查不会重命名 SVG，也不会应用来源的 `skipPrefix` 排除规则；重复 SVG basename 会报错。
 
-`--json` 输出一份报告，保留原有 `prefix`、`count`、`source`，新增 `valid` 和 `issues`。每条问题包含 `stage`（`options`、`read`、`import`、`process` 或 `validation`）、`message`，以及可用的 `name`、`file`。导入、SVG 处理失败会与其余图标的校验失败一起保留。`count` 包括发现的图标／别名或 SVG 文件，失败项也计入；无法确定前缀或来源时，相应字段可为 null。失败退出码为 1，成功为 0；`--continue` 不会使失败检查变为成功。
+`--json` 输出一份报告，保留原有 `prefix`、`count`、`source`、`valid` 和 `issues`；失败时还会包含上文的 [JSON 失败字段](#json-失败报告)。每条问题包含 `stage`（`options`、`read`、`import`、`process` 或 `validation`）、`message`，以及可用的 `name`、`file`。导入、SVG 处理失败会与其余图标的校验失败一起保留。`count` 包括发现的图标／别名或 SVG 文件，失败项也计入；无法确定前缀或来源时，相应字段可为 null。失败退出码为 1，成功为 0；`--continue` 不会使失败检查变为成功。
 
 公开 API 保持原有成功返回结构，可捕获 `IconctlCheckError` 获取结构化诊断：
 

@@ -1,7 +1,7 @@
 import process from 'node:process'
 import { runCli } from './program'
 
-runCli(process.argv).catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : error}\n`)
+// runCli owns diagnostics and preserves rejection for library callers.
+runCli(process.argv).catch(() => {
   process.exitCode = 1
 })
