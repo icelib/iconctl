@@ -35,6 +35,12 @@ Uploads allow 10 MB compressed, 25 MB expanded, at most 5000 SVG files and 1 MB 
 
 Dry-run and validation retain check snapshots but do not write icon outputs, update the successful baseline or permit release. Authentication credentials may still renew.
 
+### Task retries
+
+Retrying a failed task keeps its task ID and event history and starts a new attempt. For sync, validation, preview and dry-run, each attempt owns a separate snapshot. Earlier snapshots remain available for review, but a new attempt cannot reuse their contents or accept a late result from an earlier runner. Repeated delivery of the same result within an attempt is safe; a different result for that attempt is rejected.
+
+Existing snapshots without an attempt number and older snapshot reservations belong to the first attempt. They remain readable without a data migration. Runner request formats are unchanged: the server binds each result to the current attempt and its claimed GitHub workflow run. A prepared publication retry continues to use the original confirmed snapshot, tarball and commit.
+
 ## npm publishing
 
 Review added, changed and removed icons against the last successful snapshot. Choose patch/minor/major and inspect the actual package, version, icon count and digest before confirming. The first version is `0.1.0`.
@@ -54,6 +60,8 @@ Choose Private console → Connect console. Enter the five-minute pairing code i
 Legacy GitHub dispatch remains supported. Its fine-grained PAT needs repository **Contents: read and write**, not Actions: write.
 
 ## Deployment and recovery
+
+The Console CI workflow runs on pull requests and main with Linux and Node 24. It builds the console and runner, checks types, runs runner/contracts tests and the separate Cloudflare Worker tests, then exercises browser flows in Chromium. The Worker tests use the console's Vitest version; they are not included in the root `pnpm test` project list. Browser screenshots and failure traces are retained as workflow artifacts.
 
 `apps/console/wrangler.jsonc` is the single deployment entry. It merges Vue and VitePress assets, preserving documentation URLs and 404 behavior. The old website deploy command forwards to the console.
 

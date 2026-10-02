@@ -76,6 +76,10 @@ interface Confirmation {
   release: ReleaseIntent
   expiresAt: number
 }
+interface SnapshotReservation {
+  snapshotId: string
+  digest: string
+}
 
 export class AccountState extends DurableObject<Env> {
   private releasePreparations = new Map<
@@ -767,7 +771,19 @@ export class AccountState extends DurableObject<Env> {
     identity: RunnerIdentity,
     input: SnapshotContent,
   ) {
-    const job = this.runnerJob(id, identity)
+    const job = this.getJob(id)
+    const currentAttempt = () => {
+      const current = this.getJob(id)
+      if (
+        current.attempt !== job.attempt
+        || current.runId !== identity.runId
+        || current.runAttempt !== identity.runAttempt
+      ) {
+        fail(409, 'Task attempt changed while uploading')
+      }
+      return current
+    }
+    currentAttempt()
     if (job.operation === 'publish') {
       fail(403, 'Release jobs cannot replace snapshots')
     }
@@ -777,22 +793,39 @@ export class AccountState extends DurableObject<Env> {
     }
     const serialized = JSON.stringify(content)
     const hash = await digest(serialized)
-    const snapshotId = job.id
-    const existing = this.get<Snapshot>(`snapshot:${snapshotId}`)
+    const current = currentAttempt()
+    const reservationKey = `snapshot-reservation:${id}:${job.attempt}`
+    let reservation = this.get<SnapshotReservation>(reservationKey)
+    // Old snapshots and reservations used the job ID, and belong only to its
+    // first attempt. Keep their object URLs intact without claiming later retries.
+    if (!reservation && job.attempt === 1) {
+      const legacy = this.get<Snapshot>(`snapshot:${id}`)
+      const legacyDigest = this.get<string>(`snapshot-reservation:${id}`)
+      if (legacy || legacyDigest) {
+        reservation = { snapshotId: id, digest: legacy?.digest ?? legacyDigest! }
+      }
+    }
+    const existing = reservation
+      ? this.get<Snapshot>(`snapshot:${reservation.snapshotId}`)
+      : undefined
     if (existing) {
       if (existing.digest !== hash) {
         fail(409, 'Snapshot is immutable')
       }
+      if (!['running', 'succeeded', 'failed'].includes(current.status)) {
+        fail(409, 'Task is not running')
+      }
       return existing
     }
-    if (job.status !== 'running') {
+    if (current.status !== 'running') {
       fail(409, 'Task is not running')
     }
-    const reserved = this.get<string>(`snapshot-reservation:${id}`)
-    if (reserved && reserved !== hash) {
+    if (reservation && reservation.digest !== hash) {
       fail(409, 'Snapshot upload already started')
     }
-    this.put(`snapshot-reservation:${id}`, hash)
+    reservation ??= { snapshotId: crypto.randomUUID(), digest: hash }
+    const { snapshotId } = reservation
+    this.put(reservationKey, reservation)
     await this.env.ARTIFACTS.put(
       `snapshots/${snapshotId}/${hash}`,
       serialized,
@@ -801,13 +834,20 @@ export class AccountState extends DurableObject<Env> {
         httpMetadata: { contentType: 'application/json' },
       },
     )
-    const current = this.getJob(id)
-    if (current.runId !== identity.runId || current.status !== 'running') {
+    const latest = currentAttempt()
+    // Concurrent identical callbacks share the reservation and its completed
+    // snapshot, including a validation failure, instead of finalizing it twice.
+    const completed = this.get<Snapshot>(`snapshot:${snapshotId}`)
+    if (completed && ['running', 'succeeded', 'failed'].includes(latest.status)) {
+      return completed
+    }
+    if (latest.status !== 'running') {
       fail(409, 'Task changed while uploading')
     }
     const snapshot: Snapshot = {
       id: snapshotId,
       jobId: id,
+      attempt: job.attempt,
       projectId: job.projectId,
       createdAt: Date.now(),
       digest: hash,
@@ -818,7 +858,7 @@ export class AccountState extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.put(`snapshot:${snapshotId}`, snapshot)
       this.put(`job:${id}`, {
-        ...current,
+        ...latest,
         snapshotId,
         status: snapshot.issues ? 'failed' : 'succeeded',
         stage: 'complete',
@@ -1359,6 +1399,9 @@ export class AccountState extends DurableObject<Env> {
       stage: 'queued',
       updatedAt: Date.now(),
       attemptStartedAt: Date.now(),
+    }
+    if (updated.operation !== 'publish') {
+      delete updated.snapshotId
     }
     this.put(`job:${id}`, updated)
     await this.schedule()

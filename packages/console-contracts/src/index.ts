@@ -194,6 +194,8 @@ export type SnapshotContent = z.infer<typeof snapshotInput>
 export interface Snapshot {
   id: string
   jobId: string
+  /** Defaults to 1 for snapshots created before attempts had separate artifacts. */
+  attempt?: number
   projectId: string
   createdAt: number
   digest: string

@@ -43,6 +43,12 @@ access/refresh token 使用 AES-GCM 加密保存；独立的 `CREDENTIAL_ENCRYPT
 
 **Dry run** 和「仅校验」记录检查快照，但不写图标产物、不更新成功基线，也不能直接发版。认证凭据仍可续期。每个任务固定配置版本、源码提交及执行器提交。同一项目的任务串行，工作流还设置仓库级 concurrency 和 `cancel-in-progress: false`。
 
+### 失败重试
+
+重试保留任务 ID 和历史事件，并开始新一次执行（attempt）。同步、仅校验、预览和 dry-run 的每次执行各自拥有独立快照。旧快照仍可查看，但新一次执行不能复用旧快照内容，也不能接受上一轮 runner 迟到的结果。同一次执行重复提交相同结果是安全的；提交不同结果会被拒绝。
+
+旧快照没有 attempt 字段时按首次执行处理，旧格式的快照预留记录也只属于首次执行；无需迁移即可继续读取。Runner 请求格式保持兼容，服务端根据当前 attempt 和已领取任务的 GitHub workflow run 绑定结果。已经准备好发布产物的任务重试时，继续复用原先确认的快照、tarball 和提交。
+
 ## 确认并发布
 
 同步生成不可变快照。预览显示相对上次成功快照的新增、修改、删除及前后对比；校验问题会阻止发布。
@@ -72,6 +78,8 @@ Figma 桌面端：Plugins → Development → Import plugin from manifest，选�
 旧 GitHub dispatch 模式继续可用。Fine-grained PAT 需要目标仓库 **Contents: read and write** 权限（不是 Actions: write），用于 `repository_dispatch`。
 
 ## 部署、回滚与恢复
+
+Console CI 工作流在 pull request 和 main 上使用 Linux、Node 24，依次构建控制台与 runner、检查类型、运行 runner/contracts 测试和独立的 Cloudflare Worker 测试，再通过 Chromium 验证浏览器流程。Worker 测试使用 console 自己的 Vitest 版本，不包含在根目录 `pnpm test` 的项目列表中。浏览器截图和失败 trace 会保留为工作流产物。
 
 GitHub 登录与目录来源可先上线；未配置站点专用 Figma App 时，连接 Figma 会明确提示配置缺失。配置 `FIGMA_CLIENT_ID` 和 `FIGMA_CLIENT_SECRET` 后即可启用，无需填写占位凭据。
 
