@@ -6,7 +6,9 @@ export interface TaskFilters {
   query: string
 }
 
-export const jobLabels: Record<string, string> = {
+// Stages may contain arbitrary strings; unknown names must never resolve to
+// inherited Object properties in either task search or history rendering.
+export const jobLabels: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
   'queued': '等待执行',
   'running': '运行中',
   'succeeded': '已完成',
@@ -26,7 +28,7 @@ export const jobLabels: Record<string, string> = {
   'packing': '组装产物',
   'publishing': '发布 npm',
   'complete': '完成',
-}
+})
 
 export function emptyTaskFilters(): TaskFilters {
   return { status: 'all', operation: 'all', query: '' }

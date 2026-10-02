@@ -78,6 +78,12 @@ describe('task filters', () => {
     }
   })
 
+  it.each(['constructor', '__proto__', 'toString', 'custom-stage'])('searches an unknown stage without inherited labels: %s', (stage) => {
+    const custom = { ...job, stage }
+    expect(filterTasks([custom], { ...emptyTaskFilters(), query: 'no-match' })).toEqual([])
+    expect(filterTasks([custom], { ...emptyTaskFilters(), query: stage.toUpperCase() })).toEqual([custom])
+  })
+
   it('treats whitespace as no keyword and handles missing optional fields', () => {
     const pending = { ...job, status: 'queued' as const, stage: 'queued', error: undefined, runId: undefined }
     expect(filterTasks([pending], { ...emptyTaskFilters(), query: ' \n\t ' })).toEqual([pending])

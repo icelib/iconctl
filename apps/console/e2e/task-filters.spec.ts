@@ -240,6 +240,23 @@ test('resets filters on project changes and distinguishes an empty project from 
   await rows(page, [1, 2, 3, 4, 5, 6, 7])
 })
 
+test('searches and displays arbitrary stage names without resolving inherited object properties', async ({ page, consoleApi }) => {
+  const stages = ['constructor', '__proto__', 'toString', 'custom-stage']
+  for (const [index, stage] of stages.entries()) {
+    consoleApi.state.jobs[index]!.stage = stage
+  }
+  await history(page)
+  await filters(page, 'all', 'all', 'not-a-task-field')
+  await rows(page, [])
+  for (const [index, stage] of stages.entries()) {
+    for (const query of [stage.toUpperCase(), stage.toLowerCase()]) {
+      await page.getByLabel('搜索任务', { exact: true }).fill(query)
+      await rows(page, [index + 1])
+      await expect(page.locator(`#job-${id(index + 1)}`).getByRole('cell').nth(2)).toContainText(stage)
+    }
+  }
+})
+
 test('preserves filters and input focus as polling changes an active task, and on manual refresh', async ({ page, consoleApi }) => {
   await page.clock.install()
   await history(page)
