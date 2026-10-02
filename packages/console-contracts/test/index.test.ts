@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo } from '../src'
+import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo, snapshotIssue } from '../src'
 
 describe('console contracts', () => {
+  it('keeps bounded structured diagnostics while accepting legacy issues', () => {
+    const legacy = { name: 'arrow', message: 'Invalid size' }
+    expect(snapshotIssue.parse(legacy)).toEqual(legacy)
+    const structured = { ...legacy, stage: 'validation', sourceType: 'figma', sourceIndex: 0, fileKey: 'abc123', nodeId: '12:34' }
+    expect(snapshotIssue.parse(structured)).toEqual(structured)
+    for (const extra of [{ sourceIndex: -1 }, { sourceIndex: 1.5 }, { stage: 'x'.repeat(41) }, { fileKey: 'x'.repeat(201) }]) {
+      expect(() => snapshotIssue.parse({ ...legacy, ...extra })).toThrow()
+    }
+  })
   it('accepts only an omitted, published or explicit snapshot comparison', () => {
     const id = crypto.randomUUID()
     expect(snapshotCompareTo.parse(undefined)).toBeUndefined()

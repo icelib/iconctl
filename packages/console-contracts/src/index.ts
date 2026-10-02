@@ -125,6 +125,16 @@ export interface ReleaseIntent {
   branchHead: string | null
   confirmation: string
 }
+export interface JobEvent {
+  at: number
+  stage: string
+  status: JobStatus
+  error?: string
+  /** Absent on legacy records; do not infer the attempt from the current job. */
+  attempt?: number
+  runId?: string
+  runAttempt?: string
+}
 export interface Job {
   id: string
   projectId: string
@@ -147,7 +157,7 @@ export interface Job {
   snapshotId?: string
   integrity?: string
   releaseCommit?: string
-  events?: { at: number, stage: string, status: JobStatus, error?: string }[]
+  events?: JobEvent[]
   attemptStartedAt?: number
 }
 export interface IconJSON {
@@ -173,13 +183,21 @@ export const iconJsonSchema = z
     height: z.number().optional(),
   })
   .passthrough()
+export const snapshotIssue = z.object({
+  name: z.string().max(200),
+  message: z.string().max(1000),
+  stage: z.string().min(1).max(40).optional(),
+  sourceType: z.string().min(1).max(40).optional(),
+  sourceIndex: z.number().int().nonnegative().optional(),
+  fileKey: z.string().min(1).max(200).optional(),
+  nodeId: z.string().min(1).max(200).optional(),
+})
+export type SnapshotIssue = z.infer<typeof snapshotIssue>
 export const snapshotInput = z
   .object({
     json: iconJsonSchema,
     files: z.record(safePath, z.string()),
-    issues: z.array(
-      z.object({ name: z.string().max(200), message: z.string().max(1000) }),
-    ),
+    issues: z.array(snapshotIssue),
     failed: z.array(z.string().max(200)),
     sources: z.array(
       z.object({

@@ -8,6 +8,13 @@ import { build } from 'esbuild'
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare'
 
 async function main() {
+  const entrypoint = new Map([
+    ['history', './fixtures/history-worker.mjs'],
+    ['release-comparison', './fixtures/release-comparison-worker.mjs'],
+  ]).get(process.argv[2])
+  if (!entrypoint) {
+    throw new Error('Select a known browser test fixture')
+  }
   const directory = await mkdtemp(join(tmpdir(), 'iconctl-browser-worker-'))
   let runtime
   let stopping = false
@@ -36,7 +43,7 @@ async function main() {
   try {
     const bundle = join(directory, 'worker.mjs')
     await build({
-      entryPoints: [fileURLToPath(new URL('./fixtures/release-comparison-worker.mjs', import.meta.url))],
+      entryPoints: [fileURLToPath(new URL(entrypoint, import.meta.url))],
       outfile: bundle,
       bundle: true,
       platform: 'node',
@@ -82,6 +89,9 @@ async function main() {
           }
           if (request.method === 'GET' && decodeURIComponent(url.pathname) === '/repos/fixture/icons/git/ref/heads/iconctl/release-comparison') {
             return WorkerResponse.json({ object: { sha: 'b'.repeat(40) } })
+          }
+          if (request.method === 'GET' && url.pathname === '/repos/fixture/icons/git/ref/heads/main') {
+            return WorkerResponse.json({ object: { sha: 'a'.repeat(40) } })
           }
         }
         process.send?.({ type: 'unexpected-request', request: `${request.method} ${request.url}` })

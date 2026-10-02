@@ -12,6 +12,8 @@ import type {
 } from '@iconctl/console-contracts'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, initializeSession, restoreBackup, upload } from './api'
+import JobAttempts from './features/history/JobAttempts.vue'
+import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
 const navigation: { id: View, name: string, symbol: string }[] = [
@@ -828,7 +830,7 @@ onUnmounted(() => clearInterval(poll))
               :key="snapshot.id"
               :value="snapshot.id"
             >
-              {{ date(snapshot.createdAt) }} · {{ snapshot.iconCount }} 个图标
+              {{ date(snapshot.createdAt) }} · 第 {{ snapshot.attempt ?? 1 }} 次尝试 · {{ snapshot.iconCount }} 个图标
             </option>
           </select>
           <select
@@ -845,7 +847,7 @@ onUnmounted(() => clearInterval(poll))
               最近发布
             </option>
             <option v-for="snapshot in snapshots" :key="snapshot.id" :value="snapshot.id">
-              快照 {{ date(snapshot.createdAt) }} · {{ snapshot.iconCount }} 个图标
+              快照 {{ date(snapshot.createdAt) }} · 第 {{ snapshot.attempt ?? 1 }} 次尝试 · {{ snapshot.iconCount }} 个图标
             </option>
           </select><input
             v-model="search"
@@ -891,20 +893,10 @@ onUnmounted(() => clearInterval(poll))
             </div>
             <span class="mono">{{ preview.snapshot.digest.slice(0, 12) }}</span>
           </div>
-          <div
-            v-if="
-              preview.content.issues.length || preview.content.failed.length
-            "
-            class="validation-issues"
-          >
-            <h3>请先修复校验问题</h3>
-            <p v-for="(issue, index) in preview.content.issues" :key="index">
-              <code>{{ issue.name }}</code> · {{ issue.message }}
-            </p>
-            <p v-for="name in preview.content.failed" :key="name">
-              处理失败：{{ name }}
-            </p>
-          </div>
+          <p class="help" aria-label="快照尝试">
+            第 {{ preview.snapshot.attempt ?? 1 }} 次尝试 · {{ date(preview.snapshot.createdAt) }}
+          </p>
+          <SnapshotDiagnostics :issues="preview.content.issues" :failed="preview.content.failed" />
           <div class="icon-grid">
             <article v-for="name in iconNames" :key="name" class="icon-tile">
               <div class="icon-comparison">
@@ -1056,15 +1048,7 @@ onUnmounted(() => clearInterval(poll))
                   }}<small v-if="job.error" class="error-text">{{
                     job.error
                   }}</small>
-                  <details v-if="job.events?.length">
-                    <summary>阶段记录</summary>
-                    <ol>
-                      <li v-for="(event, index) in job.events" :key="index">
-                        {{ date(event.at) }} · {{ labels[event.stage] ?? event.stage }} · {{ labels[event.status] ?? event.status }}
-                        <small v-if="event.error" class="error-text">{{ event.error }}</small>
-                      </li>
-                    </ol>
-                  </details>
+                  <JobAttempts :job="job" :snapshots="data.snapshots" :busy="busy" :labels="labels" :date="date" @snapshot="openSnapshot" />
                 </td>
                 <td>
                   <a

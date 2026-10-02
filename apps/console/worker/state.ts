@@ -122,6 +122,9 @@ export class AccountState extends DurableObject<Env> {
         || previous.stage !== job.stage
         || previous.status !== job.status
         || previous.error !== job.error
+        || previous.attempt !== job.attempt
+        || previous.runId !== job.runId
+        || previous.runAttempt !== job.runAttempt
       ) {
         value = {
           ...job,
@@ -131,6 +134,9 @@ export class AccountState extends DurableObject<Env> {
               at: Date.now(),
               stage: job.stage,
               status: job.status,
+              attempt: job.attempt,
+              ...(job.runId ? { runId: job.runId } : {}),
+              ...(job.runAttempt ? { runAttempt: job.runAttempt } : {}),
               ...(job.error ? { error: job.error } : {}),
             },
           ].slice(-500),

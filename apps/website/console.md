@@ -41,6 +41,14 @@ Retrying a failed task keeps its task ID and event history and starts a new atte
 
 Existing snapshots without an attempt number and older snapshot reservations belong to the first attempt. They remain readable without a data migration. Runner request formats are unchanged: the server binds each result to the current attempt and its claimed GitHub workflow run. A prepared publication retry continues to use the original confirmed snapshot, tarball and commit.
 
+### Attempt history and diagnostics
+
+Open **Tasks and versions → Attempts and snapshots** (「任务与版本 → 尝试与快照」) to inspect each attempt's stages, error, GitHub Actions run and immutable snapshot. Retrying keeps earlier snapshots visible even after the current result changes. The current attempt appears first. Up to 500 recent stage events are retained per task; snapshot retention is independent. Publication retries reuse the confirmed snapshot, which remains accessible through the task's result button.
+
+Snapshot diagnostics include the failing stage, source type and position, and design node when recorded. Figma issues with a file key and node ID provide an **Open in Figma** link. Source positions start at 1 in the UI. A snapshot's issue count and publishing checks are unchanged.
+
+Older snapshots without `attempt` are shown under attempt 1. Older stage events without an attempt are listed separately as unassigned legacy records; their attempt is not guessed. Older issues remain readable and show unavailable metadata as unrecorded. These optional fields require no data migration or runner request changes. New metadata is available when the pinned executor emits structured issues; update the runner installation after deploying an executor that supports them.
+
 ## npm publishing
 
 Review added, changed and removed icons against the last successful snapshot by default. Select **Latest release** to review all changes since publication, including changes made across several syncs, or choose any snapshot from the same project. The preview identifies the actual comparison baseline; choosing a different baseline never modifies a snapshot.
