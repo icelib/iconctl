@@ -110,6 +110,23 @@ function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): E
 
 function resolveSource(source: SourceConfig): ResolvedSourceConfig {
   switch (source.type) {
+    case 'iconify': {
+      if (typeof source.file !== 'string' || !source.file.trim() || /^[a-z][\w+.-]*:\/\//i.test(source.file)) {
+        throw new IconctlError('iconctl iconify source needs a local `file` path')
+      }
+      if (source.include !== undefined && (!Array.isArray(source.include) || source.include.some(name => typeof name !== 'string' || !name))) {
+        throw new IconctlError('iconctl iconify `include` must be an array of nonempty icon names')
+      }
+      if (source.namePrefix !== undefined && typeof source.namePrefix !== 'string') {
+        throw new IconctlError('iconctl iconify `namePrefix` must be a string')
+      }
+      return {
+        type: 'iconify',
+        file: source.file.trim(),
+        namePrefix: source.namePrefix ?? '',
+        ...(source.include !== undefined ? { include: [...new Set(source.include)] } : {}),
+      }
+    }
     case 'directory': {
       if (!source.dir?.trim()) {
         throw new IconctlError('iconctl directory source is missing `dir`')

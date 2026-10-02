@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { FigmaImportNodeFilter } from '@iconify/tools/lib/import/figma/types/nodes'
+import type { SyncIssue } from '../errors'
 
 export interface FigmaSourceConfig {
   type: 'figma'
@@ -14,6 +15,13 @@ export interface FigmaSourceConfig {
 export interface DirectorySourceConfig {
   type: 'directory'
   dir: string
+}
+
+export interface IconifySourceConfig {
+  type: 'iconify'
+  file: string
+  include?: string[]
+  namePrefix?: string
 }
 
 export interface MastergoSourceConfig {
@@ -45,6 +53,7 @@ export type SourceConfig
     | MastergoSourceConfig
     | JsdesignSourceConfig
     | IconfontSourceConfig
+    | IconifySourceConfig
 
 export interface ResolvedFigmaSourceConfig {
   type: 'figma'
@@ -59,6 +68,13 @@ export interface ResolvedFigmaSourceConfig {
 export interface ResolvedDirectorySourceConfig {
   type: 'directory'
   dir: string
+}
+
+export interface ResolvedIconifySourceConfig {
+  type: 'iconify'
+  file: string
+  include?: string[]
+  namePrefix: string
 }
 
 export interface ResolvedMastergoSourceConfig {
@@ -89,12 +105,15 @@ export type ResolvedSourceConfig
     | ResolvedMastergoSourceConfig
     | ResolvedJsdesignSourceConfig
     | ResolvedIconfontSourceConfig
+    | ResolvedIconifySourceConfig
 
 export interface LoadedSource {
+  issues?: SyncIssue[]
   type: SourceConfig['type']
   iconSet?: IconSet
   notModified: boolean
   fileKey?: string
   fileVersion?: string
   lastModified?: string
+  failures?: { name: string, message: string }[]
 }

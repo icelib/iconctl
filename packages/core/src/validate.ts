@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from './config'
+import { checkpoint } from './abort'
 
 export interface ValidationIssue {
   name: string
@@ -10,11 +11,11 @@ export interface ValidationResult {
   issues: ValidationIssue[]
 }
 
-export function validateIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ValidationResult {
+function validator(iconSet: IconSet, config: ResolvedIconctlConfig) {
   const issues: ValidationIssue[] = []
   const names = new Set<string>()
 
-  iconSet.forEachSync((name, type) => {
+  const validate = (name: string, type: string) => {
     if (type !== 'icon') {
       return
     }
@@ -50,11 +51,25 @@ export function validateIconSet(iconSet: IconSet, config: ResolvedIconctlConfig)
         message: `Icon "${name}" height is ${height}, expected ${config.validate.height}`,
       })
     }
-  })
-
-  return { issues }
+  }
+  return { issues, validate }
 }
 
 export function formatValidationIssues(issues: ValidationIssue[]): string {
   return issues.map(issue => `- ${issue.name}: ${issue.message}`).join('\n')
+}
+
+export function validateIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ValidationResult {
+  const { issues, validate } = validator(iconSet, config)
+  iconSet.forEachSync(validate)
+  return { issues }
+}
+
+export async function validateIconSetAsync(iconSet: IconSet, config: ResolvedIconctlConfig, signal?: AbortSignal): Promise<ValidationResult> {
+  const { issues, validate } = validator(iconSet, config)
+  await iconSet.forEach(async (name, type) => {
+    await checkpoint(signal)
+    validate(name, type)
+  })
+  return { issues }
 }

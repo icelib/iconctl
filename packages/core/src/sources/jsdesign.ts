@@ -6,11 +6,11 @@ export const JSDESIGN_REMOTE_HELP = '即时设计没有可供 CLI/CI 使用的�
 
 export async function loadJsdesignSource(
   source: ResolvedJsdesignSourceConfig,
-  options: { cwd: string, prefix: string, skipPrefix?: string[] },
+  options: { cwd: string, prefix: string, skipPrefix?: string[], signal?: AbortSignal },
 ): Promise<LoadedSource> {
   if (source.dir) {
     const loaded = await loadDirectorySource({ type: 'directory', dir: source.dir }, options)
-    return { ...loaded, type: 'jsdesign' }
+    return { ...loaded, type: 'jsdesign', issues: (loaded.issues ?? []).map(issue => ({ ...issue, sourceType: 'jsdesign' })) }
   }
 
   throw new IconctlError(JSDESIGN_REMOTE_HELP)

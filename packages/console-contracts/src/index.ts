@@ -63,6 +63,14 @@ export const sourceSchema = z.discriminatedUnion('type', [
       stripPrefix: z.string().default('icon-'),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('iconify'),
+      file: safePath,
+      include: z.array(z.string().min(1)).optional(),
+      namePrefix: z.string().optional(),
+    })
+    .strict(),
   z.object({ type: z.literal('directory'), ...localSource }).strict(),
   z.object({ type: z.literal('jsdesign'), ...localSource }).strict(),
 ])

@@ -1,5 +1,11 @@
 # @iconctl/core
 
+## 0.2.0
+
+### Minor Changes
+
+- Protect sync outputs from incomplete Figma imports, report partial results explicitly, and support AbortSignal cancellation with staged output commits.
+
 ## 0.1.0
 
 ### Minor Changes

@@ -2,7 +2,19 @@ import type { FigmaAuth } from './auth'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cleanupSVG, SVG } from '@iconify/tools'
+import { settleWithAbort, throwIfAborted } from '../abort'
 import { IconctlError } from '../errors'
+
+function validSvg(content: string): boolean {
+  try {
+    cleanupSVG(new SVG(content))
+    return true
+  }
+  catch {
+    return false
+  }
+}
 
 async function invalidToken(response: Response): Promise<boolean> {
   if (response.status === 401) {
@@ -21,22 +33,46 @@ async function invalidToken(response: Response): Promise<boolean> {
 }
 
 export class FigmaClient {
-  constructor(private readonly auth: FigmaAuth, private readonly cacheDir: string) {}
+  constructor(private readonly auth: FigmaAuth, private readonly cacheDir: string, private readonly signal?: AbortSignal) {}
 
-  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean): Promise<string> {
-    const directory = join(this.cacheDir, 'figma-v1')
+  private cacheFile(url: string): string {
     const key = createHash('sha256').update(`${this.auth.cacheIdentity}:${url}`).digest('hex')
-    const file = join(directory, `${key}.json`)
+    return join(this.cacheDir, 'figma-v1', `${key}.json`)
+  }
+
+  async invalidate(url: string): Promise<void> {
+    await rm(this.cacheFile(url), { force: true }).catch(() => {})
+  }
+
+  async invalidateImages(path: string, parameters: URLSearchParams): Promise<void> {
+    await this.invalidate(`https://api.figma.com/v1/${path}?${parameters}`)
+  }
+
+  private requestSignal(): AbortSignal {
+    const timeout = AbortSignal.timeout(30_000)
+    return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout
+  }
+
+  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean, canCache: (content: string) => boolean = () => true): Promise<string> {
+    const directory = join(this.cacheDir, 'figma-v1')
+    throwIfAborted(this.signal)
+    const file = this.cacheFile(url)
     if (!fresh) {
       try {
         const cached = JSON.parse(await readFile(file, 'utf8')) as { expires: number, content: string }
-        if (cached.expires > Date.now() && typeof cached.content === 'string') {
+        if (cached.expires > Date.now() && typeof cached.content === 'string' && canCache(cached.content)) {
+          throwIfAborted(this.signal)
           return cached.content
         }
       }
       catch {}
     }
+    throwIfAborted(this.signal)
     const content = await load()
+    throwIfAborted(this.signal)
+    if (!canCache(content)) {
+      return content
+    }
     const temporary = `${file}.${randomUUID()}.tmp`
     try {
       await mkdir(directory, { recursive: true })
@@ -49,34 +85,44 @@ export class FigmaClient {
     finally {
       await rm(temporary, { force: true }).catch(() => {})
     }
+    throwIfAborted(this.signal)
     return content
   }
 
-  async json<T>(path: string, parameters: URLSearchParams, fresh = false): Promise<T> {
+  async json<T>(path: string, parameters: URLSearchParams, fresh = false, canCache?: (value: T) => boolean): Promise<T> {
     const url = `https://api.figma.com/v1/${path}?${parameters}`
     const content = await this.cached(url, 86_400_000, async () => {
-      let token = await this.auth.token()
+      throwIfAborted(this.signal)
+      let token = await settleWithAbort(() => this.auth.token(), this.signal)
+      throwIfAborted(this.signal)
       const request = async () => {
+        throwIfAborted(this.signal)
         try {
           return await fetch(url, {
             headers: this.auth.kind === 'oauth' ? { Authorization: `Bearer ${token}` } : { 'X-Figma-Token': token },
             redirect: 'error',
-            signal: AbortSignal.timeout(30_000),
+            signal: this.requestSignal(),
           })
         }
         catch {
+          throwIfAborted(this.signal)
           throw new IconctlError('Figma API request failed or timed out. Check your connection and retry.')
         }
       }
       let response = await request()
       if (this.auth.kind === 'oauth' && await invalidToken(response)) {
-        token = await this.auth.token(token)
+        throwIfAborted(this.signal)
+        await response.body?.cancel()
+        token = await settleWithAbort(() => this.auth.token(token), this.signal)
+        throwIfAborted(this.signal)
         response = await request()
       }
+      throwIfAborted(this.signal)
       if (!response.ok) {
         const hint = response.status === 401 || await invalidToken(response)
           ? 'Check your credentials; for OAuth, run `iconctl auth figma login` again or update CI secrets.'
           : response.status === 403 ? 'Check file access and the file_content:read scope.' : response.status === 429 ? 'Rate limit reached. Retry later.' : 'Retry later or check the file key.'
+        await response.body?.cancel()
         throw new IconctlError(`Figma API failed (HTTP ${response.status}). ${hint}`)
       }
       try {
@@ -88,9 +134,19 @@ export class FigmaClient {
         return text
       }
       catch {
+        throwIfAborted(this.signal)
         throw new IconctlError('Invalid Figma API response.')
       }
-    }, fresh)
+    }, fresh, canCache
+      ? (text) => {
+          try {
+            return canCache(JSON.parse(text) as T)
+          }
+          catch {
+            return false
+          }
+        }
+      : undefined)
     try {
       return JSON.parse(content) as T
     }
@@ -113,15 +169,21 @@ export class FigmaClient {
     return this.cached(target.href, 30 * 86_400_000, async () => {
       try {
         // Signed CDN URLs authenticate themselves; never forward API headers.
-        const response = await fetch(target, { signal: AbortSignal.timeout(30_000) })
+        const response = await fetch(target, { signal: this.requestSignal() })
+        throwIfAborted(this.signal)
         if (!response.ok) {
-          throw new Error('download')
+          await response.body?.cancel()
+          throw new IconctlError(`Could not download a Figma SVG (HTTP ${response.status}).`)
         }
         return await response.text()
       }
-      catch {
+      catch (error) {
+        throwIfAborted(this.signal)
+        if (error instanceof IconctlError) {
+          throw error
+        }
         throw new IconctlError('Could not download a Figma SVG.')
       }
-    }, false)
+    }, false, validSvg)
   }
 }

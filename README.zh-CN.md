@@ -31,10 +31,20 @@ pnpm exec iconctl sync
 | --- | --- |
 | `iconctl init` | 写 `iconctl.config.ts` |
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
+| `iconctl watch` | 持续同步本地 SVG 目录，自动重载配置 |
 | `iconctl check` | 校验已有产物，不打远程来源 |
 | `iconctl preview` | 生成静态 HTML 画廊 |
+| `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
 
 `sync --json` 输出 `added`、`removed`、`changed`、`skipped`、`sources`、`fileVersion`、`outputFiles`。校验失败默认非 0 退出，并且不写半成品。
+
+`sync({ signal })` 支持调用方取消。单项导入／处理失败现在也会默认阻止产物替换。显式设置 `continueOnError: true` 可导出成功项，结果带有 `complete: false`、诊断 `issues` 和 `diff.deletionsReliable: false`，不报告删除、不更新 changelog。产物先暂存再提交：提交前取消保留旧产物，提交开始后取消会等待提交成功；共享 OAuth 刷新安全结束后才返回取消。不保证跨路径原子发布，完整契约见[同步完整性与取消](apps/website/zh/quick-start.md#同步完整性与取消)。
+
+本地开发可运行 `iconctl watch`：启动时同步一次，随后监听 SVG 变更。请将 `raw-svg` 等输入与生成的 SVG／包目录分开。支持 `directory`、`jsdesign.dir`、`iconfont.dir` 和 `iconify.file` 本地来源；远程来源继续使用 `sync`。`watch --json` 输出 NDJSON 事件。配置恢复、取消和 API 详见[本地监听](apps/website/zh/quick-start.md#本地监听)。
+
+本地 Iconify JSON 可以与 SVG 或远程来源混用：`{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`。别名、旋转和继承尺寸会先解析，再进入已有处理流程。详见 [Iconify JSON 来源](apps/website/zh/sources.md#本地-iconify-json)。
+
+运行 `iconctl diff before.json after.json --html diff.html` 可审核两份导出集合，比较时解析别名、继承尺寸和变换，并单独报告前缀变化，无需配置或凭据。CI 可加 `--check --json`；图标或前缀存在变化时 `--check` 以 1 退出。报告、dry-run 和 API 详见[离线比较](apps/website/zh/quick-start.md#离线比较)。
 
 ## 配置
 
@@ -102,3 +112,5 @@ MIT
 ## 私有控制台
 
 公开文档旁的 `/app` 提供仅所有者可用的 Vue/Hono 图标工作台。参阅[GitHub App、OAuth、插件与部署指南](apps/website/zh/console.md)。
+
+控制台项目可以从任务固定的仓库提交导入 Iconify JSON 文件，按精确名称选择图标／别名，并原样添加名称前缀。参阅[仓库 Iconify JSON](apps/website/zh/console.md#仓库-iconify-json)。

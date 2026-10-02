@@ -9,7 +9,10 @@ import {
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
+import { runDiff } from './diff'
 import { runFigmaAuth } from './figma-auth'
+import { syncSummary } from './sync-summary'
+import { runWatch } from './watch'
 
 interface GlobalOptions {
   config?: string
@@ -39,19 +42,7 @@ function printError(error: unknown): never {
 
 function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boolean) {
   if (asJson) {
-    process.stdout.write(`${JSON.stringify({
-      prefix: result.prefix,
-      fileKey: result.fileKey,
-      fileVersion: result.fileVersion,
-      notModified: result.notModified,
-      sources: result.sources,
-      added: result.diff.added,
-      removed: result.diff.removed,
-      changed: result.diff.changed,
-      skipped: result.failed,
-      issues: result.issues,
-      outputFiles: result.files,
-    }, null, 2)}\n`)
+    process.stdout.write(`${JSON.stringify(syncSummary(result), null, 2)}\n`)
     return
   }
 
@@ -60,7 +51,18 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
     return
   }
 
-  consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
+  if (result.complete) {
+    consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
+  }
+  else {
+    consola.warn(`Incomplete sync: ${result.processed} icons for prefix "${result.prefix}". Deletions are unknown; changelog was not updated.`)
+    if (result.failed.length) {
+      consola.warn(`skipped: ${result.failed.join(', ')}`)
+    }
+    for (const issue of result.issues) {
+      consola.warn(`${issue.name}${issue.nodeId ? ` (${issue.nodeId})` : ''} [${issue.stage}]: ${issue.message}`)
+    }
+  }
   if (result.diff.added.length) {
     consola.info(`added: ${result.diff.added.join(', ')}`)
   }
@@ -72,7 +74,7 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
 }
 
-function configTemplate(input: { prefix: string, json: string, sourceBlock: string }) {
+function configTemplate(input: { prefix: string, json: string, sourceBlock: string, fixedSize: boolean }) {
   return `import { defineConfig } from 'iconctl'
 
 export default defineConfig({
@@ -88,8 +90,8 @@ export default defineConfig({
     // jsonPackage: { dir: 'packages/icons', name: '@iconify-json/brand' },
   },
   validate: {
-    width: 24,
-    height: 24,
+    ${input.fixedSize ? '' : '// '}width: 24,
+    ${input.fixedSize ? '' : '// '}height: 24,
   },
 })
 `
@@ -101,7 +103,24 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--config <path>', 'Path to iconctl config')
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
-  cli.option('--continue', 'Write files even when validation fails')
+  cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
+
+  cli
+    .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')
+    .option('--html <path>', 'Write a standalone offline HTML comparison')
+    .option('--check', 'Exit with status 1 when icons or the prefix differ')
+    .action(async (before: string, after: string, options) => {
+      try {
+        await runDiff(before, after, options)
+      }
+      catch (error) {
+        printError(error)
+      }
+    })
+
+  cli
+    .command('watch', 'Watch local SVG sources and reload config on change')
+    .action(runWatch)
 
   cli
     .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')
@@ -163,6 +182,7 @@ export async function runCli(argv: string[] = process.argv) {
           cwd: process.cwd(),
           config,
           ...(options.dryRun ? { dryRun: true } : {}),
+          ...(options.continue ? { continueOnError: true } : {}),
         })
         printSyncResult(result, Boolean(options.json))
       }
@@ -180,6 +200,7 @@ export async function runCli(argv: string[] = process.argv) {
           options: [
             { label: 'Figma file', value: 'figma' },
             { label: 'Local SVG directory', value: 'directory' },
+            { label: 'Local Iconify JSON', value: 'iconify' },
             { label: 'MasterGo file', value: 'mastergo' },
             { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
             { label: '即时设计 exported SVG folder', value: 'jsdesign' },
@@ -187,8 +208,8 @@ export async function runCli(argv: string[] = process.argv) {
         })
         const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
         const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
-        let sourceBlock = `{ type: 'directory', dir: './svg' }`
-        let hint = 'Put SVGs in ./svg, then run `iconctl sync`.'
+        let sourceBlock = `{ type: 'directory', dir: './raw-svg' }`
+        let hint = 'Put SVGs in ./raw-svg, then run `iconctl sync` or `iconctl watch`.'
         if (sourceType === 'figma') {
           const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
           sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
@@ -215,14 +236,20 @@ export async function runCli(argv: string[] = process.argv) {
           sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
           hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
         }
+        else if (sourceType === 'iconify') {
+          const file = await consola.prompt('Iconify JSON file', { type: 'text', placeholder: './vendor/icons.json', default: './vendor/icons.json' })
+          sourceBlock = `{ type: 'iconify', file: ${JSON.stringify(file || './vendor/icons.json')} }`
+          hint = 'Keep the vendor JSON separate from output paths, then run `iconctl sync` or `iconctl watch`.'
+        }
         else {
-          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './svg', default: './svg' })
-          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './svg')} }`
+          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './raw-svg', default: './raw-svg' })
+          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './raw-svg')} }`
         }
         const contents = configTemplate({
           prefix: prefix || 'brand',
           json: json || 'icons.json',
           sourceBlock,
+          fixedSize: sourceType !== 'iconify',
         })
         const target = join(process.cwd(), 'iconctl.config.ts')
         await writeFile(target, contents, 'utf8')

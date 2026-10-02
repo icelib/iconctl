@@ -23,7 +23,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -31,6 +32,7 @@ button,
 a,
 input,
 select,
+textarea,
 summary {
   touch-action: manipulation;
 }
@@ -71,6 +73,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid #8fbbfc;
   outline-offset: 3px;
@@ -88,7 +91,8 @@ summary:focus-visible {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 40px;
   padding: 10px 11px;
@@ -96,6 +100,10 @@ select {
   background: white;
   border: 1px solid #c8d5e1;
   border-radius: 6px;
+}
+
+textarea {
+  resize: vertical;
 }
 
 input[type='checkbox'] {
@@ -1193,7 +1201,8 @@ tbody tr:last-child td {
 fieldset,
 label,
 input,
-select {
+select,
+textarea {
   min-width: 0;
 }
 

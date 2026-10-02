@@ -1,7 +1,7 @@
 {
   "name": "@iconctl/core",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Load icons from Figma, SVG directories, and more, then export Iconify JSON",
   "author": "ice breaker <hi@sonofmagic.top>",
   "license": "MIT",
@@ -67,7 +67,9 @@
   "dependencies": {
     "@iconify/tools": "^5.0.14",
     "@iconify/types": "^2.0.0",
+    "@iconify/utils": "^3.1.7",
     "c12": "^3.3.1",
+    "chokidar": "^5.0.0",
     "pathe": "^2.0.3",
     "proper-lockfile": "^4.1.2"
   },

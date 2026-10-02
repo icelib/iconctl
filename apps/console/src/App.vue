@@ -261,12 +261,26 @@ function addSource() {
   else if (type === 'iconfont') {
     draft.sources.push({ type, url: '', stripPrefix: 'icon-' })
   }
+  else if (type === 'iconify') {
+    draft.sources.push({ type, file: '' })
+  }
   else {
     draft.sources.push({ type, dir: 'raw' })
   }
 }
 function csv(event: Event) {
   return (event.target as HTMLInputElement).value.split(',').map(value => value.trim()).filter(Boolean)
+}
+function selectIconifyNames(source: Extract<Source, { type: 'iconify' }>, event: Event) {
+  if ((event.target as HTMLSelectElement).value === 'all') {
+    delete source.include
+  }
+  else {
+    source.include ??= []
+  }
+}
+function iconifyNames(event: Event) {
+  return (event.target as HTMLTextAreaElement).value.split(/\r?\n/).filter(name => name.length > 0)
 }
 async function attachUpload(event: Event, source: Source) {
   const file = (event.target as HTMLInputElement).files?.[0]
@@ -506,7 +520,7 @@ onUnmounted(() => clearInterval(poll))
             <span>＋</span><span>◯</span><span>↗</span><span>⌘</span>
           </div>
           <h3>创建你的第一个图标项目</h3>
-          <p>连接 GitHub 仓库，选择 Figma 或 SVG 来源。</p>
+          <p>连接 GitHub 仓库，选择 Figma、SVG 或 Iconify JSON 来源。</p>
           <button class="primary" @click="edit()">
             新建项目
           </button>
@@ -596,6 +610,9 @@ onUnmounted(() => clearInterval(poll))
                 <option value="directory">
                   SVG 目录
                 </option>
+                <option value="iconify">
+                  Iconify JSON
+                </option>
                 <option value="jsdesign">
                   即时设计 SVG
                 </option>
@@ -670,6 +687,40 @@ onUnmounted(() => clearInterval(poll))
                 required
                 placeholder="https://at.alicdn.com/t/…js"
               ></label><label>移除名称前缀<input v-model="source.stripPrefix"></label>
+            </div>
+            <div v-else-if="source.type === 'iconify'" class="form-grid">
+              <label class="full-width">仓库内 JSON 文件路径<input
+                v-model="source.file"
+                required
+                maxlength="240"
+                placeholder="vendor/icons.json"
+              ></label>
+              <p class="help full-width">
+                从所选 GitHub 仓库读取 Iconify JSON，路径相对于仓库根目录。
+              </p>
+              <label>导入范围<select
+                :value="source.include === undefined ? 'all' : 'selected'"
+                @change="selectIconifyNames(source, $event)"
+              >
+                <option value="all">全部图标</option>
+                <option value="selected">指定图标</option>
+              </select></label>
+              <label>名称前缀（原样添加）<input
+                v-model="source.namePrefix"
+                placeholder="vendor-"
+              ></label>
+              <p class="help full-width">
+                前缀填 <code>vendor-</code> 时，<code>home</code> 会导入为 <code>vendor-home</code>；不会自动添加分隔符。
+              </p>
+              <label v-if="source.include !== undefined" class="full-width">图标名称（每行一个）<textarea
+                :value="source.include.join('\n')"
+                rows="4"
+                placeholder="home&#10;arrow-left"
+                @change="source.include = iconifyNames($event)"
+              /></label>
+              <p v-if="source.include !== undefined" class="help full-width">
+                空行会忽略；名单留空时不导入任何图标。
+              </p>
             </div>
             <div v-else class="form-grid">
               <label>仓库内目录 / ZIP 子目录<input
