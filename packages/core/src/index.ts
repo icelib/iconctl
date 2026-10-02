@@ -6,7 +6,7 @@ export {
   parseChangelog,
   writeChangelog,
 } from './changelog'
-export { check, type CheckOptions } from './check'
+export { check, type CheckInputOptions, type CheckIssue, type CheckOptions, type CheckReport, type CheckResult, type CheckValidation, IconctlCheckError } from './check'
 export {
   defineConfig,
   type IconctlConfig,

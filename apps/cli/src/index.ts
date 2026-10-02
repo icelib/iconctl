@@ -4,6 +4,7 @@ export {
   defineConfig,
   diffIconSets,
   IconctlAbortError,
+  IconctlCheckError,
   IconctlError,
   IconctlSyncError,
   loadConfig,
@@ -12,6 +13,12 @@ export {
   sync,
 } from '@iconctl/core'
 export type {
+  CheckInputOptions,
+  CheckIssue,
+  CheckOptions,
+  CheckReport,
+  CheckResult,
+  CheckValidation,
   IconctlConfig,
   SourceConfig,
   SyncIssue,

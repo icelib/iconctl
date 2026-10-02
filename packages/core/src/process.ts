@@ -17,7 +17,9 @@ export interface ProcessResult {
   issues: SyncIssue[]
 }
 
-function processIcon(iconSet: IconSet, config: ResolvedIconctlConfig, name: string, result: ProcessResult): void {
+type ProcessOptions = Pick<ResolvedIconctlConfig, 'color'>
+
+function processIcon(iconSet: IconSet, config: ProcessOptions, name: string, result: ProcessResult): void {
   let stage = 'reading SVG'
   try {
     const svg = iconSet.toSVG(name)
@@ -54,7 +56,7 @@ function processIcon(iconSet: IconSet, config: ResolvedIconctlConfig, name: stri
   }
 }
 
-export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ProcessResult {
+export function processIconSet(iconSet: IconSet, config: ProcessOptions): ProcessResult {
   const result: ProcessResult = { processed: 0, failed: [], issues: [] }
   iconSet.forEachSync((name, type) => {
     if (type === 'icon') {
@@ -64,7 +66,7 @@ export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig):
   return result
 }
 
-export async function processIconSetAsync(iconSet: IconSet, config: ResolvedIconctlConfig, signal?: AbortSignal): Promise<ProcessResult> {
+export async function processIconSetAsync(iconSet: IconSet, config: ProcessOptions, signal?: AbortSignal): Promise<ProcessResult> {
   const result: ProcessResult = { processed: 0, failed: [], issues: [] }
   await iconSet.forEach(async (name, type) => {
     await checkpoint(signal)

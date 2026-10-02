@@ -32,7 +32,7 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | `iconctl init` | Write `iconctl.config.ts` |
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl watch` | Continuously sync local SVG folders and reload config |
-| `iconctl check` | Validate existing output without remote sources |
+| `iconctl check` | Validate configured output or `--input icons.json` |
 | `iconctl preview` | Write a static HTML gallery |
 
 `sync --json` prints `added`, `removed`, `changed`, `skipped`, `sources`, `fileVersion`, and `outputFiles`. Validation failures exit non-zero and do not write a partial set.
@@ -42,6 +42,8 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 For local development, `iconctl watch` performs an initial sync and watches SVG edits. Keep inputs such as `raw-svg` separate from generated SVG/package directories. It supports local `directory`, `jsdesign.dir`, `iconfont.dir` and `iconify.file` sources; remote sources still use `sync`. `watch --json` emits NDJSON events. See [local watch](apps/website/quick-start.md#local-watch) for configuration recovery, cancellation and the API.
 
 Local Iconify JSON can be mixed with SVG or remote sources: `{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`. Aliases, rotations and inherited dimensions are resolved before the usual processing. See [Iconify JSON sources](apps/website/sources.md#local-iconify-json).
+
+To check a standalone collection, run `iconctl check --input ./icons.json --width 24 --height 24 --json`. This does not load configuration, contact sources or write files. Dimensions are optional; `--name` overrides the naming regex. Failure reports include import, SVG processing and validation issues and exit with status 1. See [artifact checks](apps/website/quick-start.md#check-existing-artifacts).
 
 ## Config
 

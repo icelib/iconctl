@@ -16,7 +16,8 @@ async function readLocalSvgDirectory(
   dir: string,
   prefix: string,
   options: ImportLocalSvgDirectoryOptions,
-): Promise<{ iconSet: IconSet, failures: NonNullable<LoadedSource['failures']> }> {
+  inspection = false,
+): Promise<{ iconSet: IconSet, failures: { name: string, message: string, file?: string }[], count: number }> {
   await checkpoint(options.signal)
   const skipPrefix = options.skipPrefix ?? ['_', '.']
   try {
@@ -33,7 +34,9 @@ async function readLocalSvgDirectory(
   }
 
   const iconSet = blankIconSet(prefix)
-  const failures: NonNullable<LoadedSource['failures']> = []
+  const failures: { name: string, message: string, file?: string }[] = []
+  const names = new Set<string>()
+  let count = 0
   const ancestors = new Set<string>()
   const visit = async (directory: string) => {
     await checkpoint(options.signal)
@@ -47,7 +50,7 @@ async function readLocalSvgDirectory(
       for (const file of files) {
         await checkpoint(options.signal)
         // Preserve the importer's exclusion of hidden files and folders.
-        if (file.startsWith('.')) {
+        if (!inspection && file.startsWith('.')) {
           continue
         }
         const target = join(directory, file)
@@ -58,25 +61,45 @@ async function readLocalSvgDirectory(
         }
         const extension = extname(file)
         const rawName = file.slice(0, -extension.length)
-        if (!info.isFile() || extension.toLowerCase() !== '.svg' || shouldSkipName(rawName, skipPrefix)) {
+        if (!info.isFile() || extension.toLowerCase() !== '.svg' || (!inspection && shouldSkipName(rawName, skipPrefix))) {
           continue
         }
-        const name = toIconName(rawName)
+        count++
+        const name = inspection ? rawName : toIconName(rawName)
         if (!name) {
           failures.push({ name: rawName, message: 'The SVG filename cannot be converted to an icon name.' })
           continue
         }
+        if (inspection && names.has(name)) {
+          failures.push({ name, file: target, message: `Duplicate SVG icon name "${name}".` })
+          continue
+        }
+        names.add(name)
         // Read failures make the source unavailable; malformed content is an
         // individual icon failure that sync can report or explicitly skip.
-        const content = await settleWithAbort(() => readFile(target, { encoding: 'utf8', ...(options.signal ? { signal: options.signal } : {}) }), options.signal)
+        let content: string
+        try {
+          content = await settleWithAbort(() => readFile(target, { encoding: 'utf8', ...(options.signal ? { signal: options.signal } : {}) }), options.signal)
+        }
+        catch (error) {
+          if (!inspection) {
+            throw error
+          }
+          failures.push({ name, file: target, message: `Cannot read SVG: ${(error as Error).message}` })
+          continue
+        }
         throwIfAborted(options.signal)
         try {
           const svg = new SVG(content)
-          cleanupSVG(svg)
-          iconSet.fromSVG(name, svg)
+          if (!inspection) {
+            cleanupSVG(svg)
+          }
+          if (!iconSet.fromSVG(name, svg)) {
+            throw new Error('Cannot import SVG')
+          }
         }
         catch {
-          failures.push({ name, message: 'Cannot import the SVG. Check its markup and dimensions.' })
+          failures.push({ name, ...(inspection ? { file: target } : {}), message: 'Cannot import the SVG. Check its markup and dimensions.' })
         }
       }
     }
@@ -86,7 +109,12 @@ async function readLocalSvgDirectory(
   }
   await visit(dir)
   throwIfAborted(options.signal)
-  return { iconSet, failures }
+  return { iconSet, failures, count }
+}
+
+/** Inspect generated artifacts without renaming or filtering their icon names. */
+export async function inspectSvgDirectory(dir: string, prefix: string) {
+  return await readLocalSvgDirectory(dir, prefix, {}, true)
 }
 
 export async function importLocalSvgDirectory(
