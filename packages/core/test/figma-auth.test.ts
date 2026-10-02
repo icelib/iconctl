@@ -225,7 +225,7 @@ describe('Figma request authentication', () => {
         return Response.json({ ok: true })
       }
       expect(init.headers).toBeUndefined()
-      return new Response('<svg/>')
+      return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>')
     })
     vi.stubGlobal('fetch', request)
     const client = new FigmaClient(await resolveFigmaAuth('pat-secret', {}), dir)

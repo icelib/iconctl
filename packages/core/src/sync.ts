@@ -4,14 +4,14 @@ import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import type { FigmaSourceLoadOptions } from './sources/figma'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { dirname, resolve } from 'pathe'
-import { writeChangelog } from './changelog'
+import { resolve } from 'pathe'
+import { mergeChangelog } from './changelog'
 import { diffIconSets } from './diff'
 import { IconctlError } from './errors'
-import { exportOutputs, readPreviousIconJson } from './export'
-import { writePreviewHtml } from './preview'
+import { prepareOutputs, readPreviousIconJson } from './export'
+import { renderPreviewHtml } from './preview'
 import { processIconSet } from './process'
 import { loadSources, mergeIconSets } from './sources/load'
 import { formatValidationIssues, validateIconSet } from './validate'
@@ -55,11 +55,6 @@ async function readCacheMeta(file: string): Promise<CacheMeta | undefined> {
   }
 }
 
-async function writeCacheMeta(file: string, meta: CacheMeta) {
-  await mkdir(dirname(file), { recursive: true })
-  await writeFile(file, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
-}
-
 export async function sync(options: SyncOptions): Promise<SyncResult> {
   const cwd = options.cwd ?? process.cwd()
   const config = options.config
@@ -83,6 +78,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   let notModified = false
   let nextMeta: CacheMeta | undefined
   const sourceSummaries: SyncResult['sources'] = []
+  const sourceFailures: { name: string, message: string }[] = []
 
   if (!iconSet) {
     const loaded = await loadSources({
@@ -131,6 +127,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
     fileKey = loaded.find(item => item.fileKey)?.fileKey
     for (const item of loaded) {
+      sourceFailures.push(...item.failures ?? [])
       sourceSummaries.push({
         type: item.type,
         notModified: item.notModified,
@@ -151,7 +148,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   }
 
   const processed = processIconSet(iconSet, config)
-  const { issues } = validateIconSet(iconSet, config)
+  const issues = [...sourceFailures, ...processed.issues, ...validateIconSet(iconSet, config).issues]
+  const failed = [...new Set([...sourceFailures.map(item => item.name), ...processed.failed])]
 
   if (issues.length && !options.continueOnError) {
     throw new IconctlError(
@@ -159,14 +157,14 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     )
   }
 
-  const exported = await exportOutputs(iconSet, config, {
+  const exported = prepareOutputs(iconSet, config, {
     cwd,
-    ...(options.dryRun ? { dryRun: true } : {}),
+    ...(previous ? { previous } : {}),
   })
 
   if (!options.dryRun && config.output.preview) {
     const previewFile = resolve(cwd, config.output.preview)
-    await writePreviewHtml(previewFile, exported.json)
+    exported.transaction.add(previewFile, 'file', async staged => writeFile(staged, renderPreviewHtml(exported.json), 'utf8'))
     exported.files.push(previewFile)
   }
 
@@ -174,30 +172,46 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
 
   if (!options.dryRun && config.output.changelog) {
     const changelogFile = resolve(cwd, config.output.changelog)
-    const written = await writeChangelog(changelogFile, diff)
-    if (written) {
-      exported.files.push(written)
+    let existing = ''
+    try {
+      existing = await readFile(changelogFile, 'utf8')
+    }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error
+      }
+    }
+    const contents = mergeChangelog(existing, diff)
+    if (contents !== undefined) {
+      exported.transaction.add(changelogFile, 'file', async staged => writeFile(staged, contents, 'utf8'))
+      exported.files.push(changelogFile)
+    }
+    else {
+      exported.transaction.add(changelogFile, 'keep')
     }
   }
 
-  if (
-    !options.dryRun
-    && !issues.length
-    && !processed.failed.length
-    && nextMeta
-  ) {
-    await writeCacheMeta(cacheMetaFile, nextMeta)
+  if (!options.dryRun) {
+    if (!issues.length && !failed.length && nextMeta) {
+      const contents = `${JSON.stringify(nextMeta, null, 2)}\n`
+      exported.transaction.add(cacheMetaFile, 'file', async staged => writeFile(staged, contents, 'utf8'))
+    }
+    else {
+      // A partial or preloaded export must not inherit a previous complete marker.
+      exported.transaction.add(cacheMetaFile, 'delete')
+    }
+    await exported.transaction.commit()
   }
 
   const result: SyncResult = {
     prefix: config.prefix,
     notModified,
     processed: processed.processed,
-    failed: processed.failed,
+    failed,
     issues,
     sources: sourceSummaries,
     diff,
-    files: exported.files,
+    files: options.dryRun ? [] : exported.files,
     json: exported.json,
   }
   if (fileVersion) {

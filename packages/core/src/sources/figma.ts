@@ -10,6 +10,19 @@ import { FigmaClient } from '../figma/client'
 import { parseFigmaFileKey } from '../file-key'
 import { defaultIconNameForNode } from '../naming'
 
+function isSvgDownloadUrl(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false
+  }
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password
+  }
+  catch {
+    return false
+  }
+}
+
 export interface FigmaSourceLoadOptions {
   cwd: string
   prefix: string
@@ -51,6 +64,7 @@ export async function loadFigmaSource(
     ...(source.pages ? { pages: source.pages } : {}),
   })
   const icons = Object.values(nodes.icons)
+  const failures: NonNullable<LoadedSource['failures']> = []
   // Bound both encoded URL size and the number of simultaneous downloads.
   let batch: string[] = []
   const render = async () => {
@@ -61,7 +75,9 @@ export async function loadFigmaSource(
       svg_include_id: 'false',
       svg_simplify_stroke: 'false',
       use_absolute_bounds: 'false',
-    }))
+    }), false, value => value.images != null
+      && typeof value.images === 'object'
+      && batch.every(id => isSvgDownloadUrl(value.images[id])))
     if (!result.images || typeof result.images !== 'object') {
       throw new IconctlError('Invalid Figma image export response.')
     }
@@ -84,28 +100,33 @@ export async function loadFigmaSource(
   }
   const iconSet = blankIconSet(options.prefix)
   for (let offset = 0; offset < icons.length; offset += 4) {
-    await Promise.all(icons.slice(offset, offset + 4).map(async (icon) => {
-      if (icon.url) {
-        try {
-          icon.content = await client.svg(icon.url)
-        }
-        catch {}
+    const downloads = await Promise.all(icons.slice(offset, offset + 4).map(async (icon) => {
+      if (!icon.url) {
+        return { icon, message: 'Figma did not return an SVG download URL for this icon.' }
+      }
+      try {
+        return { icon, content: await client.svg(icon.url) }
+      }
+      catch (error) {
+        return { icon, message: error instanceof IconctlError ? error.message : 'Could not download a Figma SVG.' }
       }
     }))
-  }
-  let imported = 0
-  for (const icon of icons) {
-    if (icon.content) {
+    for (const { icon, content, message } of downloads) {
+      if (message) {
+        failures.push({ name: icon.keyword, message })
+        continue
+      }
       try {
-        const svg = new SVG(icon.content)
+        const svg = new SVG(content!)
         cleanupSVG(svg)
         iconSet.fromSVG(icon.keyword, svg)
-        imported++
       }
-      catch {}
+      catch {
+        failures.push({ name: icon.keyword, message: 'Figma returned an invalid SVG for this icon.' })
+      }
     }
   }
-  if (!imported) {
+  if (!icons.length) {
     throw new IconctlError('No valid Figma icons could be imported. Check layers, filters and SVG downloads.')
   }
   const loaded: LoadedSource = {
@@ -114,6 +135,7 @@ export async function loadFigmaSource(
     notModified: false,
     fileKey,
     lastModified: document.lastModified,
+    ...(failures.length ? { failures } : {}),
   }
   if (document.version) {
     loaded.fileVersion = document.version

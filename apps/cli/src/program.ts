@@ -60,7 +60,18 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
     return
   }
 
-  consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
+  if (result.failed.length || result.issues.length) {
+    consola.warn(`Synced ${result.processed} icons for prefix "${result.prefix}" with errors (--continue)`)
+    if (result.failed.length) {
+      consola.warn(`skipped: ${result.failed.join(', ')}`)
+    }
+    for (const issue of result.issues) {
+      consola.warn(`${issue.name}: ${issue.message}`)
+    }
+  }
+  else {
+    consola.success(`Synced ${result.processed} icons for prefix "${result.prefix}"`)
+  }
   if (result.diff.added.length) {
     consola.info(`added: ${result.diff.added.join(', ')}`)
   }
@@ -101,7 +112,7 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--config <path>', 'Path to iconctl config')
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
-  cli.option('--continue', 'Write files even when validation fails')
+  cli.option('--continue', 'Write partial outputs despite icon import, processing or validation failures')
 
   cli
     .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')
@@ -163,6 +174,7 @@ export async function runCli(argv: string[] = process.argv) {
           cwd: process.cwd(),
           config,
           ...(options.dryRun ? { dryRun: true } : {}),
+          ...(options.continue ? { continueOnError: true } : {}),
         })
         printSyncResult(result, Boolean(options.json))
       }

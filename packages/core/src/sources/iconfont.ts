@@ -5,8 +5,8 @@ import { isAbsolute, join, resolve } from 'pathe'
 import { IconctlError } from '../errors'
 import { fetchText } from '../http'
 import { addSvgToIconSet, applyNameTransform, stripIconPrefix } from '../icon-set'
-import { importLocalSvgDirectory } from './directory'
-import { parseIconfontSymbolJs, symbolToSvg } from './iconfont-symbol'
+import { loadDirectorySource } from './directory'
+import { parseIconfontSymbolJs, parseIconfontSymbols, symbolToSvg } from './iconfont-symbol'
 
 export interface IconfontJsToSvgOptions {
   stripPrefix?: string
@@ -51,26 +51,40 @@ export async function loadIconfontSource(
 ): Promise<LoadedSource> {
   if (source.url) {
     const js = await fetchText(source.url)
-    const symbols = parseIconfontSymbolJs(js)
-    if (!symbols.length) {
+    const parsed = parseIconfontSymbols(js)
+    const failures = parsed.failures.map(failure => ({ ...failure, name: stripIconPrefix(failure.name, source.stripPrefix) || failure.name }))
+    if (!parsed.symbols.length && !failures.length) {
       throw new IconctlError(`No <symbol> icons found in ${source.url}`)
     }
     const iconSet = blankIconSet(options.prefix)
-    for (const symbol of symbols) {
+    for (const symbol of parsed.symbols) {
       const name = stripIconPrefix(symbol.id, source.stripPrefix)
       if (!name) {
+        failures.push({ name: symbol.id, message: 'The iconfont symbol id cannot be converted to an icon name.' })
         continue
       }
-      addSvgToIconSet(iconSet, name, symbolToSvg(symbol))
+      try {
+        addSvgToIconSet(iconSet, name, symbolToSvg(symbol))
+      }
+      catch {
+        failures.push({ name, message: 'The iconfont symbol contains an invalid SVG.' })
+      }
     }
-    return { type: 'iconfont', iconSet, notModified: false }
+    return { type: 'iconfont', iconSet, notModified: false, ...(failures.length ? { failures } : {}) }
   }
 
   if (source.dir) {
     const dir = isAbsolute(source.dir) ? source.dir : resolve(options.cwd, source.dir)
-    const imported = await importLocalSvgDirectory(dir, options.prefix)
-    const iconSet = applyNameTransform(imported, name => stripIconPrefix(name, source.stripPrefix) || null)
-    return { type: 'iconfont', iconSet, notModified: false }
+    const loaded = await loadDirectorySource({ type: 'directory', dir }, options)
+    const failures = (loaded.failures ?? []).map(failure => ({ ...failure, name: stripIconPrefix(failure.name, source.stripPrefix) || failure.name }))
+    const iconSet = applyNameTransform(loaded.iconSet!, (name) => {
+      const renamed = stripIconPrefix(name, source.stripPrefix)
+      if (!renamed) {
+        failures.push({ name, message: 'The iconfont filename cannot be converted to an icon name after removing its prefix.' })
+      }
+      return renamed || null
+    })
+    return { type: 'iconfont', iconSet, notModified: false, ...(failures.length ? { failures } : {}) }
   }
 
   throw new IconctlError('iconctl iconfont source needs `url` or `dir`')

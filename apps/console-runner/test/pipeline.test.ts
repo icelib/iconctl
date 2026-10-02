@@ -179,6 +179,8 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
       'mastergo',
     ])
     expect(snapshot!.issues).toEqual([])
+    expect(await readFile(join(work, 'output/svg/.iconctl-manifest.json'), 'utf8')).toContain('figma.svg')
+    expect(snapshot!.files).not.toHaveProperty(['svg/.iconctl-manifest.json'])
     expect(Object.keys(snapshot!.files)).toEqual(
       expect.arrayContaining([
         'icons.json',
@@ -208,6 +210,12 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
       join(root, 'package'),
     )
     expect(integrity(packed.tarball)).toBe(packed.integrity)
+    expect(packed.files).not.toHaveProperty(['svg/.iconctl-manifest.json'])
+    const archive = join(root, 'published.tgz')
+    await writeFile(archive, packed.tarball)
+    const entries = await exec('tar', ['-tzf', archive])
+    expect(entries.stdout).toContain('package/svg/figma.svg')
+    expect(entries.stdout).not.toContain('.iconctl-manifest.json')
     const manifest = JSON.parse(
       Buffer.from(packed.files['package.json']!, 'base64').toString(),
     )

@@ -2,7 +2,18 @@ import type { FigmaAuth } from './auth'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cleanupSVG, SVG } from '@iconify/tools'
 import { IconctlError } from '../errors'
+
+function validSvg(content: string): boolean {
+  try {
+    cleanupSVG(new SVG(content))
+    return true
+  }
+  catch {
+    return false
+  }
+}
 
 async function invalidToken(response: Response): Promise<boolean> {
   if (response.status === 401) {
@@ -23,20 +34,23 @@ async function invalidToken(response: Response): Promise<boolean> {
 export class FigmaClient {
   constructor(private readonly auth: FigmaAuth, private readonly cacheDir: string) {}
 
-  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean): Promise<string> {
+  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean, canCache: (content: string) => boolean = () => true): Promise<string> {
     const directory = join(this.cacheDir, 'figma-v1')
     const key = createHash('sha256').update(`${this.auth.cacheIdentity}:${url}`).digest('hex')
     const file = join(directory, `${key}.json`)
     if (!fresh) {
       try {
         const cached = JSON.parse(await readFile(file, 'utf8')) as { expires: number, content: string }
-        if (cached.expires > Date.now() && typeof cached.content === 'string') {
+        if (cached.expires > Date.now() && typeof cached.content === 'string' && canCache(cached.content)) {
           return cached.content
         }
       }
       catch {}
     }
     const content = await load()
+    if (!canCache(content)) {
+      return content
+    }
     const temporary = `${file}.${randomUUID()}.tmp`
     try {
       await mkdir(directory, { recursive: true })
@@ -52,7 +66,7 @@ export class FigmaClient {
     return content
   }
 
-  async json<T>(path: string, parameters: URLSearchParams, fresh = false): Promise<T> {
+  async json<T>(path: string, parameters: URLSearchParams, fresh = false, canCache?: (value: T) => boolean): Promise<T> {
     const url = `https://api.figma.com/v1/${path}?${parameters}`
     const content = await this.cached(url, 86_400_000, async () => {
       let token = await this.auth.token()
@@ -90,7 +104,16 @@ export class FigmaClient {
       catch {
         throw new IconctlError('Invalid Figma API response.')
       }
-    }, fresh)
+    }, fresh, canCache
+      ? (text) => {
+          try {
+            return canCache(JSON.parse(text) as T)
+          }
+          catch {
+            return false
+          }
+        }
+      : undefined)
     try {
       return JSON.parse(content) as T
     }
@@ -110,7 +133,7 @@ export class FigmaClient {
     catch {
       throw new IconctlError('Invalid Figma SVG download URL.')
     }
-    return this.cached(target.href, 30 * 86_400_000, async () => {
+    const content = await this.cached(target.href, 30 * 86_400_000, async () => {
       try {
         // Signed CDN URLs authenticate themselves; never forward API headers.
         const response = await fetch(target, { signal: AbortSignal.timeout(30_000) })
@@ -122,6 +145,10 @@ export class FigmaClient {
       catch {
         throw new IconctlError('Could not download a Figma SVG.')
       }
-    }, false)
+    }, false, validSvg)
+    if (!validSvg(content)) {
+      throw new IconctlError('Figma returned an invalid SVG for this icon.')
+    }
+    return content
   }
 }

@@ -59,6 +59,7 @@ export async function loadMastergoSource(
     'X-MG-UserAccessToken': token,
   }
   const iconSet = blankIconSet(options.prefix)
+  const failures: NonNullable<LoadedSource['failures']> = []
   let page = 0
   const pageSize = 100
 
@@ -70,20 +71,31 @@ export async function loadMastergoSource(
       url.searchParams.set('page', String(page))
       url.searchParams.set('pageSize', String(pageSize))
       const payload = await fetchJson<MastergoExtractSvgResponse>(url.toString(), { headers })
-      const svgs = payload.svgs ?? []
-      for (const item of svgs) {
-        if (!item.svg) {
-          continue
-        }
-        const rawName = item.name || item.id
+      if (!Array.isArray(payload.svgs)) {
+        throw new IconctlError('Invalid MasterGo extract-svg response: missing SVG list.')
+      }
+      for (const [index, item] of payload.svgs.entries()) {
+        const fallback = `item-${page * pageSize + index + 1}`
+        const rawName = (typeof item?.name === 'string' && item.name) || (typeof item?.id === 'string' && item.id)
         if (!rawName) {
+          failures.push({ name: fallback, message: 'MasterGo returned an icon without a name or id.' })
           continue
         }
         const name = stripIconPrefix(rawName, '')
         if (!name) {
+          failures.push({ name: rawName, message: 'The MasterGo icon name cannot be converted to an icon name.' })
           continue
         }
-        addSvgToIconSet(iconSet, name, item.svg)
+        if (typeof item.svg !== 'string' || !item.svg.trim()) {
+          failures.push({ name, message: 'MasterGo did not return SVG content for this icon.' })
+          continue
+        }
+        try {
+          addSvgToIconSet(iconSet, name, item.svg)
+        }
+        catch {
+          failures.push({ name, message: 'MasterGo returned an invalid SVG for this icon.' })
+        }
       }
       if (payload.hasMore === true) {
         page += 1
@@ -100,7 +112,7 @@ export async function loadMastergoSource(
   }
 
   const count = Object.keys(iconSet.export().icons).length
-  if (!count) {
+  if (!count && !failures.length) {
     throw new IconctlError(`MasterGo extract-svg returned no icons for file ${source.fileId} layer ${source.layerId}`)
   }
 
@@ -109,5 +121,6 @@ export async function loadMastergoSource(
     iconSet,
     notModified: false,
     fileKey: source.fileId,
+    ...(failures.length ? { failures } : {}),
   }
 }

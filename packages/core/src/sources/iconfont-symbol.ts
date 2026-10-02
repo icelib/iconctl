@@ -11,13 +11,24 @@ function attribute(attrs: string, name: string): string | undefined {
   return match?.[1]
 }
 
-export function parseIconfontSymbolJs(js: string): ParsedIconfontSymbol[] {
+export function parseIconfontSymbols(js: string): {
+  symbols: ParsedIconfontSymbol[]
+  failures: { name: string, message: string }[]
+} {
   const symbols: ParsedIconfontSymbol[] = []
+  const failures: { name: string, message: string }[] = []
+  let index = 0
   for (const match of js.matchAll(symbolPattern)) {
+    index++
     const attrs = match[1] ?? ''
     const body = (match[2] ?? '').trim()
     const id = attribute(attrs, 'id')
-    if (!id || !body) {
+    if (!id?.trim()) {
+      failures.push({ name: `symbol-${index}`, message: 'The iconfont symbol is missing its id.' })
+      continue
+    }
+    if (!body) {
+      failures.push({ name: id, message: 'The iconfont symbol has no SVG content.' })
       continue
     }
     symbols.push({
@@ -26,7 +37,11 @@ export function parseIconfontSymbolJs(js: string): ParsedIconfontSymbol[] {
       body,
     })
   }
-  return symbols
+  return { symbols, failures }
+}
+
+export function parseIconfontSymbolJs(js: string): ParsedIconfontSymbol[] {
+  return parseIconfontSymbols(js).symbols
 }
 
 export function symbolToSvg(symbol: ParsedIconfontSymbol): string {

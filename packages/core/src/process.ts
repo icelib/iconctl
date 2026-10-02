@@ -11,10 +11,12 @@ import {
 export interface ProcessResult {
   processed: number
   failed: string[]
+  issues: { name: string, message: string }[]
 }
 
 export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ProcessResult {
   const failed: string[] = []
+  const issues: ProcessResult['issues'] = []
   let processed = 0
 
   iconSet.forEachSync((name, type) => {
@@ -22,17 +24,17 @@ export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig):
       return
     }
 
-    const svg = iconSet.toSVG(name)
-    if (!svg) {
-      iconSet.remove(name)
-      failed.push(name)
-      return
-    }
-
+    let stage = 'reading SVG'
     try {
+      const svg = iconSet.toSVG(name)
+      if (!svg) {
+        throw new Error('Invalid SVG')
+      }
+      stage = 'cleaning SVG'
       cleanupSVG(svg)
       removeFigmaClipPathFromSVG(svg)
       if (config.color !== false) {
+        stage = 'normalizing SVG colors'
         const color = config.color
         parseColors(svg, {
           defaultColor: color,
@@ -44,16 +46,17 @@ export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig):
           },
         })
       }
+      stage = 'optimizing SVG'
       runSVGO(svg)
       iconSet.fromSVG(name, svg)
       processed += 1
     }
-    catch (error) {
+    catch {
       iconSet.remove(name)
       failed.push(name)
-      void error
+      issues.push({ name, message: `Failed while ${stage}. Check the source SVG.` })
     }
   })
 
-  return { processed, failed }
+  return { processed, failed, issues }
 }

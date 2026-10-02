@@ -112,13 +112,18 @@ export async function collectFiles(
         await walk(full)
       }
       else {
+        const name = safePath.parse(relative(root, full).split(sep).join('/'))
+        // The core SVG exporter keeps this ownership record for local cleanup.
+        // It is not part of the immutable snapshot or the published icon package.
+        if (name === 'svg/.iconctl-manifest.json') {
+          continue
+        }
         const content = await readFile(full)
         total += content.byteLength
         if (total > MAX_ARTIFACT_BYTES * 0.6) {
           throw new Error('Artifact bundle exceeds size limit')
         }
-        files[safePath.parse(relative(root, full).split(sep).join('/'))]
-          = content.toString('base64')
+        files[name] = content.toString('base64')
       }
     }
   }

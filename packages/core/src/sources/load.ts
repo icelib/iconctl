@@ -69,7 +69,9 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         prefix: options.config.prefix,
         cacheDir: options.config.cacheDir,
         skipPrefix: options.config.validate.skipPrefix,
-        refreshDocument: !onlyFigma,
+        // Without a completed sync marker, a cached document may describe a
+        // failed revision that has since been repaired in Figma.
+        refreshDocument: !onlyFigma || !options.figmaIfModifiedSince,
         ...(options.env ? { env: options.env } : {}),
         ...(options.figmaAuthProvider ? { authProvider: item => options.figmaAuthProvider!(item, sourceIndex) } : {}),
         ...(onlyFigma && options.figmaIfModifiedSince ? { ifModifiedSince: options.figmaIfModifiedSince } : {}),

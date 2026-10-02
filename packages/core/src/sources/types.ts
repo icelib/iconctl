@@ -97,4 +97,5 @@ export interface LoadedSource {
   fileKey?: string
   fileVersion?: string
   lastModified?: string
+  failures?: { name: string, message: string }[]
 }

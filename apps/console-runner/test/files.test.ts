@@ -1,13 +1,28 @@
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import {
+  collectFiles,
   extractSvgArchive,
   resolveInside,
   validateDirectory,
 } from '../src/files'
+
+it('excludes only the local SVG ownership manifest from collected artifacts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'iconctl-artifacts-'))
+  try {
+    await mkdir(join(root, 'svg'))
+    await writeFile(join(root, 'svg/arrow.svg'), '<svg/>')
+    await writeFile(join(root, 'svg/.iconctl-manifest.json'), '{"version":1,"files":["arrow.svg"]}')
+    await writeFile(join(root, '.iconctl-manifest.json'), 'a different file')
+    expect(Object.keys(await collectFiles(root)).sort()).toEqual(['.iconctl-manifest.json', 'svg/arrow.svg'])
+  }
+  finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 describe('SVG archive boundary', () => {
   it.each([
