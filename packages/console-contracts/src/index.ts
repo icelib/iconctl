@@ -215,6 +215,32 @@ export interface Release {
   createdAt: number
   url: string
 }
+/** Omitted selects the snapshot's original successful-sync baseline. */
+export const snapshotCompareTo = z.union([z.literal('release'), identifier]).optional()
+export type SnapshotCompareTo = z.infer<typeof snapshotCompareTo>
+export interface SnapshotComparison {
+  mode: 'previous' | 'release' | 'snapshot'
+  snapshot: Snapshot | null
+  release: Pick<Release, 'id' | 'version' | 'snapshotId'> | null
+}
+export interface SnapshotPreview {
+  snapshot: Snapshot
+  content: SnapshotContent
+  previous?: IconJSON
+  diff: ReturnType<typeof iconDiff>
+  comparison: SnapshotComparison
+}
+export interface ReleasePreview {
+  id: string
+  projectId: string
+  revision: number
+  expiresAt: number
+  release: ReleaseIntent
+  packageName: string
+  iconCount: number
+  comparison: SnapshotComparison
+  diff: ReturnType<typeof iconDiff>
+}
 export interface ConnectionStatus {
   id: string
   type: 'figma' | 'mastergo'

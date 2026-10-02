@@ -8,12 +8,17 @@ import type {
   ProjectInput,
   Release,
   ReleaseIntent,
+  ReleasePreview,
   Snapshot,
+  SnapshotCompareTo,
+  SnapshotComparison,
   SnapshotContent,
+  SnapshotPreview,
 } from '@iconctl/console-contracts'
 import type { RunnerIdentity } from './github'
 import {
   commit,
+  iconDiff,
   nextVersion,
   OWNER_ID,
   snapshotInput,
@@ -923,11 +928,57 @@ export class AccountState extends DurableObject<Env> {
     return JSON.stringify(await this.snapshotContent(id))
   }
 
+  private releaseComparison(release?: Release): SnapshotComparison {
+    return {
+      mode: 'release',
+      snapshot: release ? this.snapshot(release.snapshotId) : null,
+      release: release
+        ? { id: release.id, version: release.version, snapshotId: release.snapshotId }
+        : null,
+    }
+  }
+
+  private async compareSnapshot(
+    snapshot: Snapshot,
+    comparison: SnapshotComparison,
+  ): Promise<SnapshotPreview> {
+    if (comparison.snapshot && comparison.snapshot.projectId !== snapshot.projectId) {
+      fail(400, 'Comparison snapshot belongs to another project')
+    }
+    const [content, previous] = await Promise.all([
+      this.snapshotContent(snapshot.id),
+      comparison.snapshot ? this.snapshotContent(comparison.snapshot.id) : undefined,
+    ])
+    return { snapshot, content, previous: previous?.json, diff: iconDiff(previous?.json, content.json), comparison }
+  }
+
+  async snapshotPreviewDocument(id: string, compareTo?: SnapshotCompareTo) {
+    const snapshot = this.snapshot(id)
+    let comparison: SnapshotComparison
+    if (compareTo === 'release') {
+      const project = this.required<Project>(`project:${snapshot.projectId}`)
+      const release = project.releaseId
+        ? this.required<Release>(`release:${project.releaseId}`)
+        : undefined
+      comparison = this.releaseComparison(release)
+    }
+    else {
+      const baselineId = compareTo ?? snapshot.baselineId
+      comparison = {
+        mode: compareTo ? 'snapshot' : 'previous',
+        snapshot: baselineId ? this.snapshot(baselineId) : null,
+        release: null,
+      }
+    }
+    // Iconify JSON permits extension fields; serialize them at the RPC boundary.
+    return JSON.stringify(await this.compareSnapshot(snapshot, comparison))
+  }
+
   async confirmRelease(
     projectId: string,
     snapshotId: string,
     bump: 'patch' | 'minor' | 'major',
-  ) {
+  ): Promise<ReleasePreview> {
     const project = this.required<Project>(`project:${projectId}`)
     if (this.locked(projectId)) {
       fail(409, 'Project has an active task')
@@ -959,6 +1010,12 @@ export class AccountState extends DurableObject<Env> {
     if (!previous && head) {
       fail(409, 'Project branch already exists; choose a new project name')
     }
+    // Use the captured release, never resolve "latest" again after external I/O.
+    const { comparison, diff } = await this.compareSnapshot(snapshot, this.releaseComparison(previous))
+    const current = this.required<Project>(`project:${projectId}`)
+    if (current.revision !== project.revision || current.releaseId !== project.releaseId || this.locked(projectId)) {
+      fail(409, 'Project or release baseline changed while preparing confirmation')
+    }
     const id = crypto.randomUUID()
     const confirmation: Confirmation = {
       id,
@@ -979,6 +1036,8 @@ export class AccountState extends DurableObject<Env> {
       ...confirmation,
       packageName: project.packageName,
       iconCount: snapshot.iconCount,
+      comparison,
+      diff,
     }
   }
 

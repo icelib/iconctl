@@ -1,9 +1,8 @@
-import type { SnapshotContent } from '@iconctl/console-contracts'
+import type { SnapshotContent, SnapshotPreview } from '@iconctl/console-contracts'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { RunnerIdentity } from './github'
 import {
-  iconDiff,
   identifier,
   MAX_ARTIFACT_BYTES,
   MAX_UPLOAD_BYTES,
@@ -11,6 +10,7 @@ import {
   OWNER_ID,
   projectInput,
   safePath,
+  snapshotCompareTo,
   snapshotInput,
 } from '@iconctl/console-contracts'
 import { Hono } from 'hono'
@@ -600,23 +600,10 @@ app.post('/api/projects/:id/release/confirm', async (c) => {
 app.post('/api/jobs/:id/retry', async c =>
   c.json(await account(c.env).retry(identifier.parse(c.req.param('id'))), 202))
 app.get('/api/snapshots/:id', async (c) => {
-  const snapshot = await account(c.env).snapshot(
+  return c.json(JSON.parse(await account(c.env).snapshotPreviewDocument(
     identifier.parse(c.req.param('id')),
-  )
-  const content = JSON.parse(
-    await account(c.env).snapshotDocument(snapshot.id),
-  ) as SnapshotContent
-  const previous = snapshot.baselineId
-    ? (JSON.parse(
-        await account(c.env).snapshotDocument(snapshot.baselineId),
-      ) as SnapshotContent)
-    : undefined
-  return c.json({
-    snapshot,
-    content,
-    previous: previous?.json,
-    diff: iconDiff(previous?.json, content.json),
-  })
+    snapshotCompareTo.parse(c.req.query('compareTo')),
+  )) as SnapshotPreview)
 })
 app.get('/api/snapshots/:id/files/*', async (c) => {
   const content = JSON.parse(

@@ -43,7 +43,9 @@ Existing snapshots without an attempt number and older snapshot reservations bel
 
 ## npm publishing
 
-Review added, changed and removed icons against the last successful snapshot. Choose patch/minor/major and inspect the actual package, version, icon count and digest before confirming. The first version is `0.1.0`.
+Review added, changed and removed icons against the last successful snapshot by default. Select **Latest release** to review all changes since publication, including changes made across several syncs, or choose any snapshot from the same project. The preview identifies the actual comparison baseline; choosing a different baseline never modifies a snapshot.
+
+Choose patch/minor/major and inspect the actual package, version, icon count and digest before confirming. The confirmation always shows cumulative additions, changes and removals against the published version it locks, regardless of the preview's selected baseline. For the first release, every icon is an addition against an empty set and the version is `0.1.0`. Configuration changes, a new release or an active task while preparing the confirmation require a fresh review. A changed publication baseline also invalidates an existing confirmation.
 
 Publishing reuses the confirmed immutable snapshot and tarball. It commits to `iconctl/<project-name>`, publishes public npm `latest`, and creates `<project-name>/v<version>` tags and GitHub Releases. External branch/version changes stop publishing. Lost callbacks are reconciled against registry `dist.integrity`; retries reuse the original tarball without refetching Figma.
 
