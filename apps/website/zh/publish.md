@@ -33,6 +33,8 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 2. 在图标页打开插件，选择 **GitHub dispatch (legacy)**。点击标红结果旁的 **Locate** 找到组件，修正后点击 **Rescan**。
 
    **Search preflight** 可搜索原始名称、最终名称和问题文本，**Problems only** 只显示错误。隐藏的错误仍会阻止派发。筛选保留工作流反馈，重新扫描保留筛选条件；问题筛选偏好会保存在本地，搜索文字仅用于当前会话。设置恢复不会覆盖已编辑字段，存储失败会提供独立的重试操作。
+
+   **Export JSON report** 可下载最近一次完整页面扫描，包含草稿和隐藏的错误，便于离线审核。报告包含规则与固定扫描时间，不含凭据或工作流状态；导出不会派发任务，仍需服务端校验。详见[完整预检报告](./console#插件项目预检与任务恢复)。
 3. 点击 **Dispatch GitHub Action**
 4. 打开插件给出的 Actions 链接；workflow 会开 `chore: sync icons`
 

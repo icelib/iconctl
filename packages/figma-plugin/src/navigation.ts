@@ -32,13 +32,13 @@ export class PreflightNavigation {
     this.allowed = new Set(items.filter(item => !item.skipped).map(item => item.id))
   }
 
-  invalidate() {
+  invalidate(text = 'Page changed. Rescan to locate icons on this page.', error = true) {
     this.scan++
     this.request++
     this.pageId = undefined
     this.allowed.clear()
     if (!this.disposed) {
-      this.host.post({ type: 'navigation-invalidated', scanId: this.scan, text: 'Page changed. Rescan to locate icons on this page.' })
+      this.host.post({ type: 'navigation-invalidated', scanId: this.scan, text, error })
     }
   }
 
