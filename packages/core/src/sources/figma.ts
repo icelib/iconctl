@@ -118,6 +118,7 @@ export async function loadFigmaSource(
     await render()
   }
   const iconSet = blankIconSet(options.prefix)
+  const iconOrigins: NonNullable<LoadedSource['iconOrigins']> = new Map()
   for (let offset = 0; offset < icons.length; offset += 4) {
     await checkpoint(options.signal)
     const downloads = await Promise.allSettled(icons.slice(offset, offset + 4).map(async (icon) => {
@@ -149,6 +150,7 @@ export async function loadFigmaSource(
         if (!iconSet.fromSVG(icon.keyword, svg)) {
           throw new Error('Invalid SVG')
         }
+        iconOrigins.set(icon.keyword, { fileKey, nodeId: icon.id })
         imported++
       }
       catch {
@@ -167,6 +169,7 @@ export async function loadFigmaSource(
     type: 'figma',
     issues,
     iconSet,
+    iconOrigins,
     notModified: false,
     fileKey,
     lastModified: document.lastModified,

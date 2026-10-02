@@ -4,6 +4,7 @@ import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import type { SyncIssue } from './errors'
 import type { FigmaSourceLoadOptions } from './sources/figma'
+import type { IconOrigin } from './sources/load'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import process from 'node:process'
@@ -16,7 +17,7 @@ import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } fr
 import { OutputTransaction } from './output-transaction'
 import { writePreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
-import { loadSources, mergeIconSetsAsync } from './sources/load'
+import { loadSources, mergeLoadedSources } from './sources/load'
 import { validateIconSetAsync } from './validate'
 
 export interface SyncOptions {
@@ -86,6 +87,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     .digest('hex')
 
   let iconSet = options.iconSet
+  let origins = new Map<string, IconOrigin>()
   let fileVersion: string | undefined
   let fileKey: string | undefined
   let notModified = false
@@ -148,8 +150,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       return result
     }
 
-    const sets = loaded.flatMap(item => (item.iconSet ? [item.iconSet] : []))
-    iconSet = await mergeIconSetsAsync(config.prefix, sets, options.signal)
+    const merged = await mergeLoadedSources(config.prefix, loaded, options.signal)
+    iconSet = merged.iconSet
+    origins = merged.origins
     fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
     fileKey = loaded.find(item => item.fileKey)?.fileKey
     for (const item of loaded) {
@@ -176,8 +179,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const validation = await validateIconSetAsync(iconSet, config, options.signal)
   const issues: SyncIssue[] = [
     ...sourceIssues,
-    ...processed.issues,
-    ...validation.issues.map(issue => ({ ...issue, stage: 'validation' as const })),
+    ...processed.issues.map(issue => ({ ...issue, ...origins.get(issue.name) })),
+    ...validation.issues.map(issue => ({ ...issue, stage: 'validation' as const, ...origins.get(issue.name) })),
   ]
   const failed = [...new Set([...sourceIssues.map(issue => issue.name), ...processed.failed])].sort()
   const complete = !issues.length

@@ -111,6 +111,8 @@ export interface LoadedSource {
   issues?: SyncIssue[]
   type: SourceConfig['type']
   iconSet?: IconSet
+  /** Coordinates of the last successfully imported icon for each final name. */
+  iconOrigins?: Map<string, { fileKey: string, nodeId: string }>
   notModified: boolean
   fileKey?: string
   fileVersion?: string
