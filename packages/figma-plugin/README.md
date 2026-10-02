@@ -31,3 +31,9 @@ Console mode loads the paired project's dimensions, naming pattern and draft pre
 The plugin saves a submission ID before sending it. Reopening the plugin or recovering a lost response reuses that request and resumes the existing task. Only one task is tracked at a time; transient failures retry with backoff until the server reports a terminal state. Changed rules require a refreshed preflight and another explicit sync. Disconnecting stops local tracking; revoke the device in the console to invalidate its credential.
 
 New plugins require the project-context endpoint. Upgrade the console first; the console continues accepting older plugins without a revision field. Task links open the owning project in the console.
+
+## Complete page report
+
+Use **Export JSON report** to download the complete latest successful page scan, including drafts, invalid icons and results hidden by filters. An empty scan can also be exported. The report records the scan time, page, original and locally computed names, node IDs, dimensions, issues, summary and the rules used; connected scans include the project name and revision. It contains no device credentials, GitHub settings or task state. Exporting does not submit or upload anything.
+
+This is a local page preflight: server validation is still required, and names are provisional when a custom naming hook runs on the server. Repeated exports keep the same scan timestamp and content. Rescan after editing components; switching pages or modes, changing the project connection or a failed scan disables the old report. Invalidated scans also block submission until a new scan succeeds. Export is available even when errors block submission. A download failure offers an explicit retry without changing filters or workflow status. Rebuild the plugin to use reporting; no server changes or stored-data migration are needed.

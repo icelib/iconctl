@@ -1,5 +1,6 @@
 import type { PluginContext } from '@iconctl/console-contracts'
 import type { PreflightItem, PreflightRules } from './preflight'
+import type { ScanMetadata } from './report'
 import { canSubmit } from './preflight'
 
 export const DEVICE_KEY = 'iconctl-console-device'
@@ -24,6 +25,8 @@ interface Host {
   }
   post: (message: Record<string, unknown>) => void
   scan: (rules?: PreflightRules) => PreflightItem[]
+  invalidate?: (text: string, error?: boolean) => void
+  resetProject?: () => void
 }
 class ConsoleError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -136,12 +139,33 @@ export class PluginConsole {
     }
   }
 
+  private scanMetadata(mode = this.mode, context = this.context): ScanMetadata {
+    return mode === 'console' && context
+      ? { mode, rulesSource: 'project', rules: { ...context.validate, namingMode: context.namingMode }, project: { name: context.name, revision: context.revision } }
+      : { mode, rulesSource: mode === 'github' ? 'legacy-defaults' : 'unpaired-defaults' }
+  }
+
+  private publishScan(metadata: ScanMetadata) {
+    this.host.invalidate?.('Rescanning page…')
+    try {
+      const items = this.host.scan(metadata.rules)
+      this.host.post({ type: 'preflight', items, metadata })
+      return items
+    }
+    catch (error) {
+      this.host.invalidate?.('Could not scan this page. Rescan and try again.', true)
+      throw error
+    }
+  }
+
   rescan(mode = this.mode) {
     this.mode = mode
-    const rules = mode === 'console' && this.context
-      ? { ...this.context.validate, namingMode: this.context.namingMode }
-      : undefined
-    this.host.post({ type: 'preflight', items: this.host.scan(rules) })
+    this.publishScan(this.scanMetadata())
+  }
+
+  private clearContext() {
+    this.context = undefined
+    this.host.resetProject?.()
   }
 
   private async refresh(generation: number, device: Device) {
@@ -213,10 +237,8 @@ export class PluginConsole {
     if (!submit) {
       return
     }
-    const items = this.host.scan({ ...context.validate, namingMode: context.namingMode })
-    if (this.mode === 'console') {
-      this.host.post({ type: 'preflight', items })
-    }
+    const metadata = this.scanMetadata('console', context)
+    const items = this.mode === 'console' ? this.publishScan(metadata) : this.host.scan(metadata.rules)
     if (!canSubmit(items)) {
       throw new Error('Fix all preflight errors and include at least one icon before syncing')
     }
@@ -265,7 +287,7 @@ export class PluginConsole {
     try {
       const origin = message.type === 'console-pair' ? consoleOrigin(message.origin) : undefined
       if (replacing) {
-        this.context = undefined
+        this.clearContext()
         await this.write(generation, async () => {
           await this.host.storage.deleteAsync(DEVICE_KEY)
           await this.host.storage.deleteAsync(TASK_KEY)
@@ -286,7 +308,7 @@ export class PluginConsole {
         return
       }
       if (error instanceof ConsoleError && [401, 403, 404].includes(error.status)) {
-        this.context = undefined
+        this.clearContext()
         if (error.status !== 404) {
           try {
             await this.write(generation, async () => {

@@ -14,6 +14,10 @@ interface PluginMessage {
   items?: PreflightItem[]
   scanId?: number
   requestId?: number
+  reportAvailable?: boolean
+  json?: string
+  rescan?: boolean
+  serverNamingPending?: boolean
   settings?: LegacySettings
   preferences?: ViewPreferences
   scope?: 'settings' | 'preferences'
@@ -36,6 +40,8 @@ const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')
 const viewCount = document.querySelector<HTMLElement>('#view-count')!
 const emptyView = document.querySelector<HTMLElement>('#empty-view')!
 const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
+const reportBtn = document.querySelector<HTMLButtonElement>('#export-report')!
+const reportStatus = document.querySelector<HTMLElement>('#report-status')!
 const editedSettings = new Set<keyof LegacySettings>()
 const settingsInputs = { repo: repoInput, token: tokenInput, eventType: eventInput }
 let editedPreferences = false
@@ -45,11 +51,100 @@ let navigationRequest = 0
 let consoleBusy = false
 let consoleConnected = false
 let githubBusy = false
+let currentPreflight = false
+let reportAvailable = false
+let reportRequest = 0
+let reportPending: { scanId: number, requestId: number } | undefined
+let uiActive = true
+const reportUrls = new Map<string, number | undefined>()
+function updateReport() {
+  reportBtn.disabled = !uiActive || !reportAvailable || scanId === undefined || reportPending !== undefined
+}
+function setReportStatus(text: string, kind: 'ok' | 'err' | '' = '') {
+  reportStatus.textContent = text
+  reportStatus.className = kind
+}
+function invalidateReport(text: string, error = false) {
+  reportAvailable = false
+  reportPending = undefined
+  reportRequest++
+  setReportStatus(text, error ? 'err' : '')
+  updateReport()
+}
+function releaseReportUrl(url: string) {
+  const timer = reportUrls.get(url)
+  if (timer !== undefined) {
+    window.clearTimeout(timer)
+  }
+  if (reportUrls.delete(url)) {
+    URL.revokeObjectURL(url)
+  }
+}
+reportBtn.addEventListener('click', () => {
+  if (!uiActive || !reportAvailable || scanId === undefined || reportPending) {
+    return
+  }
+  reportPending = { scanId, requestId: ++reportRequest }
+  setReportStatus('Preparing the complete scan report…')
+  updateReport()
+  parent.postMessage({ pluginMessage: { type: 'export-report', ...reportPending } }, '*')
+})
+function receiveReport(message: PluginMessage) {
+  if (!reportPending || message.scanId !== reportPending.scanId || message.requestId !== reportPending.requestId) {
+    return
+  }
+  // Consume the request before creating a Blob: replayed responses cannot download twice.
+  reportPending = undefined
+  if (message.error || typeof message.json !== 'string') {
+    if (message.rescan) {
+      reportAvailable = false
+    }
+    setReportStatus(message.text ?? 'Could not prepare the report. Try exporting again.', 'err')
+    updateReport()
+    return
+  }
+  let url: string | undefined
+  let anchor: HTMLAnchorElement | undefined
+  try {
+    url = URL.createObjectURL(new Blob([message.json, '\n'], { type: 'application/json' }))
+    reportUrls.set(url, undefined)
+    anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `iconctl-preflight-${message.scanId}.json`
+    anchor.hidden = true
+    document.body.appendChild(anchor)
+    anchor.click()
+    setReportStatus(`Report downloaded. This is a local page preflight; server validation is still required.${message.serverNamingPending ? ' Names are provisional until server naming runs.' : ''}`, 'ok')
+    const ownedUrl = url
+    reportUrls.set(ownedUrl, window.setTimeout(releaseReportUrl, 0, ownedUrl))
+    url = undefined
+  }
+  catch {
+    setReportStatus('Could not download the report. Try exporting again.', 'err')
+  }
+  finally {
+    anchor?.remove()
+    if (url) {
+      releaseReportUrl(url)
+    }
+    updateReport()
+  }
+}
 function updateSubmit() {
-  publishBtn.disabled = !canSubmit(items) || (modeInput.value === 'console'
+  publishBtn.disabled = !uiActive || !currentPreflight || !canSubmit(items) || (modeInput.value === 'console'
     ? consoleBusy || !consoleConnected
     : githubBusy)
 }
+window.addEventListener('pagehide', () => {
+  uiActive = false
+  updateSubmit()
+  reportPending = undefined
+  for (const url of [...reportUrls.keys()]) {
+    releaseReportUrl(url)
+  }
+  updateReport()
+})
+
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
   statusEl.className = kind
@@ -133,7 +228,9 @@ for (const scope of ['settings', 'preferences'] as const) {
     }, '*')
   })
 }
-function invalidateNavigation(text: string, error = false) {
+function invalidatePreflight(text: string, error = false) {
+  currentPreflight = false
+  updateSubmit()
   scanId = undefined
   navigationRequest++
   navigationStatus.textContent = text
@@ -141,6 +238,7 @@ function invalidateNavigation(text: string, error = false) {
   listEl.querySelectorAll<HTMLButtonElement>('button[data-node-id]').forEach((button) => {
     button.disabled = true
   })
+  invalidateReport(text, error)
 }
 listEl.addEventListener('click', (event) => {
   const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-node-id]') : null
@@ -162,11 +260,17 @@ function readSettings() {
 }
 parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 rescanBtn.addEventListener('click', () => {
-  invalidateNavigation('Rescanning page…')
+  invalidatePreflight('Rescanning page…')
   parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 })
 publishBtn.addEventListener('click', async () => {
+  if (!uiActive) {
+    return
+  }
   try {
+    if (!currentPreflight) {
+      throw new Error('Rescan this page before submitting')
+    }
     if (!canSubmit(items)) {
       throw new Error('Fix all preflight errors before submitting')
     }
@@ -207,7 +311,7 @@ publishBtn.addEventListener('click', async () => {
 window.onmessage = (event: MessageEvent<{
   pluginMessage?: PluginMessage
 }>) => {
-  if (event.source !== parent) {
+  if (!uiActive || event.source !== parent) {
     return
   }
   const message = event.data.pluginMessage
@@ -247,10 +351,19 @@ window.onmessage = (event: MessageEvent<{
     navigationStatus.textContent = ''
     navigationStatus.className = ''
     items = message.items
+    currentPreflight = true
+    reportPending = undefined
+    reportRequest++
+    reportAvailable = message.reportAvailable === true && scanId !== undefined
+    setReportStatus(reportAvailable ? 'Export includes every scanned component, including drafts and hidden results.' : 'Rescan to prepare a complete report.')
+    updateReport()
     render()
   }
+  if (message.type === 'preflight-report') {
+    receiveReport(message)
+  }
   if (message.type === 'navigation-invalidated') {
-    invalidateNavigation(message.text ?? '', true)
+    invalidatePreflight(message.text ?? '', message.error ?? true)
   }
   if (message.type === 'navigation-result' && message.scanId === scanId && message.requestId === navigationRequest) {
     navigationStatus.textContent = message.text ?? ''
@@ -273,7 +386,7 @@ window.onmessage = (event: MessageEvent<{
   }
 }
 modeInput.addEventListener('change', () => {
-  invalidateNavigation('Rescanning page…')
+  invalidatePreflight('Rescanning page…')
   const consoleMode = modeInput.value === 'console'
   consoleFields.hidden = !consoleMode
   githubFields.hidden = consoleMode
@@ -285,9 +398,15 @@ modeInput.addEventListener('change', () => {
 })
 document
   .querySelector('#connect')!
-  .addEventListener('click', () => parent.postMessage({ pluginMessage: { type: 'console-pair', origin: originInput.value } }, '*'))
+  .addEventListener('click', () => {
+    invalidatePreflight('Updating project connection…')
+    parent.postMessage({ pluginMessage: { type: 'console-pair', origin: originInput.value } }, '*')
+  })
 document
   .querySelector('#disconnect')!
-  .addEventListener('click', () => parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*'))
+  .addEventListener('click', () => {
+    invalidatePreflight('Updating project connection…')
+    parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*')
+  })
 parent.postMessage({ pluginMessage: { type: 'console-status' } }, '*')
 parent.postMessage({ pluginMessage: { type: 'load-settings' } }, '*')
