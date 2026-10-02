@@ -30,11 +30,11 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 ## 每次发版
 
 1. 组件名 `arrow-left`，24×24，草稿 `_…`
-2. 在图标页打开插件，把标红的改掉
-3. Publish
+2. 在图标页打开插件，选择 **GitHub dispatch (legacy)**。点击标红结果旁的 **Locate** 找到组件，修正后点击 **Rescan**。
+3. 点击 **Dispatch GitHub Action**
 4. 打开插件给出的 Actions 链接；workflow 会开 `chore: sync icons`
 
-不要把 `contents:write` 的 PAT 放进插件。写 JSON 的是 Action，不是插件。
+插件使用上述仅限目标仓库的 PAT 触发任务。`FIGMA_TOKEN` 保存在 Actions secrets 中，由 Action 读取 Library 并写出 JSON。
 
 merge 之后，开发要么 **git pull**（JSON 在应用仓），要么 **`pnpm add`**（已发布的包）。两种都在[分发](/zh/distribute)。
 

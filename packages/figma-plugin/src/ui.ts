@@ -11,6 +11,8 @@ interface PluginMessage {
   busy?: boolean
   connected?: boolean
   items?: PreflightItem[]
+  scanId?: number
+  requestId?: number
   settings?: {
     repo?: string
     token?: string
@@ -29,7 +31,10 @@ const statusEl = document.querySelector('#status')!
 const listEl = document.querySelector('#list')!
 const publishBtn = document.querySelector<HTMLButtonElement>('#publish')!
 const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
+const navigationStatus = document.querySelector<HTMLElement>('#navigation-status')!
 let items: PreflightItem[] = []
+let scanId: number | undefined
+let navigationRequest = 0
 let consoleBusy = false
 let consoleConnected = false
 let githubBusy = false
@@ -61,7 +66,7 @@ function render() {
       const detail = item.issues.length
         ? item.issues.join(' · ')
         : item.iconName
-      return `<li class="${state}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(detail || '')}</span></li>`
+      return `<li class="${state}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(detail || '')}</span><button class="secondary locate" type="button" data-node-id="${escapeHtml(item.id)}"${scanId === undefined ? ' disabled' : ''} aria-label="Locate ${escapeHtml(item.name)}">Locate</button></li>`
     })
     .join('')
   const summary = errors.length
@@ -70,6 +75,24 @@ function render() {
   setStatus(skipped ? `${summary} · ${skipped} drafts skipped` : summary, errors.length ? 'err' : 'ok')
   updateSubmit()
 }
+function invalidateNavigation(text: string, error = false) {
+  scanId = undefined
+  navigationRequest++
+  navigationStatus.textContent = text
+  navigationStatus.className = error ? 'err' : ''
+  listEl.querySelectorAll<HTMLButtonElement>('button[data-node-id]').forEach((button) => {
+    button.disabled = true
+  })
+}
+listEl.addEventListener('click', (event) => {
+  const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-node-id]') : null
+  if (!button || !listEl.contains(button) || button.disabled || scanId === undefined) {
+    return
+  }
+  navigationStatus.textContent = 'Locating component…'
+  navigationStatus.className = ''
+  parent.postMessage({ pluginMessage: { type: 'locate', nodeId: button.dataset['nodeId'], scanId, requestId: ++navigationRequest } }, '*')
+})
 function readSettings() {
   const { owner, repo } = parseRepo(repoInput.value)
   const token = tokenInput.value.trim()
@@ -81,6 +104,7 @@ function readSettings() {
 }
 parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 rescanBtn.addEventListener('click', () => {
+  invalidateNavigation('Rescanning page…')
   parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 })
 publishBtn.addEventListener('click', async () => {
@@ -160,8 +184,19 @@ window.onmessage = (event: MessageEvent<{
     }
   }
   if (message.type === 'preflight' && message.items) {
+    scanId = Number.isSafeInteger(message.scanId) ? message.scanId : undefined
+    navigationRequest++
+    navigationStatus.textContent = ''
+    navigationStatus.className = ''
     items = message.items
     render()
+  }
+  if (message.type === 'navigation-invalidated') {
+    invalidateNavigation(message.text ?? '', true)
+  }
+  if (message.type === 'navigation-result' && message.scanId === scanId && message.requestId === navigationRequest) {
+    navigationStatus.textContent = message.text ?? ''
+    navigationStatus.className = message.error ? 'err' : 'ok'
   }
   if (message.type === 'settings' && message.settings) {
     repoInput.value = message.settings.repo ?? ''
@@ -170,6 +205,7 @@ window.onmessage = (event: MessageEvent<{
   }
 }
 modeInput.addEventListener('change', () => {
+  invalidateNavigation('Rescanning page…')
   const consoleMode = modeInput.value === 'console'
   consoleFields.hidden = !consoleMode
   githubFields.hidden = consoleMode

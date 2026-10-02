@@ -30,11 +30,11 @@ Figma Library “Publish” is still for other **design** files. This button is 
 ## Each release
 
 1. Name components `arrow-left`, 24×24, drafts as `_…`
-2. Open the plugin on the icon page → fix anything red
-3. Publish
+2. Open the plugin on the icon page, choose **GitHub dispatch (legacy)**, then use **Locate** beside a red result to find its component. Fix it and choose **Rescan**.
+3. Choose **Dispatch GitHub Action**
 4. Open the Actions URL the plugin prints; the workflow opens `chore: sync icons`
 
-Do not store a `contents:write` PAT in the plugin. The Action, not the plugin, writes the JSON.
+Use the repository-scoped PAT above for dispatch. Keep `FIGMA_TOKEN` in Actions secrets; the Action reads the library and writes the JSON.
 
 After merge, developers get icons either from **git pull** (JSON in the app) or **`pnpm add`** (published package). Both are on [Distribute](/distribute).
 

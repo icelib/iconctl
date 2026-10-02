@@ -57,6 +57,11 @@
         padding: 6px 0;
         border-bottom: 1px solid #eee;
       }
+      li .locate {
+        justify-self: start;
+        margin: 2px 0 0;
+        padding: 3px 8px;
+      }
       li.err strong {
         color: #c00;
       }
@@ -69,6 +74,16 @@
         color: #c00;
       }
       #status.ok {
+        color: #1b7f37;
+      }
+      #navigation-status {
+        margin: 4px 0;
+        overflow-wrap: anywhere;
+      }
+      #navigation-status.err {
+        color: #c00;
+      }
+      #navigation-status.ok {
         color: #1b7f37;
       }
       .row {
@@ -100,6 +115,7 @@
     </section>
     <p id="status">Scanning this page…</p>
     <ul id="list"></ul>
+    <p id="navigation-status" role="status" aria-live="polite"></p>
     <div class="row">
       <button id="publish" disabled>Sync to console</button>
       <button id="rescan" class="secondary" type="button">Rescan</button>
