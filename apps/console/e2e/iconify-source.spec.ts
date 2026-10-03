@@ -81,7 +81,7 @@ test('creates and reloads an Iconify repository source with exact names and a li
   await expect(source.locator('input[type="file"]')).toHaveCount(0)
   await expect(source.getByLabel('授权', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(submissions[0]!.sources).toEqual([
     { type: 'iconify', file: 'vendor/icons.json', namePrefix: ' Vendor__' },
   ])
@@ -99,7 +99,7 @@ test('creates and reloads an Iconify repository source with exact names and a li
   await names.press('Enter')
   await names.pressSequentially('home-alias')
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(submissions[1]!.sources).toEqual([
     { type: 'iconify', file: 'vendor/icons.json', namePrefix: ' Vendor__', include: ['home', 'arrow-left', 'home-alias'] },
   ])
@@ -125,7 +125,7 @@ test('preserves an explicit empty selection and can restore all icons on a narro
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await source.screenshot({ path: testInfo.outputPath('iconify-source-mobile.png') })
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(submissions[0]!.sources).toEqual([
     { type: 'iconify', file: 'vendor/icons.json', include: [] },
   ])
@@ -136,7 +136,7 @@ test('preserves an explicit empty selection and can restore all icons on a narro
   await source.getByLabel('导入范围').selectOption('all')
   await expect(source.getByLabel('图标名称（每行一个）')).toHaveCount(0)
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(submissions[1]!.sources).toEqual([
     { type: 'iconify', file: 'vendor/icons.json' },
   ])
