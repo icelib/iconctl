@@ -9,6 +9,8 @@ import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError } from '../src/errors'
 import { watch } from '../src/watch'
 
+vi.mock('../src/watch-session', () => import('./helpers/watch-session'))
+
 vi.mock('chokidar', async (original) => {
   const actual = await original<typeof import('chokidar')>()
   return { ...actual, watch: vi.fn(actual.watch) }

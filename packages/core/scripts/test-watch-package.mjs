@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   return consumer
@@ -72,8 +72,17 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken
     }
     const figma = await run(node, [join(consumer, 'figma-consumer.mjs'), mode], consumer)
     process.stdout.write(figma.stdout)
+    const configuration = await run(node, [join(consumer, 'config-watch-consumer.mjs'), mode], consumer)
+    process.stdout.write(configuration.stdout)
   }
   await check(consumer, 'bin', 'startup')
+  const evaluated = await run(node, ['--input-type=module', '--eval', `
+    const { fileURLToPath } = await import('node:url')
+    process.argv = [process.execPath, fileURLToPath(new URL('./watch-consumer.mjs', import.meta.url)), ${JSON.stringify(consumer)}, 'esm', 'healthy']
+    await import('./watch-consumer.mjs')
+    console.log(JSON.stringify({ scenario: 'eval-entry', runtime: process.version, passed: true }))
+  `], consumer)
+  process.stdout.write(evaluated.stdout)
 
   // Control: workspace patch alone, with the original external dependency boundary.
   const comparison = join(fixture, 'patch-only-package')

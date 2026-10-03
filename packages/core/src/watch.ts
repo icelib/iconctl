@@ -1,15 +1,14 @@
 import type { FSWatcher } from 'chokidar'
-import type { ResolvedIconctlConfig } from './config'
 import type { SyncResult } from './sync'
 import type { WatchPaths } from './watch-paths'
+import type { WatchSession } from './watch-session'
 import { access, lstat, readlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError } from './errors'
-import { loadConfigDetails } from './load-config'
-import { sync } from './sync'
 import { containsPath, isWatchSourceEvent, validateWatchInputs, watchConfigFiles, watchEntryVersion, watchPaths } from './watch-paths'
+import { createWatchSession } from './watch-session'
 
 export type WatchEvent
   = | { type: 'ready', configFile: string, roots: string[] }
@@ -33,7 +32,8 @@ export async function watch(options: WatchOptions): Promise<void> {
   const watchers = new Set<FSWatcher>()
   let currentWatcher: FSWatcher | undefined
   let configFile = options.configFile
-  let config: ResolvedIconctlConfig | undefined
+  let session: WatchSession | undefined
+  let configReady = false
   let paths: WatchPaths | undefined
   let active: AbortController | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -139,7 +139,7 @@ export async function watch(options: WatchOptions): Promise<void> {
       }
       const file = resolve(input)
       const configuration = next.observedConfigFiles.includes(file)
-      if (!configuration && (!config || !isWatchSourceEvent(next, event, file, stats?.isSymbolicLink()))) {
+      if (!configuration && (!configReady || !isWatchSourceEvent(next, event, file, stats?.isSymbolicLink()))) {
         return
       }
       if (event === 'unlink' || event === 'unlinkDir') {
@@ -182,7 +182,7 @@ export async function watch(options: WatchOptions): Promise<void> {
         return
       }
       const configuration = next.observedConfigFiles.includes(file)
-      if (!configuration && (!config || (!next.observedSourceFiles.includes(file) && !next.observedRoots.some(root => containsPath(root, file))))) {
+      if (!configuration && (!configReady || (!next.observedSourceFiles.includes(file) && !next.observedRoots.some(root => containsPath(root, file))))) {
         return
       }
       // Chokidar emits no all-event for dangling or self-referential links.
@@ -292,23 +292,26 @@ export async function watch(options: WatchOptions): Promise<void> {
       const currentRevision = revision
       if (configDirty) {
         configDirty = false
-        config = undefined
+        configReady = false
+        await session?.close()
+        session = undefined
         const attemptedFiles = new Set(paths?.configFiles ?? [])
         try {
           // Once resolved, deletion must pause watch instead of selecting another config.
           if (initialized && configFile) {
             await access(resolve(cwd, configFile))
           }
-          const loaded = await loadConfigDetails({ cwd, ...(configFile ? { configFile } : {}) }, true, file => attemptedFiles.add(file))
-          const nextPaths = await watchPaths(loaded.config, cwd, loaded.files, options.signal)
-          if (revision !== currentRevision || options.signal?.aborted) {
+          session = createWatchSession(cwd, failWatcher)
+          const loaded = await session.load({ cwd, ...(configFile ? { configFile } : {}) }, file => attemptedFiles.add(file))
+          const nextPaths = await watchPaths(loaded.input, cwd, loaded.files, options.signal)
+          if (revision !== currentRevision || options.signal?.aborted || fatal) {
             continue
           }
           await install(nextPaths)
-          if (revision !== currentRevision || options.signal?.aborted) {
+          if (revision !== currentRevision || options.signal?.aborted || fatal) {
             continue
           }
-          config = loaded.config
+          configReady = true
           paths = nextPaths
           configFile = loaded.entryFile
           initialized = true
@@ -336,12 +339,18 @@ export async function watch(options: WatchOptions): Promise<void> {
           }
           continue
         }
+        finally {
+          if (!configReady) {
+            await session?.close()
+            session = undefined
+          }
+        }
       }
       sourceDirty = false
       if (options.signal?.aborted || fatal) {
         continue
       }
-      if (!config || !paths) {
+      if (!configReady || !session || !paths) {
         continue
       }
       const id = ++runId
@@ -369,9 +378,7 @@ export async function watch(options: WatchOptions): Promise<void> {
           // graph again before importing or publishing any of its contents.
           nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
         }
-        const result = await sync({
-          cwd,
-          config,
+        const result = await session.sync({
           signal: active.signal,
           ...(options.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
           ...(options.continueOnError !== undefined ? { continueOnError: options.continueOnError } : {}),
@@ -401,6 +408,7 @@ export async function watch(options: WatchOptions): Promise<void> {
     closing = true
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)
+    await session?.close()
     await Promise.all([...watchers].map(closeWatcher))
     emit({ type: 'stopped', reason: options.signal?.aborted ? 'aborted' : 'error' })
   }

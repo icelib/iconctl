@@ -7,6 +7,8 @@ import { setTimeout } from 'node:timers/promises'
 import { IconctlAbortError } from '../src/errors'
 import { watch } from '../src/watch'
 
+vi.mock('../src/watch-session', () => import('./helpers/watch-session'))
+
 let cwd: string
 let controller: AbortController
 let events: WatchEvent[]

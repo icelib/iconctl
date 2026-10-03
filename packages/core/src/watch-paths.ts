@@ -6,6 +6,34 @@ import process from 'node:process'
 import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 
+/** Only filesystem locations cross the configuration worker boundary. */
+export interface WatchInputDescriptor {
+  sources: { type: ResolvedIconctlConfig['sources'][number]['type'], dir?: string, file?: string, url?: string }[]
+  output: Pick<ResolvedIconctlConfig['output'], 'json' | 'svg' | 'types' | 'preview' | 'changelog'> & { jsonPackage?: { dir: string } }
+  cacheDir: string
+}
+
+export function watchInputDescriptor(config: ResolvedIconctlConfig): WatchInputDescriptor {
+  const { json, svg, types, preview, changelog, jsonPackage } = config.output
+  return {
+    sources: config.sources.map(source => ({
+      type: source.type,
+      ...('dir' in source && source.dir ? { dir: source.dir } : {}),
+      ...('file' in source && source.file ? { file: source.file } : {}),
+      ...('url' in source && source.url ? { url: source.url } : {}),
+    })),
+    output: {
+      json,
+      ...(svg !== undefined ? { svg } : {}),
+      ...(types !== undefined ? { types } : {}),
+      ...(preview !== undefined ? { preview } : {}),
+      ...(changelog !== undefined ? { changelog } : {}),
+      ...(jsonPackage ? { jsonPackage: { dir: jsonPackage.dir } } : {}),
+    },
+    cacheDir: config.cacheDir,
+  }
+}
+
 function comparable(file: string) {
   return process.platform === 'win32' ? file.toLowerCase() : file
 }
@@ -335,8 +363,8 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
   return { ...paths, ...observed, ignored }
 }
 
-export async function watchPaths(config: ResolvedIconctlConfig, cwd: string, configFiles: string[], signal?: AbortSignal): Promise<WatchPaths> {
-  const sourceFiles = [...new Set(config.sources.filter(source => source.type === 'iconify').map(source => resolve(cwd, source.file)))]
+export async function watchPaths(config: WatchInputDescriptor, cwd: string, configFiles: string[], signal?: AbortSignal): Promise<WatchPaths> {
+  const sourceFiles = [...new Set(config.sources.filter(source => source.type === 'iconify').map(source => resolve(cwd, source.file!)))]
   const roots = [...new Set(config.sources.flatMap((source) => {
     if (source.type === 'iconify') {
       return []

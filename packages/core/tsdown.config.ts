@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: { 'index': './src/index.ts', 'figma-oauth': './src/figma/oauth.ts' },
+  entry: { 'index': './src/index.ts', 'figma-oauth': './src/figma/oauth.ts', 'watch-worker': './src/watch-worker.ts' },
   format: ['esm', 'cjs'],
   // Ship the fixed traversal stack; consumers do not inherit workspace patches.
   deps: { alwaysBundle: ['chokidar', 'readdirp'], onlyBundle: ['chokidar', 'readdirp'] },

@@ -7,6 +7,8 @@ import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError, watch } from '../src'
 import { sync } from '../src/sync'
 
+vi.mock('../src/watch-session', () => import('./helpers/watch-session'))
+
 const timing = vi.hoisted(() => ({ startedAt: 0, syncEntries: [] as number[] }))
 
 vi.mock('../src/sync', async (original) => {

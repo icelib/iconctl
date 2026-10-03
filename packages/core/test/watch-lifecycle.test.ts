@@ -9,6 +9,8 @@ import { watch as watchFiles } from 'chokidar'
 import { IconctlAbortError, watch } from '../src'
 import { sync } from '../src/sync'
 
+vi.mock('../src/watch-session', () => import('./helpers/watch-session'))
+
 const linkReads = vi.hoisted(() => ({ pending: 0 }))
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>()
