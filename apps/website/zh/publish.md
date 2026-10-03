@@ -38,7 +38,7 @@ Figma 的 Publish Library 仍然是给**其他设计稿**用的。这个按钮�
 
    **Applied rules** 展示当前尺寸、命名和草稿规则。空闲时使用 **Refresh project rules** 可更新规则而不提交任务；读取失败后需显式重试成功，才能继续提交到控制台。
 
-   **Export JSON report** 可下载最近一次完整页面扫描，包含草稿和隐藏的错误，便于离线审核。报告包含规则与固定扫描时间，不含凭据或工作流状态；导出不会派发任务，仍需服务端校验。详见[完整预检报告](./console#插件项目预检与任务恢复)。
+   **Export JSON report** 或 **Export HTML report** 可下载最近一次完整页面扫描，包含草稿和隐藏的错误，便于离线审核。HTML 是可独立阅读和打印的页面，不含脚本与外部资源；可用浏览器“查找”定位名称或节点 ID。报告包含规则与固定扫描时间，不含凭据或工作流状态；导出不会派发任务，仍需服务端校验。详见[完整预检报告](./console#插件项目预检与任务恢复)。
 3. 点击 **Dispatch GitHub Action**
 4. 打开插件给出的 Actions 链接；workflow 会开 `chore: sync icons`
 

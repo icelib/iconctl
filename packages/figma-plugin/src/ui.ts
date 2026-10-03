@@ -22,6 +22,8 @@ interface PluginMessage {
   rulesRequestId?: number
   reportAvailable?: boolean
   json?: string
+  html?: string
+  format?: 'json' | 'html'
   rescan?: boolean
   serverNamingPending?: boolean
   settings?: LegacySettings
@@ -47,6 +49,7 @@ const viewCount = document.querySelector<HTMLElement>('#view-count')!
 const emptyView = document.querySelector<HTMLElement>('#empty-view')!
 const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
 const reportBtn = document.querySelector<HTMLButtonElement>('#export-report')!
+const htmlReportBtn = document.querySelector<HTMLButtonElement>('#export-html-report')!
 const reportStatus = document.querySelector<HTMLElement>('#report-status')!
 const rulesBtn = document.querySelector<HTMLButtonElement>('#refresh-rules')!
 const rulesStatus = document.querySelector<HTMLElement>('#rules-status')!
@@ -64,7 +67,7 @@ let githubBusy = false
 let currentPreflight = false
 let reportAvailable = false
 let reportRequest = 0
-let reportPending: { scanId: number, requestId: number } | undefined
+let reportPending: { scanId: number, requestId: number, format: 'json' | 'html' } | undefined
 let rulesPaired = false
 let hasRulesState = false
 let rulesRequest = 0
@@ -108,6 +111,7 @@ function renderRules(overview?: AppliedRules) {
 }
 function updateReport() {
   reportBtn.disabled = !uiActive || !reportAvailable || scanId === undefined || reportPending !== undefined
+  htmlReportBtn.disabled = reportBtn.disabled
 }
 function setReportStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   reportStatus.textContent = text
@@ -129,22 +133,27 @@ function releaseReportUrl(url: string) {
     URL.revokeObjectURL(url)
   }
 }
-reportBtn.addEventListener('click', () => {
+function requestReport(format: 'json' | 'html') {
   if (!uiActive || !reportAvailable || scanId === undefined || reportPending) {
     return
   }
-  reportPending = { scanId, requestId: ++reportRequest }
+  reportPending = { scanId, requestId: ++reportRequest, format }
   setReportStatus('Preparing the complete scan report…')
   updateReport()
   parent.postMessage({ pluginMessage: { type: 'export-report', ...reportPending } }, '*')
-})
+}
+reportBtn.addEventListener('click', () => requestReport('json'))
+htmlReportBtn.addEventListener('click', () => requestReport('html'))
 function receiveReport(message: PluginMessage) {
-  if (!reportPending || message.scanId !== reportPending.scanId || message.requestId !== reportPending.requestId) {
+  if (!reportPending || message.scanId !== reportPending.scanId || message.requestId !== reportPending.requestId
+    || (message.format ?? 'json') !== reportPending.format) {
     return
   }
+  const format = reportPending.format
+  const content = format === 'html' ? message.html : message.json
   // Consume the request before creating a Blob: replayed responses cannot download twice.
   reportPending = undefined
-  if (message.error || typeof message.json !== 'string') {
+  if (message.error || typeof content !== 'string') {
     if (message.rescan) {
       reportAvailable = false
     }
@@ -155,11 +164,11 @@ function receiveReport(message: PluginMessage) {
   let url: string | undefined
   let anchor: HTMLAnchorElement | undefined
   try {
-    url = URL.createObjectURL(new Blob([message.json, '\n'], { type: 'application/json' }))
+    url = URL.createObjectURL(new Blob([content, '\n'], { type: format === 'html' ? 'text/html;charset=utf-8' : 'application/json' }))
     reportUrls.set(url, undefined)
     anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `iconctl-preflight-${message.scanId}.json`
+    anchor.download = `iconctl-preflight-${message.scanId}.${format}`
     anchor.hidden = true
     document.body.appendChild(anchor)
     anchor.click()

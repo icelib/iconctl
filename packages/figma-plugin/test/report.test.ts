@@ -14,6 +14,8 @@ interface Message {
   requestId?: number
   items?: PreflightItem[]
   json?: string
+  html?: string
+  format?: string
   error?: boolean
   rescan?: boolean
   reportAvailable?: boolean
@@ -61,8 +63,8 @@ async function fixture() {
   const send = (message: Message) => host.ui.onmessage!(message)
   const preflight = () => messages.filter(message => message.type === 'preflight').at(-1)!
   const result = () => messages.filter(message => message.type === 'preflight-report').at(-1)!
-  const request = async (scanId = preflight().scanId!, requestId = 1) => {
-    await send({ type: 'export-report', scanId, requestId })
+  const request = async (scanId = preflight().scanId!, requestId = 1, format?: string) => {
+    await send({ type: 'export-report', scanId, requestId, ...(format ? { format } : {}) })
     return result()
   }
   return { host, page, otherPage, arrow, invalid, draft, variant, stored, fetch, messages, handlers, send, preflight, result, request }
@@ -72,6 +74,72 @@ beforeEach(() => vi.resetModules())
 afterEach(() => vi.unstubAllGlobals())
 
 describe('complete preflight reports through the actual Figma host', () => {
+  it('exports the same captured scan as deterministic offline HTML through the actual host', async () => {
+    const { page, arrow, preflight, request } = await fixture()
+    const json = await request()
+    const first = await request(undefined, 2, 'html')
+    expect(first).toMatchObject({ type: 'preflight-report', format: 'html', scanId: preflight().scanId, requestId: 2 })
+    expect(first.json).toBeUndefined()
+    const data = JSON.parse(json.json!)
+    expect(first.html).toContain(data.generatedAt)
+    for (const item of data.items) {
+      expect(first.html).toContain(item.id)
+      expect(first.html).toContain(item.name)
+    }
+    expect(first.html).toContain('Skipped draft')
+    expect(first.html).toContain('Needs fixes')
+    expect(first.html).toContain('Passed local checks')
+    expect(first.html).toContain('Canvas is 48×24, expected 24×24')
+    page.name = 'Renamed after scan'
+    arrow.name = 'Changed after scan'
+    arrow.width = 96
+    preflight().items![0]!.issues.push('Changed message after capture')
+    expect((await request(undefined, 3, 'html')).html).toBe(first.html)
+    expect((await request(undefined, 4, 'json')).json).toBe(json.json)
+    expect(first.html).not.toMatch(/device-secret|github-secret|private-dispatch-name/)
+  })
+
+  it('rejects HTML from old scans, page changes, invalidation and close with the same report boundary', async () => {
+    const { host, otherPage, handlers, messages, preflight, request, send } = await fixture()
+    const old = preflight().scanId
+    await send({ type: 'rescan' })
+    expect(await request(old, 1, 'html')).toMatchObject({ format: 'html', error: true, rescan: true })
+    expect((await request(undefined, 2, 'html')).html).toContain('Preflight report')
+    host.currentPage = otherPage
+    expect(await request(undefined, 3, 'html')).toMatchObject({ format: 'html', error: true, rescan: true })
+    handlers.get('currentpagechange')!()
+    expect((await request(undefined, 4, 'html')).html).toBeUndefined()
+    handlers.get('close')!()
+    const count = messages.length
+    await request(undefined, 5, 'html')
+    expect(messages).toHaveLength(count)
+  })
+
+  it('keeps project rules, provisional naming and unrestricted dimensions in HTML', async () => {
+    const { fetch, send, request } = await fixture()
+    fetch.mockResolvedValue(Response.json({ projectId: 'project', name: 'Brand', revision: 8, validate: {}, namingMode: 'server', token: 'context-secret' }))
+    await send({ type: 'console-status' })
+    const report = await request(undefined, 1, 'html')
+    expect(report).toMatchObject({ format: 'html', serverNamingPending: true })
+    expect(report.html).toContain('Brand')
+    expect(report.html).toContain('Project revision</dt><dd>8')
+    expect(report.html).toContain('Width</dt><dd>Unrestricted')
+    expect(report.html).toContain('Height</dt><dd>Unrestricted')
+    expect(report.html).toContain('Names are provisional until custom server naming runs.')
+    expect(report.html).not.toContain('context-secret')
+    await send({ type: 'console-disconnect' })
+    expect(await request(report.scanId, 2, 'html')).toMatchObject({ error: true, rescan: true })
+  })
+
+  it('ignores unsupported report formats without changing the captured scan', async () => {
+    const { request, messages } = await fixture()
+    const initial = await request()
+    const count = messages.length
+    await request(undefined, 2, 'pdf')
+    expect(messages).toHaveLength(count)
+    expect((await request(undefined, 3)).json).toBe(initial.json)
+  })
+
   it('captures all items, rules and the scan timestamp once, independently of later mutations', async () => {
     const { page, arrow, preflight, request } = await fixture()
     expect(preflight().reportAvailable).toBe(true)

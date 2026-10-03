@@ -1,6 +1,7 @@
 import type { PreflightItem, PreflightRules } from './preflight'
 import { DEFAULT_NAME_PATTERN, DEFAULT_SIZE, DEFAULT_SKIP_PREFIX } from './naming'
 import { canSubmit } from './preflight'
+import { renderPreflightHtml } from './report-html'
 
 export interface ScanMetadata {
   mode: 'console' | 'github'
@@ -27,6 +28,23 @@ export function appliedRules(metadata: ScanMetadata) {
   }
 }
 export type AppliedRules = ReturnType<typeof appliedRules>
+
+export interface PreflightDocument extends AppliedRules {
+  schemaVersion: 1
+  generatedAt: string
+  scanId: number
+  scope: 'current-page'
+  page: { id: string, name: string }
+  summary: {
+    total: number
+    checked: number
+    skipped: number
+    withIssues: number
+    issueCount: number
+    canSubmit: boolean
+  }
+  items: PreflightItem[]
+}
 
 interface ReportHost {
   currentPage: () => { id: string }
@@ -56,7 +74,7 @@ export class PreflightReport {
     }))
     // Construct the report explicitly. Device credentials, tasks and arbitrary
     // context/settings fields must never enter the serialized snapshot.
-    const report = {
+    const report: PreflightDocument = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
       scanId,
@@ -91,9 +109,10 @@ export class PreflightReport {
     this.invalidate()
   }
 
-  send(message: { scanId?: unknown, requestId?: unknown }) {
+  send(message: { scanId?: unknown, requestId?: unknown, format?: unknown }) {
     const { scanId, requestId } = message
-    if (this.disposed || !Number.isSafeInteger(scanId) || !Number.isSafeInteger(requestId)) {
+    if (this.disposed || !Number.isSafeInteger(scanId) || !Number.isSafeInteger(requestId)
+      || (message.format !== undefined && message.format !== 'json' && message.format !== 'html')) {
       return
     }
     const snapshot = this.snapshot
@@ -105,9 +124,14 @@ export class PreflightReport {
       // Reading a removed or unavailable page also requires a new scan.
     }
     if (!snapshot || !current) {
-      this.host.post({ type: 'preflight-report', scanId, requestId, error: true, rescan: true, text: 'This scan is no longer available. Rescan the page before exporting.' })
+      this.host.post({ type: 'preflight-report', scanId, requestId, ...(message.format === 'html' ? { format: 'html' } : {}), error: true, rescan: true, text: 'This scan is no longer available. Rescan the page before exporting.' })
       return
     }
-    this.host.post({ type: 'preflight-report', scanId, requestId, json: snapshot.json, serverNamingPending: snapshot.serverNamingPending })
+    // Both formats come from the same serialized capture, never the current
+    // page, context or filtered UI. The JSON response remains backward compatible.
+    const content = message.format === 'html'
+      ? { format: 'html', html: renderPreflightHtml(JSON.parse(snapshot.json) as PreflightDocument) }
+      : { json: snapshot.json }
+    this.host.post({ type: 'preflight-report', scanId, requestId, ...content, serverNamingPending: snapshot.serverNamingPending })
   }
 }

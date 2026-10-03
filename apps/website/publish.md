@@ -38,7 +38,7 @@ Figma Library “Publish” is still for other **design** files. This button is 
 
    **Applied rules** shows the current dimensions, naming and draft rules. Use **Refresh project rules** while idle to update them without submitting a task; a failed read requires an explicit retry before console submission.
 
-   **Export JSON report** downloads the full latest page scan, including drafts and hidden errors, for offline review. It includes rules and a fixed scan timestamp without credentials or workflow state. Export does not dispatch a task, and server validation is still required. See [complete preflight reports](./console#plugin-project-preflight-and-recovery).
+   **Export JSON report** or **Export HTML report** downloads the full latest page scan, including drafts and hidden errors, for offline review. HTML is a standalone readable, printable page with no scripts or external resources; use browser Find to locate a name or node ID. It includes rules and a fixed scan timestamp without credentials or workflow state. Export does not dispatch a task, and server validation is still required. See [complete preflight reports](./console#plugin-project-preflight-and-recovery).
 3. Choose **Dispatch GitHub Action**
 4. Open the Actions URL the plugin prints; the workflow opens `chore: sync icons`
 
