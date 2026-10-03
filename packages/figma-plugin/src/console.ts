@@ -53,6 +53,10 @@ function uuid() {
 export class PluginConsole {
   private generation = 0
   private active = false
+  private paired = false
+  private projectRulesStale = false
+  private rulesEpoch = 0
+  private rulesRequest: number | undefined
   private context: PluginContext | undefined
   private wake: (() => void) | undefined
   private writes: Promise<void> = Promise.resolve()
@@ -69,6 +73,7 @@ export class PluginConsole {
   }
 
   private changeGeneration() {
+    this.cancelRules()
     this.generation++
     this.wake?.()
     this.wake = undefined
@@ -149,7 +154,7 @@ export class PluginConsole {
     this.host.invalidate?.('Rescanning page…')
     try {
       const items = this.host.scan(metadata.rules)
-      this.host.post({ type: 'preflight', items, metadata })
+      this.host.post({ type: 'preflight', items, metadata, ...(this.rulesRequest !== undefined ? { rulesRequestId: this.rulesRequest } : {}) })
       return items
     }
     catch (error) {
@@ -159,8 +164,98 @@ export class PluginConsole {
   }
 
   rescan(mode = this.mode) {
+    if (mode !== this.mode) {
+      this.cancelRules()
+    }
     this.mode = mode
+    if (mode === 'console' && this.projectRulesStale) {
+      this.host.invalidate?.('Project rules are unavailable. Refresh project rules before rescanning.', true)
+      return
+    }
     this.publishScan(this.scanMetadata())
+  }
+
+  private rulesState() {
+    this.host.post({ type: 'project-rules-state', paired: this.paired, stale: this.projectRulesStale })
+  }
+
+  private cancelRules() {
+    if (this.rulesRequest !== undefined) {
+      this.host.post({ type: 'project-rules-status', requestId: this.rulesRequest, outcome: 'ignored', text: 'Rule refresh cancelled. Refresh again in console mode.' })
+    }
+    this.rulesEpoch++
+    this.rulesRequest = undefined
+  }
+
+  /** An explicit read never reconciles a saved submission or starts a poller. */
+  private async refreshRules(requestId: number) {
+    const reply = (outcome: string, text: string, error = false) => {
+      this.host.post({ type: 'project-rules-status', requestId, outcome, text, error })
+    }
+    if (this.active || this.rulesRequest !== undefined || this.mode !== 'console') {
+      reply('ignored', 'A console operation is active. Rescan or refresh rules when it finishes.')
+      return
+    }
+    const generation = this.generation
+    const epoch = ++this.rulesEpoch
+    const check = () => {
+      this.check(generation)
+      if (epoch !== this.rulesEpoch) {
+        throw new Superseded()
+      }
+    }
+    this.rulesRequest = requestId
+    this.projectRulesStale = true
+    this.host.invalidate?.('Refreshing project rules…')
+    reply('accepted', 'Refreshing project rules…')
+    this.rulesState()
+    try {
+      const device = await this.host.storage.getAsync(DEVICE_KEY) as Device | undefined
+      check()
+      this.paired = Boolean(device)
+      if (!device) {
+        this.clearContext()
+        throw new Error('Connect the console before refreshing project rules.')
+      }
+      consoleOrigin(device.origin)
+      const context = await this.request<PluginContext>(generation, device.origin, `devices/${device.deviceId}/context`, device.token)
+      check()
+      this.applyContext(device, context)
+      reply('success', `Project rules applied · revision ${context.revision}. Server validation is still required.`)
+    }
+    catch (error) {
+      if (error instanceof Superseded || generation !== this.generation || epoch !== this.rulesEpoch) {
+        return
+      }
+      this.projectRulesStale = true
+      this.host.invalidate?.('Project rules are unavailable. Refresh project rules to try again.', true)
+      if (error instanceof ConsoleError && [401, 403].includes(error.status)) {
+        this.clearContext()
+        this.paired = false
+        try {
+          await this.write(generation, async () => {
+            await this.host.storage.deleteAsync(DEVICE_KEY)
+            await this.host.storage.deleteAsync(TASK_KEY)
+          })
+          check()
+        }
+        catch (cleanupError) {
+          if (generation !== this.generation || epoch !== this.rulesEpoch) {
+            return
+          }
+          reply('error', cleanupError instanceof Error ? cleanupError.message : 'Unable to clear revoked credentials.', true)
+          return
+        }
+      }
+      reply('error', error instanceof Error ? error.message : 'Could not read project rules. Refresh to try again.', true)
+    }
+    finally {
+      if (generation === this.generation && epoch === this.rulesEpoch) {
+        this.rulesRequest = undefined
+        this.rulesState()
+        this.host.post({ type: 'console-state', busy: this.active, connected: Boolean(this.context) })
+      }
+    }
   }
 
   private clearContext() {
@@ -168,13 +263,20 @@ export class PluginConsole {
     this.host.resetProject?.()
   }
 
-  private async refresh(generation: number, device: Device) {
-    const context = await this.retry(generation, () => this.request<PluginContext>(generation, device.origin, `devices/${device.deviceId}/context`, device.token))
+  private applyContext(device: Device, context: PluginContext) {
     if (context.projectId !== device.projectId) {
       throw new Error('The connected project changed. Pair again.')
     }
     this.context = context
+    this.paired = true
+    this.projectRulesStale = false
     this.rescan()
+    this.rulesState()
+  }
+
+  private async refresh(generation: number, device: Device) {
+    const context = await this.retry(generation, () => this.request<PluginContext>(generation, device.origin, `devices/${device.deviceId}/context`, device.token))
+    this.applyContext(device, context)
     this.status(`Connected to ${context.name} · revision ${context.revision}${context.namingMode === 'server' ? ' · Custom names are validated by the server.' : ''}`, { origin: device.origin })
     return context
   }
@@ -222,6 +324,7 @@ export class PluginConsole {
   private async connect(generation: number, submit: boolean) {
     const device = await this.host.storage.getAsync(DEVICE_KEY) as Device | undefined
     this.check(generation)
+    this.paired = Boolean(device)
     if (!device) {
       throw new Error('Connect the console first')
     }
@@ -276,9 +379,20 @@ export class PluginConsole {
   async handle(message: {
     type: string
     origin?: string
+    requestId?: number
   }) {
+    if (message.type === 'console-refresh-rules') {
+      if (Number.isSafeInteger(message.requestId)) {
+        await this.refreshRules(message.requestId!)
+      }
+      return
+    }
+    if (message.type === 'console-sync' && this.projectRulesStale) {
+      this.status('Refresh project rules before syncing.', { error: true })
+      return
+    }
     const replacing = message.type === 'console-disconnect' || message.type === 'console-pair'
-    if (this.active && !replacing) {
+    if ((this.active || this.rulesRequest !== undefined) && !replacing) {
       return
     }
     const generation = this.changeGeneration()
@@ -288,6 +402,8 @@ export class PluginConsole {
       const origin = message.type === 'console-pair' ? consoleOrigin(message.origin) : undefined
       if (replacing) {
         this.clearContext()
+        this.paired = false
+        this.projectRulesStale = false
         await this.write(generation, async () => {
           await this.host.storage.deleteAsync(DEVICE_KEY)
           await this.host.storage.deleteAsync(TASK_KEY)
@@ -309,7 +425,9 @@ export class PluginConsole {
       }
       if (error instanceof ConsoleError && [401, 403, 404].includes(error.status)) {
         this.clearContext()
+        this.projectRulesStale = true
         if (error.status !== 404) {
+          this.paired = false
           try {
             await this.write(generation, async () => {
               await this.host.storage.deleteAsync(DEVICE_KEY)
@@ -330,6 +448,7 @@ export class PluginConsole {
     finally {
       if (generation === this.generation) {
         this.active = false
+        this.rulesState()
         this.host.post({ type: 'console-state', busy: false, connected: Boolean(this.context) })
       }
     }

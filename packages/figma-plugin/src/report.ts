@@ -9,6 +9,25 @@ export interface ScanMetadata {
   project?: { name: string, revision: number }
 }
 
+/** A public, credential-free projection shared by the overview and report. */
+export function appliedRules(metadata: ScanMetadata) {
+  const rules = metadata.rules ?? { width: DEFAULT_SIZE, height: DEFAULT_SIZE }
+  return {
+    mode: metadata.mode,
+    rulesSource: metadata.rulesSource,
+    ...(metadata.project ? { project: { name: metadata.project.name, revision: metadata.project.revision } } : {}),
+    rules: {
+      ...(rules.width !== undefined ? { width: rules.width } : {}),
+      ...(rules.height !== undefined ? { height: rules.height } : {}),
+      name: rules.name ?? DEFAULT_NAME_PATTERN.source,
+      skipPrefix: [...(rules.skipPrefix ?? DEFAULT_SKIP_PREFIX)],
+      namingMode: rules.namingMode ?? 'default',
+    },
+    serverValidationRequired: true,
+  }
+}
+export type AppliedRules = ReturnType<typeof appliedRules>
+
 interface ReportHost {
   currentPage: () => { id: string }
   post: (message: Record<string, unknown>) => void
@@ -25,7 +44,7 @@ export class PreflightReport {
     if (this.disposed) {
       return
     }
-    const rules = metadata.rules ?? { width: DEFAULT_SIZE, height: DEFAULT_SIZE }
+    const overview = appliedRules(metadata)
     const captured = items.map(item => ({
       id: item.id,
       name: item.name,
@@ -43,17 +62,7 @@ export class PreflightReport {
       scanId,
       scope: 'current-page',
       page: { id: page.id, name: page.name },
-      mode: metadata.mode,
-      rulesSource: metadata.rulesSource,
-      ...(metadata.project ? { project: { name: metadata.project.name, revision: metadata.project.revision } } : {}),
-      rules: {
-        ...(rules.width !== undefined ? { width: rules.width } : {}),
-        ...(rules.height !== undefined ? { height: rules.height } : {}),
-        name: rules.name ?? DEFAULT_NAME_PATTERN.source,
-        skipPrefix: [...(rules.skipPrefix ?? DEFAULT_SKIP_PREFIX)],
-        namingMode: rules.namingMode ?? 'default',
-      },
-      serverValidationRequired: true,
+      ...overview,
       summary: {
         total: captured.length,
         checked: captured.filter(item => !item.skipped).length,
@@ -64,7 +73,7 @@ export class PreflightReport {
       },
       items: captured,
     }
-    this.snapshot = { scanId, pageId: page.id, projectRules: metadata.rulesSource === 'project', serverNamingPending: rules.namingMode === 'server', json: JSON.stringify(report, null, 2) }
+    this.snapshot = { scanId, pageId: page.id, projectRules: metadata.rulesSource === 'project', serverNamingPending: overview.rules.namingMode === 'server', json: JSON.stringify(report, null, 2) }
   }
 
   invalidate() { this.snapshot = undefined }
