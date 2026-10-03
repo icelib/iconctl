@@ -43,6 +43,31 @@ it('records all late tasks and keeps a task whose locate target is not available
   expect(submission.state.value.late.map(item => item.id)).toEqual(['one', 'two'])
 })
 
+it('records a task blocked by a dirty draft and keeps locate until navigation succeeds', async () => {
+  const record = vi.fn()
+  const reveal = vi.fn(async () => false)
+  const action = vi.fn(async () => job('one'))
+  const submission = createTaskSubmission({ record, reveal })
+  await submission.submit(action, 'submitted')
+  expect(record).toHaveBeenCalledWith(job('one'))
+  expect(reveal).toHaveBeenCalledWith(job('one'), true)
+  expect(submission.state.value).toEqual({ error: '', notice: '', late: [job('one')] })
+  await submission.locate(job('one'))
+  expect(submission.state.value.late).toEqual([job('one')])
+  reveal.mockResolvedValue(true)
+  await submission.locate(job('one'))
+  expect(reveal).toHaveBeenLastCalledWith(job('one'))
+  expect(submission.state.value.late).toEqual([])
+  expect(action).toHaveBeenCalledTimes(1)
+})
+
+it('updates a blocked task with its current attempt instead of duplicating its locate entry', async () => {
+  const submission = createTaskSubmission({ record: vi.fn(), reveal: vi.fn(async () => false) })
+  await submission.submit(async () => job('one'), 'submitted')
+  await submission.submit(async () => ({ ...job('one'), attempt: 2 }), 'retried')
+  expect(submission.state.value.late).toEqual([{ ...job('one'), attempt: 2 }])
+})
+
 it('rejects duplicate submissions and scopes failures to the originating context', async () => {
   const submission = createTaskSubmission({ record: vi.fn(), reveal: vi.fn() })
   const request = deferred<Job>()

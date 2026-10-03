@@ -1,6 +1,7 @@
 import type { ConsoleState, Job, Project } from '@iconctl/console-contracts'
 import type { Page } from '@playwright/test'
 import { test as base, expect } from '@playwright/test'
+import { discardDraft } from './draft-navigation'
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString(16).padStart(12, '0')}`
 const alpha: Project = {
@@ -227,6 +228,9 @@ for (const operation of ['start', 'retry'] as const) {
       }
       await locate.focus()
       await locate.press('Enter')
+      if (inputName === '图标前缀') {
+        await discardDraft(page)
+      }
       await expect(page.getByLabel('当前项目', { exact: true })).toHaveValue(alpha.id)
       const row = page.locator(`#job-${submitted.id}`)
       await expect(row).toBeFocused()
