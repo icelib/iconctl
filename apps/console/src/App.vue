@@ -19,6 +19,7 @@ import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/h
 import { createTaskSubmission } from './features/history/task-submission'
 import { createDraftNavigation } from './features/projects/draft-navigation'
 import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
+import { createSourceUpload } from './features/projects/source-upload'
 import { createReleaseReview } from './features/review/release-review'
 import { createSnapshotReview } from './features/review/snapshot-review'
 
@@ -88,6 +89,10 @@ const editor = createProjectEditor({
 const draft = editor.draft
 const editorState = editor.state
 const editorDirty = editor.dirty
+const uploads = createSourceUpload({ sources: () => draft.sources ?? [], session: () => editor.session.value, upload })
+const uploading = uploads.pending
+watch(editor.session, uploads.invalidate, { flush: 'sync' })
+watch(() => draft.sources?.slice() ?? [], uploads.prune, { flush: 'sync' })
 const editing = computed(() => editorState.value.project)
 const protectedDraft = computed(() => view.value === 'config' && editorDirty.value)
 const draftNavigation = createDraftNavigation({ dirty: () => protectedDraft.value, session: () => editor.session.value })
@@ -387,7 +392,7 @@ function navigateView(target: View) {
   })
 }
 async function save() {
-  if (busy.value) {
+  if (busy.value || uploading.value) {
     return
   }
   busy.value = true
@@ -442,22 +447,34 @@ function selectIconifyNames(source: Extract<Source, { type: 'iconify' }>, event:
 function iconifyNames(event: Event) {
   return (event.target as HTMLTextAreaElement).value.split(/\r?\n/).filter(name => name.length > 0)
 }
-async function attachUpload(event: Event, source: Source) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file || !('dir' in source)) {
+function attachUpload(event: Event, source: Source) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // The source status owns the filename; clearing lets the same file be selected again.
+  input.value = ''
+  if (!file || busy.value || editorState.value.refreshing) {
     return
   }
-  await perform(async () => {
-    source.upload = await upload(file)
-    source.dir = 'svg'
-    notice.value = 'SVG 压缩包已上传；保存项目后生效'
-  })
+  void uploads.start(source, file)
+}
+function removeSource(source: Source) {
+  uploads.forget(source)
+  const index = draft.sources.indexOf(source)
+  if (index >= 0) {
+    draft.sources.splice(index, 1)
+  }
+}
+function useRepositorySource(source: Source) {
+  uploads.forget(source)
+  if ('dir' in source) {
+    delete source.upload
+  }
 }
 async function start(operation: string, projectId = selectedId.value) {
   await submitTask(() => api<Job>(`projects/${projectId}/jobs`, { operation }), '任务已创建，将由 GitHub Actions 执行')
 }
 async function submitTask(action: () => Promise<Job>, message: string) {
-  if (busy.value) {
+  if (busy.value || uploading.value) {
     return
   }
   busy.value = true
@@ -469,7 +486,7 @@ async function submitTask(action: () => Promise<Job>, message: string) {
   }
 }
 async function install() {
-  if (!activeProject.value) {
+  if (!activeProject.value || uploading.value) {
     return
   }
   await perform(async () => {
@@ -587,6 +604,7 @@ async function logout() {
       if (disposed) {
         return false
       }
+      uploads.invalidate()
       allowDocumentLeave.value = true
       location.assign('/login')
       return true
@@ -608,6 +626,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   disposed = true
+  uploads.dispose()
   draftNavigation.dispose()
   window.removeEventListener('beforeunload', protectDocumentLeave)
   editor.dispose()
@@ -886,7 +905,7 @@ onUnmounted(() => {
           </div>
           <fieldset
             v-for="(source, index) in draft.sources"
-            :key="index"
+            :key="uploads.key(source)"
             class="source-editor"
           >
             <legend>
@@ -896,7 +915,7 @@ onUnmounted(() => {
               type="button"
               class="remove-source"
               :aria-label="`移除来源 ${index + 1}`"
-              @click="draft.sources.splice(index, 1)"
+              @click="removeSource(source)"
             >
               移除
             </button>
@@ -992,14 +1011,37 @@ onUnmounted(() => {
               ></label><label>或上传 SVG ZIP（最多 10 MB）<input
                 type="file"
                 accept=".zip"
+                :disabled="busy || uploading || editorState.refreshing"
                 @change="attachUpload($event, source)"
               ></label>
+              <div v-if="uploads.get(source)" class="upload-feedback full-width">
+                <p v-if="uploads.get(source)?.phase === 'failed'" role="alert" aria-label="来源上传失败" class="message error">
+                  {{ uploads.get(source)?.fileName }}：{{ uploads.get(source)?.error }}
+                </p>
+                <p v-else role="status" aria-label="来源上传状态" class="help">
+                  <template v-if="uploads.get(source)?.phase === 'pending'">
+                    正在上传：{{ uploads.get(source)?.fileName }}。完成或取消后可保存项目。
+                  </template>
+                  <template v-else-if="uploads.get(source)?.phase === 'uploaded'">
+                    已上传：{{ uploads.get(source)?.fileName }}；保存项目后生效。
+                  </template>
+                  <template v-else>
+                    已取消上传：{{ uploads.get(source)?.fileName }}。
+                  </template>
+                </p>
+                <button v-if="uploads.get(source)?.phase === 'pending'" type="button" @click="uploads.cancel(source)">
+                  取消上传
+                </button>
+                <button v-if="uploads.get(source)?.phase === 'failed'" type="button" :disabled="busy || uploading || editorState.refreshing" @click="uploads.retry(source)">
+                  重试上传
+                </button>
+              </div>
               <p v-if="source.upload" class="help full-width">
                 已上传 · {{ source.upload }}
                 <button
                   type="button"
                   class="text-button"
-                  @click="delete source.upload"
+                  @click="useRepositorySource(source)"
                 >
                   恢复使用仓库目录
                 </button>
@@ -1087,7 +1129,7 @@ onUnmounted(() => {
             </div>
           </details>
           <div class="form-footer">
-            <button class="primary" type="submit" :disabled="busy || editorState.refreshing || editorState.serverChanged || editorState.conflict">
+            <button class="primary" type="submit" :disabled="busy || uploading || editorState.refreshing || editorState.serverChanged || editorState.conflict">
               {{ busy ? "保存中…" : "保存项目" }}
             </button>
           </div>
@@ -1101,7 +1143,7 @@ onUnmounted(() => {
             <li>同步，检查差异，再发布</li>
           </ol>
           <template v-if="editing">
-            <button :disabled="busy" @click="install">
+            <button :disabled="busy || uploading" @click="install">
               创建 runner 安装 PR
             </button><a
               v-if="activeProject?.installationPr"
@@ -1110,15 +1152,15 @@ onUnmounted(() => {
               rel="noopener"
             >查看安装 PR ↗</a>
             <hr>
-            <button class="primary" :disabled="busy" @click="start('sync')">
+            <button class="primary" :disabled="busy || uploading" @click="start('sync')">
               同步图标
             </button>
             <div class="operation-buttons">
-              <button :disabled="busy" @click="start('check')">
+              <button :disabled="busy || uploading" @click="start('check')">
                 仅校验
-              </button><button :disabled="busy" @click="start('preview')">
+              </button><button :disabled="busy || uploading" @click="start('preview')">
                 预览
-              </button><button :disabled="busy" @click="start('dry-run')">
+              </button><button :disabled="busy || uploading" @click="start('dry-run')">
                 Dry run
               </button>
             </div>

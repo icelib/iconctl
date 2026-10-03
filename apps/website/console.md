@@ -33,6 +33,10 @@ Create and merge the runner installation PR on the default branch. Protected bra
 
 Uploads allow 10 MB compressed, 25 MB expanded, at most 5000 SVG files and 1 MB per SVG. Traversal paths, non-SVG entries and symlinks in SVG sources are rejected. Use `svg` to refer to the uploaded ZIP root. SVG comparisons use image rendering; HTML previews download as attachments rather than running in the application's origin.
 
+ZIP uploads show their filename and status beside the source. One upload runs at a time; file selection and project saving stay disabled until it finishes or you choose **Cancel upload** (「取消上传」). A failed upload offers **Retry upload** (「重试上传」) for the same file, or you can select another file. Replacing an existing upload keeps the previous attachment until the new upload succeeds. Uploading does not save the project or run SVG validation; save the attached file and then run a task to validate its contents.
+
+If you edit the ZIP subdirectory while uploading, completion keeps your input. Removing the source, restoring repository mode or leaving that editing session cancels the local upload operation; a late response cannot attach a file or show success in another editor. Canceling a navigation confirmation keeps the upload running in the original source. Canceling an upload does not delete a file that the server has already received. Files kept for retry exist only in the current editor's memory.
+
 Dry-run and validation retain check snapshots but do not write icon outputs, update the successful baseline or permit release. Authentication credentials may still renew.
 
 ### Repository Iconify JSON

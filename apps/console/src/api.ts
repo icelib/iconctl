@@ -39,13 +39,15 @@ export async function initializeSession() {
   const session = await api<{ csrf: string }>('session')
   csrf = session.csrf
 }
-export async function upload(file: File) {
+export async function upload(file: File, signal?: AbortSignal) {
   const response = await fetch('/api/uploads', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/zip', 'X-CSRF-Token': csrf },
     body: file,
+    signal,
   })
+  signal?.throwIfAborted()
   const result = await readResponse<{ id: string }>(response)
   return result.id
 }

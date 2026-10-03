@@ -545,6 +545,11 @@ label {
   color: var(--muted);
 }
 
+.upload-feedback {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .remove-source {
   position: absolute;
   top: -22px;
