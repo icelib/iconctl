@@ -107,7 +107,7 @@ Processing and validation issues follow the source that successfully supplied th
 
 Use `continueOnError: true` (CLI: `--continue`) only when you want partial outputs. The result has `complete: false`, failure details in `failed` / `issues`, and `diff.deletionsReliable: false` with `removed: []`. It does not update the changelog or retain a complete-sync cache marker. Authentication failures, unreadable sources and a Figma source with no successfully imported icons still reject. The CLI prints warnings for partial results; `--json` exposes `complete`, `deletionsReliable`, `skipped` and `issues`. Explicitly requested partial success keeps a successful exit status.
 
-After fixing a source or connection, run `sync` again. Without a valid complete-sync marker, sync refreshes the Figma document so a corrected file revision can be imported immediately. Invalid SVG responses and incomplete image export responses are not reused from the download cache.
+After fixing a source or connection, run `sync` again. Without a valid complete-sync marker, sync refreshes the Figma document so a corrected file revision can be imported immediately. Completion markers also record the validation rules version; older markers trigger a full check after an upgrade, even when the remote file has not changed. Invalid SVG responses and incomplete image export responses are not reused from the download cache.
 
 ```ts
 import { IconctlAbortError, loadConfig, sync } from 'iconctl'

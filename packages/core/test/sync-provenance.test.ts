@@ -127,27 +127,26 @@ it('keeps the successful source when a later same-name import fails, without rel
   ])
 })
 
-it.each(['both-valid', 'first-invalid', 'last-invalid'] as const)('keeps the last successfully imported same-source duplicate (%s)', async (order) => {
+it.each(['both-valid', 'first-invalid', 'last-invalid'] as const)('excludes every same-source duplicate regardless of SVG validity (%s)', async (order) => {
   mockFigma({ [firstFile]: [
     { id: '1:1', name: 'First', ...(order === 'first-invalid' ? { svg: 'invalid SVG' } : {}) },
     { id: '1:2', name: 'Second', ...(order === 'last-invalid' ? { svg: 'invalid SVG' } : {}) },
+    { id: '1:3', name: 'Independent' },
   ] })
   const config = resolveConfig({
     prefix: 'brand',
-    sources: [{ type: 'figma', file: firstFile, token: 'fixture', iconNameForNode: node => node.type === 'COMPONENT' ? 'same-name' : null }],
+    sources: [{ type: 'figma', file: firstFile, token: 'fixture', iconNameForNode: node => node.type === 'COMPONENT' ? node.id === '1:3' ? 'independent' : 'same-name' : null }],
     validate: { width: 16 },
   })
   const result = await sync({ cwd, config, continueOnError: true, dryRun: true })
+  expect(Object.keys(result.json.icons)).toEqual(['independent'])
   expect(result.issues.filter(issue => issue.stage === 'validation')).toEqual([
-    { name: 'same-name', stage: 'validation', message: expect.any(String), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: order === 'last-invalid' ? '1:1' : '1:2' },
+    { name: 'independent', stage: 'validation', message: expect.any(String), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:3' },
   ])
-  const imports = result.issues.filter(issue => issue.stage === 'import')
-  if (order === 'both-valid') {
-    expect(imports).toEqual([])
-  }
-  else {
-    expect(imports).toEqual([{ name: 'same-name', stage: 'import', message: expect.any(String), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: order === 'first-invalid' ? '1:1' : '1:2' }])
-  }
+  expect(result.issues.filter(issue => issue.stage === 'import')).toEqual([
+    { name: 'same-name', stage: 'import', message: expect.stringContaining('Duplicate'), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:1' },
+    { name: 'same-name', stage: 'import', message: expect.stringContaining('Duplicate'), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:2' },
+  ])
 })
 
 it('retains the source after processing removes a failed icon', async () => {

@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   return consumer
@@ -70,6 +70,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken
     for (const scenario of ['healthy', 'startup', 'handover', 'cancel']) {
       await check(consumer, mode, scenario)
     }
+    const figma = await run(node, [join(consumer, 'figma-consumer.mjs'), mode], consumer)
+    process.stdout.write(figma.stdout)
   }
   await check(consumer, 'bin', 'startup')
 
