@@ -28,6 +28,8 @@ import {
   unbase64,
   verifyWebhook,
 } from './security'
+import { readSnapshotArtifact } from './snapshot-artifacts'
+import { MAX_SVG_ARCHIVE_DOCUMENT_BYTES, svgArchive } from './svg-archive'
 import './env'
 
 export { AccountState } from './state'
@@ -620,6 +622,22 @@ app.get('/api/snapshots/:id/files/*', async (c) => {
     headers: {
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${name.split('/').pop()}"`,
+      'Content-Security-Policy': 'sandbox; default-src \'none\'',
+    },
+  })
+})
+app.get('/api/snapshots/:id/svg.zip', async (c) => {
+  const id = identifier.parse(c.req.param('id'))
+  const snapshot = await account(c.env).snapshot(id)
+  if (!/^[a-f0-9]{64}$/.test(snapshot.digest)) {
+    fail(409, 'Snapshot digest is invalid')
+  }
+  const content = await readSnapshotArtifact(c.env.ARTIFACTS, snapshot, MAX_SVG_ARCHIVE_DOCUMENT_BYTES, c.req.raw.signal)
+  c.req.raw.signal.throwIfAborted()
+  return new Response(svgArchive(content.files, c.req.raw.signal), {
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="iconctl-svg-${id}-${snapshot.digest.slice(0, 12)}.zip"`,
       'Content-Security-Policy': 'sandbox; default-src \'none\'',
     },
   })

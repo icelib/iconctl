@@ -1,4 +1,4 @@
-import { readApiResponse } from './api-response'
+import { readApiResponse, readZipResponse } from './api-response'
 
 export { ApiError } from './api-response'
 
@@ -50,6 +50,15 @@ export async function upload(file: File, signal?: AbortSignal) {
   signal?.throwIfAborted()
   const result = await readResponse<{ id: string }>(response)
   return result.id
+}
+
+export async function downloadSnapshotSvg(id: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(`/api/snapshots/${id}/svg.zip`, { credentials: 'same-origin', signal })
+  signal.throwIfAborted()
+  if (response.status === 401) {
+    location.assign('/login')
+  }
+  return await readZipResponse(response, signal)
 }
 
 export async function restoreBackup(file: File) {

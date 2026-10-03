@@ -40,6 +40,7 @@ import {
   fail,
   randomToken,
 } from './security'
+import { readSnapshotArtifact } from './snapshot-artifacts'
 import { runnerWorkflow, WORKFLOW } from './workflow'
 
 interface Session {
@@ -905,18 +906,7 @@ export class AccountState extends DurableObject<Env> {
   }
 
   async snapshotContent(id: string) {
-    const snapshot = this.snapshot(id)
-    const object = await this.env.ARTIFACTS.get(
-      `snapshots/${id}/${snapshot.digest}`,
-    )
-    if (!object) {
-      fail(404, 'Snapshot object is missing')
-    }
-    const text = await object.text()
-    if ((await digest(text)) !== snapshot.digest) {
-      fail(409, 'Snapshot digest mismatch')
-    }
-    return JSON.parse(text) as SnapshotContent
+    return readSnapshotArtifact(this.env.ARTIFACTS, this.snapshot(id))
   }
 
   async snapshotDocument(id: string) {

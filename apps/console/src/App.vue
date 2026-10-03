@@ -11,7 +11,8 @@ import type {
 } from '@iconctl/console-contracts'
 import type { NavigationIntent } from './features/projects/draft-navigation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { api, initializeSession, restoreBackup, upload } from './api'
+import { api, downloadSnapshotSvg, initializeSession, restoreBackup, upload } from './api'
+import { downloadBlob } from './browser-download'
 import JobAttempts from './features/history/JobAttempts.vue'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
 import { upsertSubmittedJob } from './features/history/submitted-job'
@@ -21,6 +22,7 @@ import { createDraftNavigation } from './features/projects/draft-navigation'
 import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
 import { createSourceUpload } from './features/projects/source-upload'
 import { createReleaseReview } from './features/review/release-review'
+import { createSnapshotDownload } from './features/review/snapshot-download'
 import { createSnapshotReview } from './features/review/snapshot-review'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
@@ -211,6 +213,9 @@ const reviewState = review.state
 const preview = computed(() => reviewState.value.committed?.preview)
 const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
 const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
+const svgDownload = createSnapshotDownload(downloadSnapshotSvg, downloadBlob)
+const svgDownloadState = svgDownload.state
+const svgFiles = computed(() => Object.keys(preview.value?.content.files ?? {}).filter(name => name.startsWith('svg/') && /\.svg$/i.test(name)))
 const latePublication = ref<Job>()
 const publication = createReleaseReview({
   preview: (context, signal) => api(`projects/${context.projectId}/release/preview`, { snapshotId: context.snapshotId, bump: context.bump }, 'POST', { signal }),
@@ -240,10 +245,12 @@ watch(
   { flush: 'post' },
 )
 watch(selectedId, () => {
+  svgDownload.invalidate()
   review.invalidate(true)
   publication.close()
 }, { flush: 'sync' })
 watch(view, () => {
+  svgDownload.invalidate()
   review.invalidate()
   publication.close()
   editor.invalidate()
@@ -511,6 +518,7 @@ async function openSnapshot(id: string, compareTo = '') {
       }
       view.value = 'preview'
       publication.close()
+      svgDownload.invalidate()
       void review.open(id, compareTo)
       return true
     },
@@ -626,6 +634,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   disposed = true
+  svgDownload.dispose()
   uploads.dispose()
   draftNavigation.dispose()
   window.removeEventListener('beforeunload', protectDocumentLeave)
@@ -1284,6 +1293,22 @@ onUnmounted(() => {
           </p>
           <div class="artifact-list">
             <h3>下载产物</h3>
+            <button
+              v-if="svgFiles.length"
+              :disabled="!!reviewState.pending || svgDownloadState.pending"
+              @click="!reviewState.pending && svgDownload.start(preview.snapshot)"
+            >
+              下载全部 SVG（{{ svgFiles.length }}）
+            </button>
+            <p class="help">
+              {{ svgFiles.length ? '下载当前快照的全部 SVG，不受搜索或比较筛选影响。' : '当前快照没有 SVG 产物。' }}
+            </p>
+            <p v-if="svgDownloadState.message" role="status" aria-label="SVG 下载状态" class="help">
+              {{ svgDownloadState.message }}
+            </p>
+            <p v-if="svgDownloadState.error" role="alert" aria-label="SVG 下载失败" class="message error">
+              {{ svgDownloadState.error }}。可再次点击下载重试。
+            </p>
             <a
               v-for="name in Object.keys(preview.content.files).filter(
                 (name) => !name.startsWith('svg/'),

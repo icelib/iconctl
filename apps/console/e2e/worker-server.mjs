@@ -14,6 +14,7 @@ async function main() {
     ['provenance', './fixtures/provenance-worker.mjs'],
     ['release-comparison', './fixtures/release-comparison-worker.mjs'],
     ['review-recovery', './fixtures/review-recovery-worker.mjs'],
+    ['snapshot-svg-archive', './fixtures/snapshot-svg-archive-worker.mjs'],
   ]).get(process.argv[2])
   if (!entrypoint) {
     throw new Error('Select a known browser test fixture')
