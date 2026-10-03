@@ -4,6 +4,7 @@ import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import type { SyncIssue } from './errors'
 import type { FigmaSourceLoadOptions } from './sources/figma'
+import type { IconOrigin } from './sources/load'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import process from 'node:process'
@@ -16,7 +17,7 @@ import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } fr
 import { OutputTransaction } from './output-transaction'
 import { writePreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
-import { loadSources, mergeIconSetsAsync } from './sources/load'
+import { loadSources, mergeLoadedSources } from './sources/load'
 import { validateIconSetAsync } from './validate'
 
 export interface SyncOptions {
@@ -46,11 +47,16 @@ export interface SyncResult {
 }
 
 interface CacheMeta {
+  validationVersion?: number
   configDigest?: string
   outputDigest?: string
   lastModified?: string
   version?: string
 }
+
+// A completion marker also certifies the import/validation rules used. Bump
+// this when previously accepted inputs must be checked again after an upgrade.
+const validationVersion = 1
 
 async function readCacheMeta(file: string): Promise<CacheMeta | undefined> {
   try {
@@ -86,6 +92,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     .digest('hex')
 
   let iconSet = options.iconSet
+  let origins = new Map<string, IconOrigin>()
   let fileVersion: string | undefined
   let fileKey: string | undefined
   let notModified = false
@@ -103,6 +110,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
         ? { figmaAuthProvider: options.figmaAuthProvider }
         : {}),
       ...(previous
+        && previousMeta?.validationVersion === validationVersion
         && previousMeta?.outputDigest === createHash('sha256').update(JSON.stringify(previous)).digest('hex')
         && previousMeta?.configDigest === configDigest
         && previousMeta?.lastModified
@@ -111,7 +119,12 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     })
 
     await checkpoint(options.signal)
-    sourceIssues.push(...loaded.flatMap(item => item.issues ?? []))
+    sourceIssues.push(...loaded.flatMap((item, sourceIndex) => item.issues ?? item.failures?.map(failure => ({
+      ...failure,
+      stage: 'import' as const,
+      sourceType: item.type,
+      sourceIndex,
+    })) ?? []))
     if (sourceIssues.length && !options.continueOnError) {
       throw new IconctlSyncError(sourceIssues)
     }
@@ -143,8 +156,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       return result
     }
 
-    const sets = loaded.flatMap(item => (item.iconSet ? [item.iconSet] : []))
-    iconSet = await mergeIconSetsAsync(config.prefix, sets, options.signal)
+    const merged = await mergeLoadedSources(config.prefix, loaded, options.signal)
+    iconSet = merged.iconSet
+    origins = merged.origins
     fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
     fileKey = loaded.find(item => item.fileKey)?.fileKey
     for (const item of loaded) {
@@ -171,8 +185,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const validation = await validateIconSetAsync(iconSet, config, options.signal)
   const issues: SyncIssue[] = [
     ...sourceIssues,
-    ...processed.issues,
-    ...validation.issues.map(issue => ({ ...issue, stage: 'validation' as const })),
+    ...processed.issues.map(issue => ({ ...issue, ...origins.get(issue.name) })),
+    ...validation.issues.map(issue => ({ ...issue, stage: 'validation' as const, ...origins.get(issue.name) })),
   ]
   const failed = [...new Set([...sourceIssues.map(issue => issue.name), ...processed.failed])].sort()
   const complete = !issues.length
@@ -188,13 +202,13 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   }
   const files: string[] = []
   if (!options.dryRun) {
-    // Do not stage untouched changelogs for incomplete runs.
-    const { changelog, ...output } = config.output
-    const exportConfig = complete ? config : { ...config, output }
+    // Keep every configured target visible to collision checks, even when an
+    // incomplete run preserves the changelog instead of appending to it.
+    const { changelog } = config.output
     const targets = outputTargets(config, cwd)
     const transaction = await OutputTransaction.create([...targets, { path: cacheMetaFile }], options.signal)
     try {
-      const staged = stagedConfig(exportConfig, cwd, transaction)
+      const staged = stagedConfig(config, cwd, transaction)
       await generateOutputs(iconSet, staged, { cwd, ...cancellation })
       // Package cleanup may encompass the changelog. Seed it from the live
       // output before appending a complete diff (or preserving a partial run).
@@ -226,7 +240,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
         files.push(resolve(cwd, config.output.preview!))
       }
       await checkpoint(options.signal)
-      if (staged.output.changelog) {
+      if (complete && staged.output.changelog) {
         const written = await writeChangelog(staged.output.changelog, diff)
         if (written) {
           files.push(resolve(cwd, changelog!))
@@ -237,6 +251,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (complete && nextMeta) {
         await writeCacheMeta(stagedMeta, {
           ...nextMeta,
+          validationVersion,
           outputDigest: createHash('sha256').update(JSON.stringify(json)).digest('hex'),
         })
       }

@@ -1,0 +1,47 @@
+name: Package consumer CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - packages/core/**
+      - apps/cli/**
+      - patches/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/package-consumer.yml
+  push:
+    branches: [main]
+    paths:
+      - packages/core/**
+      - apps/cli/**
+      - patches/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/package-consumer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: Packed consumer (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    env:
+      HUSKY: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @iconctl/core test:package

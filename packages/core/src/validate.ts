@@ -11,9 +11,12 @@ export interface ValidationResult {
   issues: ValidationIssue[]
 }
 
-function validator(iconSet: IconSet, config: ResolvedIconctlConfig) {
+type ValidationOptions = Pick<ResolvedIconctlConfig, 'validate'>
+
+function validator(iconSet: IconSet, config: ValidationOptions) {
   const issues: ValidationIssue[] = []
   const names = new Set<string>()
+  const namePattern = new RegExp(config.validate.name.source, config.validate.name.flags)
 
   const validate = (name: string, type: string) => {
     if (type !== 'icon') {
@@ -25,7 +28,8 @@ function validator(iconSet: IconSet, config: ResolvedIconctlConfig) {
     }
     names.add(name)
 
-    if (!config.validate.name.test(name)) {
+    namePattern.lastIndex = 0
+    if (!namePattern.test(name)) {
       issues.push({
         name,
         message: `Icon name "${name}" does not match ${config.validate.name}`,
@@ -59,13 +63,13 @@ export function formatValidationIssues(issues: ValidationIssue[]): string {
   return issues.map(issue => `- ${issue.name}: ${issue.message}`).join('\n')
 }
 
-export function validateIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ValidationResult {
+export function validateIconSet(iconSet: IconSet, config: ValidationOptions): ValidationResult {
   const { issues, validate } = validator(iconSet, config)
   iconSet.forEachSync(validate)
   return { issues }
 }
 
-export async function validateIconSetAsync(iconSet: IconSet, config: ResolvedIconctlConfig, signal?: AbortSignal): Promise<ValidationResult> {
+export async function validateIconSetAsync(iconSet: IconSet, config: ValidationOptions, signal?: AbortSignal): Promise<ValidationResult> {
   const { issues, validate } = validator(iconSet, config)
   await iconSet.forEach(async (name, type) => {
     await checkpoint(signal)

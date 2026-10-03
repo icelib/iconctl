@@ -15,7 +15,7 @@ const exec = promisify(execFile)
 const svg
   = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#000" d="M3 10l9-7 9 7v10H3z"/></svg>'
 afterEach(() => vi.unstubAllGlobals())
-it('runs all five sources through outputs and packs only the confirmed snapshot', async () => {
+it('runs all six sources through outputs and packs only the confirmed snapshot', async () => {
   const root = await mkdtemp(join(tmpdir(), 'iconctl-pipeline-'))
   try {
     const repository = join(root, 'repo')
@@ -25,6 +25,13 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
     await mkdir(work)
     await writeFile(join(repository, 'raw/local.svg'), svg)
     await writeFile(join(repository, 'jsdesign/design.svg'), svg)
+    await writeFile(join(repository, 'vendor.json'), JSON.stringify({
+      prefix: 'vendor',
+      width: 24,
+      height: 16,
+      icons: { arrow: { body: '<path fill="#123456" d="M0 0h4v8H0z"/>' } },
+      aliases: { rotated: { parent: 'arrow', rotate: 1 } },
+    }))
     await exec('git', ['init', '--quiet'], { cwd: repository })
     await exec('git', ['add', '.'], { cwd: repository })
     await exec(
@@ -59,6 +66,7 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
         { type: 'figma', file: 'AbCdEfGhIjKlMnOpQrStUv', connection: figma },
         { type: 'mastergo', fileId: '1', layerId: '1:1', connection: mastergo },
         { type: 'iconfont', url: 'https://at.alicdn.com/t/test.js' },
+        { type: 'iconify', file: 'vendor.json', include: ['rotated'], namePrefix: 'vendor-' },
       ],
     })
     const project = {
@@ -177,8 +185,15 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
       'font',
       'local',
       'mastergo',
+      'vendor-rotated',
     ])
+    expect(snapshot!.json.icons['vendor-rotated']!.width ?? snapshot!.json.width ?? 16).toBe(16)
+    expect(snapshot!.json.icons['vendor-rotated']!.height ?? snapshot!.json.height ?? 16).toBe(24)
+    expect(snapshot!.json.icons['vendor-rotated']!.body).toContain('currentColor')
+    expect(snapshot!.sources.map(source => source.type)).toContain('iconify')
     expect(snapshot!.issues).toEqual([])
+    expect(await readFile(join(work, 'output/svg/.iconctl-manifest.json'), 'utf8')).toContain('figma.svg')
+    expect(snapshot!.files).not.toHaveProperty(['svg/.iconctl-manifest.json'])
     expect(Object.keys(snapshot!.files)).toEqual(
       expect.arrayContaining([
         'icons.json',
@@ -208,6 +223,13 @@ it('runs all five sources through outputs and packs only the confirmed snapshot'
       join(root, 'package'),
     )
     expect(integrity(packed.tarball)).toBe(packed.integrity)
+    expect(packed.files).not.toHaveProperty(['svg/.iconctl-manifest.json'])
+    const archive = join(root, 'published.tgz')
+    await writeFile(archive, packed.tarball)
+    const entries = await exec('tar', ['-tzf', archive])
+    expect(entries.stdout).toContain('package/svg/figma.svg')
+    expect(entries.stdout).toContain('package/svg/vendor-rotated.svg')
+    expect(entries.stdout).not.toContain('.iconctl-manifest.json')
     const manifest = JSON.parse(
       Buffer.from(packed.files['package.json']!, 'base64').toString(),
     )

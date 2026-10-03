@@ -6,7 +6,7 @@ export {
   parseChangelog,
   writeChangelog,
 } from './changelog'
-export { check, type CheckOptions } from './check'
+export { check, type CheckInputOptions, type CheckIssue, type CheckOptions, type CheckReport, type CheckResult, type CheckValidation, IconctlCheckError } from './check'
 export {
   defineConfig,
   type IconctlConfig,
@@ -17,7 +17,8 @@ export {
   type ResolvedIconctlConfig,
   resolveJsonPackage,
 } from './config'
-export { diffIconSets, type IconDiff } from './diff'
+export { compareIconSets, diffIconSets, type IconComparisonEntry, type IconDiff, type IconSetComparison } from './diff'
+export { renderDiffHtml, writeDiffHtml, type WriteDiffHtmlOptions } from './diff-preview'
 export { IconctlAbortError, IconctlError, IconctlSyncError, type SyncIssue } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
 export { getFigmaAuthStatus, logoutFigma } from './figma/auth'
@@ -40,6 +41,7 @@ export {
   type DirectorySourceConfig,
   type FigmaSourceConfig,
   type IconfontSourceConfig,
+  type IconifySourceConfig,
   type JsdesignSourceConfig,
   type MastergoSourceConfig,
   type SourceConfig,
@@ -47,3 +49,4 @@ export {
 export { emptyIconSet, importLocalSvgDirectory, mergeIconSets, sync, type SyncOptions, type SyncResult } from './sync'
 export { FIGMA_TOKEN_HELP, MASTERGO_TOKEN_HELP, resolveFigmaToken, resolveMastergoToken } from './token'
 export { formatValidationIssues, validateIconSet, type ValidationIssue } from './validate'
+export { watch, type WatchEvent, type WatchOptions } from './watch'

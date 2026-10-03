@@ -57,6 +57,11 @@
         padding: 6px 0;
         border-bottom: 1px solid #eee;
       }
+      li .locate {
+        justify-self: start;
+        margin: 2px 0 0;
+        padding: 3px 8px;
+      }
       li.err strong {
         color: #c00;
       }
@@ -70,6 +75,71 @@
       }
       #status.ok {
         color: #1b7f37;
+      }
+      #navigation-status,
+      #report-status,
+      #rules-status {
+        margin: 4px 0;
+        overflow-wrap: anywhere;
+      }
+      #navigation-status.err,
+      #report-status.err,
+      #rules-status.err {
+        color: #c00;
+      }
+      #navigation-status.ok,
+      #report-status.ok,
+      #rules-status.ok {
+        color: #1b7f37;
+      }
+      .view-options {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .view-options label {
+        display: flex;
+        align-items: center;
+        margin: 0;
+        gap: 4px;
+      }
+      .storage-feedback {
+        color: #a33;
+        overflow-wrap: anywhere;
+        margin: 8px 0;
+      }
+      .storage-feedback button {
+        margin: 4px 0 0;
+      }
+      #view-count,
+      #empty-view {
+        color: #555;
+        margin: 6px 0;
+      }
+      #applied-rules {
+        margin: 8px 0;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        overflow-wrap: anywhere;
+      }
+      #applied-rules summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      #rules-content {
+        margin: 8px 0;
+      }
+      #rules-content dt {
+        font-weight: 600;
+        margin-top: 6px;
+      }
+      #rules-content dd {
+        margin: 0;
+      }
+      #rules-validity {
+        color: #555;
       }
       .row {
         display: flex;
@@ -97,9 +167,34 @@
         >GitHub token (Contents: read and write)<input id="token" type="password" placeholder="github_pat_…"
       /></label>
       <label>Event type<input id="event" value="iconctl-publish" /></label>
+      <div id="settings-feedback" class="storage-feedback" hidden>
+        <p id="settings-storage-status" aria-live="polite"></p>
+        <button id="retry-settings" class="secondary" type="button">Retry settings storage</button>
+      </div>
     </section>
+    <details id="applied-rules">
+      <summary>Applied rules</summary>
+      <dl id="rules-content"></dl>
+      <p id="rules-validity">Waiting for a current scan.</p>
+      <button id="refresh-rules" type="button" disabled>Refresh project rules</button>
+      <p id="rules-status" aria-label="Project rules status" aria-live="polite" aria-atomic="true"></p>
+    </details>
     <p id="status">Scanning this page…</p>
+    <label>Search preflight<input id="search" type="search" placeholder="Name or issue" /></label>
+    <div class="view-options">
+      <label><input id="problems-only" type="checkbox" />Problems only</label>
+      <button id="clear-filters" class="secondary" type="button">Clear filters</button>
+    </div>
+    <div id="preferences-feedback" class="storage-feedback" hidden>
+      <p id="preferences-storage-status" aria-live="polite"></p>
+      <button id="retry-preferences" class="secondary" type="button">Retry view storage</button>
+    </div>
+    <p id="view-count" aria-live="polite"></p>
+    <p id="empty-view" hidden></p>
     <ul id="list"></ul>
+    <p id="navigation-status" role="status" aria-live="polite"></p>
+    <button id="export-report" class="secondary" type="button" disabled>Export JSON report</button>
+    <p id="report-status" aria-live="polite" aria-atomic="true">Rescan to prepare a complete report.</p>
     <div class="row">
       <button id="publish" disabled>Sync to console</button>
       <button id="rescan" class="secondary" type="button">Rescan</button>

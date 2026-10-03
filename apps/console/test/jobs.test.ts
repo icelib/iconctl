@@ -2,7 +2,7 @@ import type { Job, Project, SnapshotContent } from '@iconctl/console-contracts'
 import type { RunnerIdentity } from '../worker/github'
 import { OWNER_ID, projectInput } from '@iconctl/console-contracts'
 import { reset, runInDurableObject } from 'cloudflare:test'
-import { env } from 'cloudflare:workers'
+import { env, exports } from 'cloudflare:workers'
 import { afterEach, expect, it, vi } from 'vitest'
 import { base64, digest, encrypt } from '../worker/security'
 import { runnerWorkflow } from '../worker/workflow'
@@ -104,6 +104,12 @@ function mockGithub() {
     }
     return new Response(null, { status: 404 })
   })
+}
+async function paired(saved: Project) {
+  await seed(`project:${saved.id}`, saved)
+  const pair = await account().startPairing()
+  await account().approvePairing(pair.code, saved.id, 'Figma')
+  return await account().pollPairing(pair.id, pair.pollToken) as { deviceId: string, token: string }
 }
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -245,6 +251,206 @@ it('a failed validation snapshot cannot be released or replace the baseline', as
     ),
   ).toContain('not publishable')
 })
+it('retries a failed snapshot in a new attempt while preserving its history', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const failedContent = { ...content(), failed: ['unavailable-source'] }
+  const first = await account().saveSnapshot(job.id, identity, failedContent)
+  expect(first.attempt).toBe(1)
+  expect(await account().saveSnapshot(job.id, identity, failedContent)).toEqual(first)
+
+  const retried = await account().retry(job.id)
+  expect(retried).toMatchObject({ id: job.id, attempt: 2, status: 'queued' })
+  expect(retried.snapshotId).toBeUndefined()
+  const secondRun = { ...identity, runId: '5678' }
+  await account().claim(job.id, secondRun, 'sync')
+  const second = await account().saveSnapshot(job.id, secondRun, content())
+  expect(second.attempt).toBe(2)
+  expect(second.id).not.toBe(first.id)
+  expect(await account().snapshotContent(first.id)).toEqual(failedContent)
+  expect(await account().snapshotContent(second.id)).toEqual(content())
+  expect((await account().getJob(job.id)).status).toBe('succeeded')
+  expect((await account().state()).projects[0]?.snapshotId).toBe(second.id)
+  expect(await account().saveSnapshot(job.id, secondRun, content())).toEqual(second)
+  expect(await failure(instance => instance.saveSnapshot(job.id, secondRun, failedContent))).toContain('immutable')
+  expect(await failure(instance => instance.saveSnapshot(job.id, identity, failedContent))).toContain('attempt changed')
+})
+it('reuses the attempt reservation after an interrupted artifact write', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const put = vi.spyOn(env.ARTIFACTS, 'put').mockRejectedValueOnce(new Error('R2 unavailable'))
+  expect(await failure(instance => instance.saveSnapshot(job.id, identity, content()))).toContain('R2 unavailable')
+  const reservation = await read<{ snapshotId: string, digest: string }>(`snapshot-reservation:${job.id}:1`)
+  const snapshot = await account().saveSnapshot(job.id, identity, content())
+  expect(snapshot.id).toBe(reservation.snapshotId)
+  expect(snapshot.digest).toBe(reservation.digest)
+  expect(put).toHaveBeenCalledTimes(2)
+})
+it('does not let an interrupted attempt reservation block changed content on retry', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  vi.spyOn(env.ARTIFACTS, 'put').mockRejectedValueOnce(new Error('R2 unavailable'))
+  expect(await failure(instance => instance.saveSnapshot(job.id, identity, content()))).toContain('R2 unavailable')
+  const first = await read<{ snapshotId: string }>(`snapshot-reservation:${job.id}:1`)
+  await account().failJob(job.id, identity, 'runner')
+  await account().retry(job.id)
+  const secondRun = { ...identity, runId: '5678' }
+  await account().claim(job.id, secondRun, 'sync')
+  const changed = { ...content(), json: { ...content().json, width: 48 } }
+  const snapshot = await account().saveSnapshot(job.id, secondRun, changed)
+  expect(snapshot.id).not.toBe(first.snapshotId)
+  expect(snapshot.attempt).toBe(2)
+  expect(await account().snapshotContent(snapshot.id)).toEqual(changed)
+})
+it('rejects an old upload completion after a new attempt has succeeded', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const originalPut = env.ARTIFACTS.put.bind(env.ARTIFACTS)
+  let newSnapshotId: string | undefined
+  const error = await failure(async (instance) => {
+    vi.spyOn(env.ARTIFACTS, 'put').mockImplementationOnce(async (...args) => {
+      instance.failJob(job.id, identity, 'runner')
+      await instance.retry(job.id)
+      const secondRun = { ...identity, runId: '5678', runAttempt: '2' }
+      instance.claim(job.id, secondRun, 'sync')
+      newSnapshotId = (await instance.saveSnapshot(job.id, secondRun, content())).id
+      return originalPut(...args)
+    })
+    await instance.saveSnapshot(job.id, identity, content())
+  })
+  expect(error).toContain('attempt changed')
+  expect((await account().state()).snapshots.map(item => item.id)).toEqual([newSnapshotId])
+  const reservation = await read<{ snapshotId: string }>(`snapshot-reservation:${job.id}:1`)
+  expect(newSnapshotId).not.toBe(reservation.snapshotId)
+  expect((await account().getJob(job.id)).snapshotId).toBe(newSnapshotId)
+  expect((await account().state()).projects[0]?.snapshotId).toBe(newSnapshotId)
+})
+it('finishes concurrent identical callbacks as one immutable snapshot', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const snapshots = await Promise.all([
+    account().saveSnapshot(job.id, identity, content()),
+    account().saveSnapshot(job.id, identity, content()),
+  ])
+  expect(snapshots[0]).toEqual(snapshots[1])
+  expect((await account().state()).snapshots).toHaveLength(1)
+  expect((await account().getJob(job.id)).status).toBe('succeeded')
+})
+it('rechecks the attempt after hashing and before reserving or uploading artifacts', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const originalDigest = crypto.subtle.digest.bind(crypto.subtle)
+  const put = vi.spyOn(env.ARTIFACTS, 'put')
+  await runInDurableObject(account(), async (instance, state) => {
+    vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(async (...args) => {
+      state.storage.sql.exec('UPDATE records SET value=? WHERE key=?', JSON.stringify({ ...instance.getJob(job.id), attempt: 2 }), `job:${job.id}`)
+      return originalDigest(...args)
+    })
+    await expect(instance.saveSnapshot(job.id, identity, content())).rejects.toThrow('attempt changed')
+    expect(state.storage.sql.exec('SELECT key FROM records WHERE key GLOB ?', `snapshot-reservation:${job.id}:*`).toArray()).toEqual([])
+  })
+  expect(put).not.toHaveBeenCalled()
+})
+it.each([
+  { runId: 'another-run' },
+  { runAttempt: '2' },
+  { status: 'failed' as const },
+  { status: 'succeeded' as const },
+])('rejects a snapshot when the claimed run or status changes during upload: %j', async (change) => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const originalPut = env.ARTIFACTS.put.bind(env.ARTIFACTS)
+  await runInDurableObject(account(), async (instance, state) => {
+    vi.spyOn(env.ARTIFACTS, 'put').mockImplementationOnce(async (...args) => {
+      state.storage.sql.exec('UPDATE records SET value=? WHERE key=?', JSON.stringify({ ...instance.getJob(job.id), ...change }), `job:${job.id}`)
+      return originalPut(...args)
+    })
+    await expect(instance.saveSnapshot(job.id, identity, content())).rejects.toThrow('changed while uploading')
+  })
+  expect((await account().state()).snapshots).toEqual([])
+  expect((await account().state()).projects[0]?.snapshotId).toBeUndefined()
+})
+it.each(['legacy snapshot', 'legacy reservation'] as const)('keeps %s in the first attempt', async (legacyKind) => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  await account().claim(job.id, identity, 'sync')
+  const oldContent = { ...content(), failed: ['unavailable-source'] }
+  const document = JSON.stringify(oldContent)
+  const hash = await digest(document)
+  await seed(`snapshot-reservation:${job.id}`, hash)
+  if (legacyKind === 'legacy snapshot') {
+    await env.ARTIFACTS.put(`snapshots/${job.id}/${hash}`, document)
+    await seed(`snapshot:${job.id}`, {
+      id: job.id,
+      jobId: job.id,
+      projectId: saved.id,
+      createdAt: Date.now(),
+      digest: hash,
+      iconCount: 1,
+      issues: 1,
+    })
+    await seed(`job:${job.id}`, { ...await account().getJob(job.id), status: 'failed', snapshotId: job.id })
+  }
+  const legacy = await account().saveSnapshot(job.id, identity, oldContent)
+  expect(legacy.id).toBe(job.id)
+  expect(await account().snapshotContent(job.id)).toEqual(oldContent)
+  expect(await failure(instance => instance.confirmRelease(saved.id, job.id, 'patch'))).toContain('not publishable')
+  await account().retry(job.id)
+  const secondRun = { ...identity, runId: '5678' }
+  await account().claim(job.id, secondRun, 'sync')
+  const snapshot = await account().saveSnapshot(job.id, secondRun, content())
+  expect(snapshot.id).not.toBe(job.id)
+  expect(snapshot.attempt).toBe(2)
+  expect(await account().snapshotContent(job.id)).toEqual(oldContent)
+  expect((await account().state()).projects[0]?.snapshotId).toBe(snapshot.id)
+})
+it('still confirms a successful legacy snapshot without attempt metadata', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  const document = JSON.stringify(content())
+  const hash = await digest(document)
+  await env.ARTIFACTS.put(`snapshots/${job.id}/${hash}`, document)
+  await seed(`snapshot:${job.id}`, { id: job.id, jobId: job.id, projectId: saved.id, createdAt: Date.now(), digest: hash, iconCount: 1, issues: 0 })
+  await seed(`job:${job.id}`, { ...job, status: 'succeeded', snapshotId: job.id })
+  expect(await account().snapshotContent(job.id)).toEqual(content())
+  expect((await account().confirmRelease(saved.id, job.id, 'patch')).release.snapshotId).toBe(job.id)
+})
+it('retains the confirmed snapshot and immutable package on publication retry', async () => {
+  mockGithub()
+  const saved = project()
+  await seed(`project:${saved.id}`, saved)
+  const job = await account().createJob(saved.id, 'sync', crypto.randomUUID())
+  const release = { snapshotId: crypto.randomUUID(), digest: 'confirmed-digest', version: '0.1.0', branchHead: null, confirmation: crypto.randomUUID() }
+  const prepared = { ...job, operation: 'publish' as const, status: 'failed' as const, release, integrity: 'sha512-fixed', releaseCommit: 'b'.repeat(40) }
+  await seed(`job:${job.id}`, prepared)
+  const retried = await account().retry(job.id)
+  expect(retried).toMatchObject({ attempt: 2, release, integrity: prepared.integrity, releaseCommit: prepared.releaseCommit })
+})
 it('confirms the initial target version and invalidates stale project configuration', async () => {
   mockGithub()
   const saved = project()
@@ -311,6 +517,60 @@ it('plugin pairing is scoped, revocable, and never grants publication', async ()
       ),
     ),
   ).toContain('not found')
+})
+
+it('returns only the plugin project rules without source credentials', async () => {
+  const saved = project()
+  saved.validate = { width: 16, height: 32, name: '^brand-', skipPrefix: ['draft-'] }
+  saved.advancedConfig = { path: 'iconctl.config.ts', commit: sha }
+  const device = await paired(saved)
+  expect(await account().deviceContext(device.deviceId, device.token)).toEqual({
+    projectId: saved.id,
+    name: saved.name,
+    revision: 1,
+    validate: saved.validate,
+    namingMode: 'server',
+  })
+  expect(await failure(instance => instance.deviceContext(device.deviceId, 'wrong'))).toContain('revoked')
+  await account().revokeDevice(device.deviceId)
+  expect(await failure(instance => instance.deviceContext(device.deviceId, device.token))).toContain('not found')
+})
+
+it('pins plugin preflight revisions and replays a saved request across rule changes', async () => {
+  mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const key = crypto.randomUUID()
+  const job = await account().deviceJob(device.deviceId, device.token, key, 1)
+  await seed(`project:${saved.id}`, { ...saved, revision: 2 })
+  expect((await account().deviceJob(device.deviceId, device.token, key, 1)).id).toBe(job.id)
+  expect(await failure(instance => instance.deviceJob(device.deviceId, device.token, key, 2))).toContain('different project revision')
+  expect(await failure(instance => instance.deviceJob(device.deviceId, device.token, crypto.randomUUID(), 1))).toContain('rules changed')
+  expect((await account().deviceJob(device.deviceId, device.token, key)).id).toBe(job.id)
+})
+
+it('rejects device revocation or a rule change while preparing a plugin task', async () => {
+  const fetch = mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const normal = fetch.getMockImplementation()!
+  await runInDurableObject(account(), async (instance) => {
+    fetch.mockImplementationOnce(async (...args) => {
+      instance.revokeDevice(device.deviceId)
+      return normal(...args)
+    })
+    await expect(instance.deviceJob(device.deviceId, device.token, crypto.randomUUID(), 1)).rejects.toThrow('not found')
+  })
+  expect((await account().state()).jobs).toEqual([])
+  const next = await paired(saved)
+  await runInDurableObject(account(), async (instance, state) => {
+    fetch.mockImplementationOnce(async (...args) => {
+      state.storage.sql.exec('UPDATE records SET value=? WHERE key=?', JSON.stringify({ ...saved, revision: 2 }), `project:${saved.id}`)
+      return normal(...args)
+    })
+    await expect(instance.deviceJob(next.deviceId, next.token, crypto.randomUUID(), 1)).rejects.toThrow('Project changed')
+  })
+  expect((await account().state()).jobs).toEqual([])
 })
 it('encrypts backups and excludes login and OAuth secrets from exported rows', async () => {
   await account().newSession(OWNER_ID)
@@ -445,4 +705,21 @@ it('recovers a prepared commit after a lost ref update without creating another 
   expect(await account().finishRelease(jobId)).toBe(true)
   expect((await account().state()).releases).toHaveLength(1)
   expect((await read<Job>(`job:${jobId}`)).status).toBe('succeeded')
+})
+
+it('serves device context and accepts legacy requests while enforcing new revisions over HTTP', async () => {
+  mockGithub()
+  const saved = project()
+  const device = await paired(saved)
+  const base = `${env.APP_ORIGIN}/api/plugin/devices/${device.deviceId}`
+  const headers = { 'Authorization': `Bearer ${device.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }
+  expect((await exports.default.fetch(`${base}/context`)).status).toBe(401)
+  const response = await exports.default.fetch(`${base}/context`, { headers })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ projectId: saved.id, name: saved.name, revision: 1, validate: saved.validate, namingMode: 'default' })
+  expect((await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: 2 }) })).status).toBe(409)
+  const legacy = await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: '{}' })
+  expect(legacy.status).toBe(202)
+  const replay = await exports.default.fetch(`${base}/jobs`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: 1 }) })
+  expect(await replay.json()).toEqual(await legacy.json())
 })

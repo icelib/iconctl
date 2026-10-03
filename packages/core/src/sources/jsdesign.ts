@@ -10,7 +10,7 @@ export async function loadJsdesignSource(
 ): Promise<LoadedSource> {
   if (source.dir) {
     const loaded = await loadDirectorySource({ type: 'directory', dir: source.dir }, options)
-    return { ...loaded, type: 'jsdesign' }
+    return { ...loaded, type: 'jsdesign', issues: (loaded.issues ?? []).map(issue => ({ ...issue, sourceType: 'jsdesign' })) }
   }
 
   throw new IconctlError(JSDESIGN_REMOTE_HELP)

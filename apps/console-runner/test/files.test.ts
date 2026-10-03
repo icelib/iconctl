@@ -1,13 +1,78 @@
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MAX_ARTIFACT_BYTES } from '@iconctl/console-contracts'
 import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  collectFiles,
   extractSvgArchive,
+  materializeIconifySource,
   resolveInside,
   validateDirectory,
 } from '../src/files'
+import { classifyFailure } from '../src/index'
+
+describe('repository Iconify file boundary', () => {
+  let root: string
+  let repository: string
+  let destination: string
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'iconctl-json-source-'))
+    repository = join(root, 'repo')
+    destination = join(root, 'materialized.json')
+    await mkdir(repository)
+    await writeFile(join(repository, 'icons.json'), '{"prefix":"vendor","icons":{}}')
+  })
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+  })
+  it('freezes a repository file and permits a symlink whose target stays in the repository', async () => {
+    await symlink('icons.json', join(repository, 'linked.json'))
+    expect(await materializeIconifySource(repository, 'linked.json', destination)).toBe(destination)
+    await writeFile(join(repository, 'icons.json'), 'changed after materialization')
+    expect(await readFile(destination, 'utf8')).toBe('{"prefix":"vendor","icons":{}}')
+  })
+  it.each(['file', 'parent'] as const)('rejects an escaping %s symlink', async (kind) => {
+    await writeFile(join(root, 'outside.json'), 'outside')
+    await symlink(kind === 'file' ? '../outside.json' : '..', join(repository, 'escape'))
+    const failure = await materializeIconifySource(repository, kind === 'file' ? 'escape' : 'escape/outside.json', destination).catch(error => error as Error)
+    expect(failure).toHaveProperty('message', 'Iconify JSON source escapes repository')
+    expect(classifyFailure(failure)).toBe('configuration')
+    await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('rejects a symlink into Git metadata', async () => {
+    await mkdir(join(repository, '.git'))
+    await writeFile(join(repository, '.git/config'), 'private metadata')
+    await symlink('.git/config', join(repository, 'linked.json'))
+    await expect(materializeIconifySource(repository, 'linked.json', destination)).rejects.toThrow('Cannot read repository Iconify JSON source')
+  })
+  it('rejects directories and missing files as configuration failures', async () => {
+    await mkdir(join(repository, 'directory.json'))
+    await expect(materializeIconifySource(repository, 'directory.json', destination)).rejects.toThrow('regular file')
+    const failure = await materializeIconifySource(repository, 'absent.json', destination).catch(error => error as Error)
+    expect(classifyFailure(failure)).toBe('configuration')
+  })
+  it('rejects oversized files before materializing them', async () => {
+    await truncate(join(repository, 'icons.json'), MAX_ARTIFACT_BYTES + 1)
+    await expect(materializeIconifySource(repository, 'icons.json', destination)).rejects.toThrow('size limit')
+    await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+it('excludes only the local SVG ownership manifest from collected artifacts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'iconctl-artifacts-'))
+  try {
+    await mkdir(join(root, 'svg'))
+    await writeFile(join(root, 'svg/arrow.svg'), '<svg/>')
+    await writeFile(join(root, 'svg/.iconctl-manifest.json'), '{"version":1,"files":["arrow.svg"]}')
+    await writeFile(join(root, '.iconctl-manifest.json'), 'a different file')
+    expect(Object.keys(await collectFiles(root)).sort()).toEqual(['.iconctl-manifest.json', 'svg/arrow.svg'])
+  }
+  finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 describe('SVG archive boundary', () => {
   it.each([

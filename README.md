@@ -31,12 +31,22 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | --- | --- |
 | `iconctl init` | Write `iconctl.config.ts` |
 | `iconctl sync` | Load sources, clean, validate, export |
-| `iconctl check` | Validate existing output without remote sources |
+| `iconctl watch` | Continuously sync local SVG folders and reload config |
+| `iconctl check` | Validate configured output or `--input icons.json` |
 | `iconctl preview` | Write a static HTML gallery |
+| `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML report |
 
 `sync --json` prints `added`, `removed`, `changed`, `skipped`, `sources`, `fileVersion`, and `outputFiles`. Validation failures exit non-zero and do not write a partial set.
 
 `sync({ signal })` supports caller cancellation. Individual import/processing failures now also block output replacement by default. Explicit `continueOnError: true` exports available icons with `complete: false`, diagnostic `issues`, and `diff.deletionsReliable: false`; removals and changelog updates are suppressed. Outputs are staged before commit. Cancellation before commit preserves old outputs; cancellation after commit starts waits for successful completion. Shared OAuth refresh finishes safely before cancellation returns. Cross-path atomic publication is not guaranteed; see [cancellation and integrity](apps/website/quick-start.md#sync-integrity-and-cancellation) for the full contract.
+
+For local development, `iconctl watch` performs an initial sync and watches SVG edits. Keep inputs such as `raw-svg` separate from generated SVG/package directories. It supports local `directory`, `jsdesign.dir`, `iconfont.dir` and `iconify.file` sources; remote sources still use `sync`. `watch --json` emits NDJSON events. See [local watch](apps/website/quick-start.md#local-watch) for configuration recovery, cancellation and the API.
+
+Local Iconify JSON can be mixed with SVG or remote sources: `{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`. Aliases, rotations and inherited dimensions are resolved before the usual processing. See [Iconify JSON sources](apps/website/sources.md#local-iconify-json).
+
+To check a standalone collection, run `iconctl check --input ./icons.json --width 24 --height 24 --json`. This does not load configuration, contact sources or write files. Dimensions are optional; `--name` overrides the naming regex. Failure reports include import, SVG processing and validation issues and exit with status 1. See [artifact checks](apps/website/quick-start.md#check-existing-artifacts).
+
+Review two exported collections with `iconctl diff before.json after.json --html diff.html`. It resolves aliases, inherited dimensions and transforms, reports prefix changes, and needs no configuration or credentials. Add `--check --json` for CI; `--check` exits 1 when icons or their prefix differ. See [offline comparison](apps/website/quick-start.md#offline-comparison) for the report, dry-run and API.
 
 ## Config
 
@@ -104,3 +114,5 @@ OAuth workflows must serialize jobs sharing an authorization with a fixed concur
 ## Private console
 
 The owner-only Vue/Hono console lives at `/app` alongside the public documentation. See [setup, GitHub App, OAuth and deployment](apps/website/console.md).
+
+Console projects can import a repository Iconify JSON file from each task's pinned commit, select exact icon/alias names and add a literal name prefix. See [repository Iconify JSON](apps/website/console.md#repository-iconify-json).

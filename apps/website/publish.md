@@ -24,17 +24,25 @@ Figma Library “Publish” is still for other **design** files. This button is 
 2. Figma → Plugins → Development → Import plugin from manifest → `packages/figma-plugin/manifest.json`
 3. Plugin settings:
    - GitHub repo `owner/name`
-   - Fine-grained PAT with **Actions: write** on that repo (not `FIGMA_TOKEN`)
+   - Fine-grained PAT with **Contents: write** on that repo (not `FIGMA_TOKEN`)
    - Event type `iconctl-publish`
 
 ## Each release
 
 1. Name components `arrow-left`, 24×24, drafts as `_…`
-2. Open the plugin on the icon page → fix anything red
-3. Publish
+2. Open the plugin on the icon page, choose **GitHub dispatch (legacy)**, then use **Locate** beside a red result to find its component. Fix it and choose **Rescan**.
+
+   Default preflight also rejects duplicate normalized names on the current page. Both components are shown as errors; locate them, rename and rescan before dispatching. This does not prove uniqueness across other pages or server naming hooks.
+
+   **Search preflight** matches original/final names and issue text; **Problems only** narrows the list to errors. Hidden errors still block dispatch. Filtering preserves workflow feedback, and rescanning preserves your filters. The problems-only preference is saved locally; search text is session-only. Settings restore without overwriting edits, and local storage failures offer a separate retry action.
+
+   **Applied rules** shows the current dimensions, naming and draft rules. Use **Refresh project rules** while idle to update them without submitting a task; a failed read requires an explicit retry before console submission.
+
+   **Export JSON report** downloads the full latest page scan, including drafts and hidden errors, for offline review. It includes rules and a fixed scan timestamp without credentials or workflow state. Export does not dispatch a task, and server validation is still required. See [complete preflight reports](./console#plugin-project-preflight-and-recovery).
+3. Choose **Dispatch GitHub Action**
 4. Open the Actions URL the plugin prints; the workflow opens `chore: sync icons`
 
-Do not store a `contents:write` PAT in the plugin. The Action, not the plugin, writes the JSON.
+Use the repository-scoped PAT above for dispatch. Keep `FIGMA_TOKEN` in Actions secrets; the Action reads the library and writes the JSON.
 
 After merge, developers get icons either from **git pull** (JSON in the app) or **`pnpm add`** (published package). Both are on [Distribute](/distribute).
 

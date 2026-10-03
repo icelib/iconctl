@@ -1,43 +1,23 @@
 import type { IconifyJSON } from '@iconify/types'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'pathe'
+import { compareIconSets } from './diff'
+import { escapeHtml, htmlDocument, iconImage } from './html'
 
 export function renderPreviewHtml(json: IconifyJSON): string {
-  const icons = Object.entries(json.icons)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, icon]) => {
-      const width = icon.width ?? json.width ?? 24
-      const height = icon.height ?? json.height ?? 24
-      return `
-        <figure class="icon">
-          <svg viewBox="0 0 ${width} ${height}" width="32" height="32" aria-hidden="true">${icon.body}</svg>
-          <figcaption>${json.prefix}:${name}</figcaption>
-        </figure>`
-    })
+  const comparison = compareIconSets(undefined, json)
+  const icons = comparison.icons
+    .map(({ name, after }) => `<figure class="icon">${iconImage(after!, `${json.prefix}:${name}`)}<figcaption>${escapeHtml(`${json.prefix}:${name}`)}</figcaption></figure>`)
     .join('\n')
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${json.prefix} icons</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 24px; }
+  const css = `
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 24px; color: #172b3a; background: #f4f6f8; }
     h1 { font-size: 20px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
-    .icon { margin: 0; padding: 12px; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 12px; }
-    svg { display: block; margin: 0 auto 8px; }
+    .icon { margin: 0; padding: 12px; border: 1px solid #d3dde4; border-radius: 12px; background: white; }
+    img { display: block; margin: 0 auto 8px; object-fit: contain; }
     figcaption { font-size: 12px; text-align: center; word-break: break-all; }
-  </style>
-</head>
-<body>
-  <h1>${json.prefix} · ${Object.keys(json.icons).length} icons</h1>
-  <div class="grid">${icons}</div>
-</body>
-</html>
 `
+  return htmlDocument(`${json.prefix} icons`, `<h1>${escapeHtml(json.prefix)} · ${comparison.icons.length} icons</h1><div class="grid">${icons}</div>`, css)
 }
 
 export async function writePreviewHtml(file: string, json: IconifyJSON) {

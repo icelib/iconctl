@@ -23,7 +23,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -31,6 +32,7 @@ button,
 a,
 input,
 select,
+textarea,
 summary {
   touch-action: manipulation;
 }
@@ -71,6 +73,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid #8fbbfc;
   outline-offset: 3px;
@@ -88,7 +91,8 @@ summary:focus-visible {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 40px;
   padding: 10px 11px;
@@ -96,6 +100,10 @@ select {
   background: white;
   border: 1px solid #c8d5e1;
   border-radius: 6px;
+}
+
+textarea {
+  resize: vertical;
 }
 
 input[type='checkbox'] {
@@ -831,6 +839,7 @@ label {
 .release-dialog p {
   margin-bottom: 15px;
   line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 
 .release-version {
@@ -844,6 +853,42 @@ label {
 .release-dialog .inline-controls {
   justify-content: flex-end;
   margin-top: 25px;
+}
+
+.navigation-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.navigation-dialog .inline-controls {
+  flex-wrap: wrap;
+}
+
+.task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.task-filters label {
+  flex: 1 1 145px;
+}
+
+.task-filters .task-search {
+  flex: 3 1 260px;
+}
+
+.task-filter-count {
+  margin: 12px 0;
+}
+
+.linked-job-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
 }
 
 .table-scroll {
@@ -1193,7 +1238,8 @@ tbody tr:last-child td {
 fieldset,
 label,
 input,
-select {
+select,
+textarea {
   min-width: 0;
 }
 
@@ -1202,4 +1248,9 @@ select {
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.linked-job {
+  outline: 2px solid var(--accent, #5373ff);
+  outline-offset: -2px;
 }

@@ -2,8 +2,19 @@ import type { FigmaAuth } from './auth'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cleanupSVG, SVG } from '@iconify/tools'
 import { settleWithAbort, throwIfAborted } from '../abort'
 import { IconctlError } from '../errors'
+
+function validSvg(content: string): boolean {
+  try {
+    cleanupSVG(new SVG(content))
+    return true
+  }
+  catch {
+    return false
+  }
+}
 
 async function invalidToken(response: Response): Promise<boolean> {
   if (response.status === 401) {
@@ -42,14 +53,14 @@ export class FigmaClient {
     return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout
   }
 
-  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean): Promise<string> {
+  private async cached(url: string, ttl: number, load: () => Promise<string>, fresh: boolean, canCache: (content: string) => boolean = () => true): Promise<string> {
     const directory = join(this.cacheDir, 'figma-v1')
     throwIfAborted(this.signal)
     const file = this.cacheFile(url)
     if (!fresh) {
       try {
         const cached = JSON.parse(await readFile(file, 'utf8')) as { expires: number, content: string }
-        if (cached.expires > Date.now() && typeof cached.content === 'string') {
+        if (cached.expires > Date.now() && typeof cached.content === 'string' && canCache(cached.content)) {
           throwIfAborted(this.signal)
           return cached.content
         }
@@ -59,6 +70,9 @@ export class FigmaClient {
     throwIfAborted(this.signal)
     const content = await load()
     throwIfAborted(this.signal)
+    if (!canCache(content)) {
+      return content
+    }
     const temporary = `${file}.${randomUUID()}.tmp`
     try {
       await mkdir(directory, { recursive: true })
@@ -75,7 +89,7 @@ export class FigmaClient {
     return content
   }
 
-  async json<T>(path: string, parameters: URLSearchParams, fresh = false): Promise<T> {
+  async json<T>(path: string, parameters: URLSearchParams, fresh = false, canCache?: (value: T) => boolean): Promise<T> {
     const url = `https://api.figma.com/v1/${path}?${parameters}`
     const content = await this.cached(url, 86_400_000, async () => {
       throwIfAborted(this.signal)
@@ -123,7 +137,16 @@ export class FigmaClient {
         throwIfAborted(this.signal)
         throw new IconctlError('Invalid Figma API response.')
       }
-    }, fresh)
+    }, fresh, canCache
+      ? (text) => {
+          try {
+            return canCache(JSON.parse(text) as T)
+          }
+          catch {
+            return false
+          }
+        }
+      : undefined)
     try {
       return JSON.parse(content) as T
     }
@@ -161,6 +184,6 @@ export class FigmaClient {
         }
         throw new IconctlError('Could not download a Figma SVG.')
       }
-    }, false)
+    }, false, validSvg)
   }
 }

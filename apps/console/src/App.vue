@@ -5,12 +5,22 @@ import type {
   Job,
   Project,
   ProjectInput,
-  Snapshot,
-  SnapshotContent,
+  SnapshotComparison,
+  SnapshotPreview,
   Source,
 } from '@iconctl/console-contracts'
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import type { NavigationIntent } from './features/projects/draft-navigation'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, initializeSession, restoreBackup, upload } from './api'
+import JobAttempts from './features/history/JobAttempts.vue'
+import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
+import { upsertSubmittedJob } from './features/history/submitted-job'
+import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
+import { createTaskSubmission } from './features/history/task-submission'
+import { createDraftNavigation } from './features/projects/draft-navigation'
+import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
+import { createReleaseReview } from './features/review/release-review'
+import { createSnapshotReview } from './features/review/snapshot-review'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
 const navigation: { id: View, name: string, symbol: string }[] = [
@@ -40,8 +50,12 @@ const busy = ref(false)
 const ready = ref(false)
 const error = ref('')
 const notice = ref('')
+const linkedJobId = new URLSearchParams(location.search).get('job')
+const linkedJobError = ref('')
+const linkedJobLocated = ref(false)
+let locatingLinkedJob = false
+let stateRequest = 0
 const selectedId = ref('')
-const editing = ref<Project>()
 function blank(): ProjectInput {
   return {
     name: '',
@@ -54,7 +68,74 @@ function blank(): ProjectInput {
     output: { svg: true, types: true, preview: true, changelog: true },
   }
 }
-const draft = reactive<ProjectInput>(blank())
+const editor = createProjectEditor({
+  blank,
+  save: (input, project) => project
+    ? api<Project>(`projects/${project.id}`, { project: input, revision: project.revision }, 'PUT')
+    : api<Project>('projects', input),
+  committed(project, current) {
+    stateRequest++
+    data.value.projects = upsertSavedProject(data.value.projects, project)
+    if (current) {
+      selectedId.value = project.id
+    }
+  },
+  async refresh() {
+    await refresh(false)
+    return data.value.projects
+  },
+})
+const draft = editor.draft
+const editorState = editor.state
+const editorDirty = editor.dirty
+const editing = computed(() => editorState.value.project)
+const protectedDraft = computed(() => view.value === 'config' && editorDirty.value)
+const draftNavigation = createDraftNavigation({ dirty: () => protectedDraft.value, session: () => editor.session.value })
+const navigationState = draftNavigation.state
+const navigationDialog = ref<HTMLDialogElement>()
+const allowDocumentLeave = ref(false)
+let disposed = false
+watch(editor.session, draftNavigation.invalidate, { flush: 'sync' })
+watch(() => !!navigationState.value.pending, (pending) => {
+  if (pending) {
+    navigationDialog.value?.showModal()
+  }
+  else { navigationDialog.value?.close() }
+}, { flush: 'post' })
+async function requestNavigation(intent: NavigationIntent, automatic = false) {
+  const trigger = document.activeElement
+  const result = await draftNavigation.request(intent, automatic)
+  if (result === 'cancelled' && !disposed) {
+    await nextTick()
+    if (!disposed && trigger instanceof HTMLElement && trigger.isConnected) {
+      trigger.focus()
+    }
+  }
+  return result
+}
+function keepNavigationFocus(event: KeyboardEvent) {
+  const buttons = navigationDialog.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+  const first = buttons?.[0]
+  const last = buttons?.[buttons.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  }
+  else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+function protectDocumentLeave(event: BeforeUnloadEvent) {
+  event.preventDefault()
+  event.returnValue = ''
+}
+watch(() => protectedDraft.value && !allowDocumentLeave.value, (protect) => {
+  if (protect) {
+    window.addEventListener('beforeunload', protectDocumentLeave)
+  }
+  else { window.removeEventListener('beforeunload', protectDocumentLeave) }
+}, { flush: 'sync' })
 const activeProject = computed(() =>
   data.value.projects.find(project => project.id === selectedId.value),
 )
@@ -63,38 +144,88 @@ const snapshots = computed(() =>
     snapshot => !selectedId.value || snapshot.projectId === selectedId.value,
   ),
 )
-const jobs = computed(() =>
+const projectJobs = computed(() =>
   data.value.jobs.filter(
-    job => !selectedId.value || job.projectId === selectedId.value,
+    job => job.projectId === selectedId.value,
   ),
 )
+const taskFilters = reactive(emptyTaskFilters())
+const jobs = computed(() => filterTasks(projectJobs.value, taskFilters))
+const hasTaskFilters = computed(() => taskFilters.status !== 'all' || taskFilters.operation !== 'all' || taskFilters.query !== '')
+const linkedJobHidden = computed(() => linkedJobLocated.value && (view.value !== 'history' || !jobs.value.some(job => job.id === linkedJobId)))
+function clearTaskFilters() {
+  Object.assign(taskFilters, emptyTaskFilters())
+}
+watch(selectedId, clearTaskFilters, { flush: 'sync' })
+const submission = createTaskSubmission({ record: recordSubmittedJob, reveal: revealJob })
+const submissionState = submission.state
+watch([selectedId, view, taskFilters], submission.invalidate, { flush: 'sync', deep: true })
 const releases = computed(() =>
   data.value.releases.filter(
     release => !selectedId.value || release.projectId === selectedId.value,
   ),
 )
+async function revealJob(job: Job, automatic = false) {
+  const result = await requestNavigation({
+    label: `任务 ${job.id}`,
+    async run() {
+      selectedId.value = job.projectId
+      clearTaskFilters()
+      view.value = 'history'
+      await nextTick()
+      const row = disposed ? null : document.getElementById(`job-${job.id}`)
+      if (!row) {
+        return false
+      }
+      row.scrollIntoView({ block: 'center' })
+      row.focus()
+      return document.activeElement === row
+    },
+  }, automatic)
+  return result === 'completed'
+}
+function recordSubmittedJob(job: Job) {
+  // The mutation response is authoritative, including a retry's new attempt.
+  // Discard any older state request still in flight before displaying it.
+  stateRequest++
+  data.value.jobs = upsertSubmittedJob(data.value.jobs, job)
+}
 const sourceType = ref<Source['type']>('figma')
 const mastergo = reactive({ label: 'MasterGo', token: '' })
 const pairing = reactive({ code: '', projectId: '', label: '我的 Figma 插件' })
-const snapshotId = ref('')
 const search = ref('')
 const filter = ref('all')
 const bump = ref<'patch' | 'minor' | 'major'>('patch')
-const preview = ref<{
-  snapshot: Snapshot
-  content: SnapshotContent
-  previous?: IconJSON
-  diff: { added: string[], changed: string[], removed: string[] }
-}>()
-const confirmation = ref<{
-  id: string
-  packageName: string
-  iconCount: number
-  release: { version: string, digest: string }
-}>()
+const review = createSnapshotReview((id, compareTo, signal) => api<SnapshotPreview>(
+  `snapshots/${id}${compareTo ? `?compareTo=${encodeURIComponent(compareTo)}` : ''}`,
+  undefined,
+  'GET',
+  { signal },
+))
+const reviewState = review.state
+const preview = computed(() => reviewState.value.committed?.preview)
+const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
+const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
+const latePublication = ref<Job>()
+const publication = createReleaseReview({
+  preview: (context, signal) => api(`projects/${context.projectId}/release/preview`, { snapshotId: context.snapshotId, bump: context.bump }, 'POST', { signal }),
+  publish: (context, confirmationId, idempotencyKey) => api<Job>(`projects/${context.projectId}/release/confirm`, { confirmationId }, 'POST', { idempotencyKey }),
+  async published(job, current) {
+    recordSubmittedJob(job)
+    if (current && await revealJob(job, true)) {
+      notice.value = '发布任务已创建'
+    }
+    else {
+      latePublication.value = job
+    }
+  },
+})
+const releaseState = publication.state
+const confirmation = computed(() => releaseState.value.confirmation)
+const releaseOpen = computed(() => releaseState.value.open)
 const releaseDialog = ref<HTMLDialogElement>()
 watch(
-  confirmation,
+  releaseOpen,
   (value) => {
     if (value) {
       releaseDialog.value?.showModal()
@@ -103,16 +234,36 @@ watch(
   },
   { flush: 'post' },
 )
+watch(selectedId, () => {
+  review.invalidate(true)
+  publication.close()
+}, { flush: 'sync' })
+watch(view, () => {
+  review.invalidate()
+  publication.close()
+  editor.invalidate()
+}, { flush: 'sync' })
 function selectProject(event: Event) {
-  selectedId.value = (event.target as HTMLSelectElement).value
-  if (view.value === 'config') {
-    edit(activeProject.value)
+  const element = event.target as HTMLSelectElement
+  const id = element.value
+  element.value = selectedId.value
+  if (id === selectedId.value && (view.value !== 'config' || editing.value?.id === id)) {
+    return
   }
-  if (view.value === 'preview') {
-    preview.value = undefined
-    snapshotId.value = ''
-    confirmation.value = undefined
-  }
+  void requestNavigation({
+    label: data.value.projects.find(project => project.id === id)?.name ?? '所选项目',
+    run() {
+      const project = data.value.projects.find(project => project.id === id)
+      if (!project) {
+        return false
+      }
+      if (view.value === 'config') {
+        applyEdit(project)
+      }
+      else { selectedId.value = id }
+      return true
+    },
+  })
 }
 const iconNames = computed(() => {
   if (!preview.value) {
@@ -129,37 +280,53 @@ const iconNames = computed(() => {
       : preview.value.diff[filter.value as 'added' | 'changed' | 'removed']
   return names.filter(name => name.includes(search.value)).sort()
 })
-const labels: Record<string, string> = {
-  'queued': '等待执行',
-  'running': '运行中',
-  'succeeded': '已完成',
-  'failed': '失败',
-  'reconciling': '核对发布结果',
-  'sync': '同步',
-  'check': '仅校验',
-  'preview': '预览',
-  'dry-run': 'Dry run',
-  'publish': '发布',
-  'claimed': '已领取',
-  'dispatching': '派发 Actions',
-  'dispatched': '等待 Actions 启动',
-  'starting': 'Actions 排队或构建中',
-  'fetching': '抓取来源',
-  'validating': '校验图标',
-  'packing': '组装产物',
-  'publishing': '发布 npm',
-  'complete': '完成',
-}
 function date(value: number) {
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(value)
 }
-async function refresh() {
-  data.value = await api<ConsoleState>('state')
-  if (!selectedId.value && data.value.projects[0]) {
+async function locateLinkedJob(automatic = false) {
+  if (locatingLinkedJob) {
+    return
+  }
+  locatingLinkedJob = true
+  try {
+    const job = data.value.jobs.find(item => item.id === linkedJobId)
+    if (job && data.value.projects.some(project => project.id === job.projectId)) {
+      linkedJobError.value = ''
+      if (await revealJob(job, automatic)) {
+        linkedJobLocated.value = true
+      }
+    }
+    else { linkedJobError.value = '任务链接无效，或该任务已不可用。' }
+  }
+  finally {
+    locatingLinkedJob = false
+  }
+}
+async function refresh(selectDefault = true) {
+  const request = ++stateRequest
+  const state = await api<ConsoleState>('state')
+  if (request !== stateRequest) {
+    return
+  }
+  for (const project of data.value.projects) {
+    state.projects = upsertSavedProject(state.projects, project)
+  }
+  data.value = state
+  editor.observe(state.projects)
+  if (linkedJobId && !linkedJobLocated.value) {
+    await locateLinkedJob(true)
+  }
+  if (selectDefault && !selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
+  }
+}
+async function locatePublication() {
+  const job = latePublication.value
+  if (job && await revealJob(job)) {
+    latePublication.value = undefined
   }
 }
 async function perform(action: () => Promise<void>) {
@@ -179,52 +346,57 @@ async function perform(action: () => Promise<void>) {
     busy.value = false
   }
 }
-function edit(project?: Project) {
-  editing.value = project
-  Object.keys(draft).forEach(
-    key => delete (draft as unknown as Record<string, unknown>)[key],
-  )
-  Object.assign(
-    draft,
-    project
-      ? {
-          name: project.name,
-          repository: project.repository,
-          prefix: project.prefix,
-          packageName: project.packageName,
-          sources: JSON.parse(JSON.stringify(project.sources)),
-          color: project.color,
-          validate: JSON.parse(JSON.stringify(project.validate)),
-          output: JSON.parse(JSON.stringify(project.output)),
-          ...(project.advancedConfig
-            ? {
-                advancedConfig: JSON.parse(
-                  JSON.stringify(project.advancedConfig),
-                ),
-              }
-            : {}),
-        }
-      : blank(),
-  )
+function applyEdit(project?: Project) {
   if (project) {
     selectedId.value = project.id
   }
   view.value = 'config'
+  editor.open(project)
+}
+function edit(project?: Project) {
+  const id = project?.id
+  if (view.value === 'config' && editing.value?.id === id) {
+    return
+  }
+  void requestNavigation({
+    label: project?.name ?? '新建项目',
+    run() {
+      const latest = id ? data.value.projects.find(item => item.id === id) : undefined
+      if (id && !latest) {
+        return false
+      }
+      applyEdit(latest)
+      return true
+    },
+  })
+}
+function navigateView(target: View) {
+  if (target === view.value) {
+    return
+  }
+  if (target === 'config') {
+    edit(activeProject.value)
+    return
+  }
+  void requestNavigation({
+    label: navigation.find(item => item.id === target)!.name,
+    run() {
+      view.value = target
+      return true
+    },
+  })
 }
 async function save() {
-  await perform(async () => {
-    const result = editing.value
-      ? await api<Project>(
-          `projects/${editing.value.id}`,
-          { project: draft, revision: editing.value.revision },
-          'PUT',
-        )
-      : await api<Project>('projects', draft)
-    selectedId.value = result.id
-    editing.value = result
-    await refresh()
-    notice.value = '项目配置已保存'
-  })
+  if (busy.value) {
+    return
+  }
+  busy.value = true
+  try {
+    await editor.save()
+  }
+  finally {
+    busy.value = false
+  }
 }
 function addSource() {
   const type = sourceType.value
@@ -249,12 +421,26 @@ function addSource() {
   else if (type === 'iconfont') {
     draft.sources.push({ type, url: '', stripPrefix: 'icon-' })
   }
+  else if (type === 'iconify') {
+    draft.sources.push({ type, file: '' })
+  }
   else {
     draft.sources.push({ type, dir: 'raw' })
   }
 }
 function csv(event: Event) {
   return (event.target as HTMLInputElement).value.split(',').map(value => value.trim()).filter(Boolean)
+}
+function selectIconifyNames(source: Extract<Source, { type: 'iconify' }>, event: Event) {
+  if ((event.target as HTMLSelectElement).value === 'all') {
+    delete source.include
+  }
+  else {
+    source.include ??= []
+  }
+}
+function iconifyNames(event: Event) {
+  return (event.target as HTMLTextAreaElement).value.split(/\r?\n/).filter(name => name.length > 0)
 }
 async function attachUpload(event: Event, source: Source) {
   const file = (event.target as HTMLInputElement).files?.[0]
@@ -268,13 +454,19 @@ async function attachUpload(event: Event, source: Source) {
   })
 }
 async function start(operation: string, projectId = selectedId.value) {
-  await perform(async () => {
-    await api(`projects/${projectId}/jobs`, { operation })
-    selectedId.value = projectId
-    await refresh()
-    view.value = 'history'
-    notice.value = '任务已创建，将由 GitHub Actions 执行'
-  })
+  await submitTask(() => api<Job>(`projects/${projectId}/jobs`, { operation }), '任务已创建，将由 GitHub Actions 执行')
+}
+async function submitTask(action: () => Promise<Job>, message: string) {
+  if (busy.value) {
+    return
+  }
+  busy.value = true
+  try {
+    await submission.submit(action, message)
+  }
+  finally {
+    busy.value = false
+  }
 }
 async function install() {
   if (!activeProject.value) {
@@ -289,14 +481,39 @@ async function install() {
     notice.value = `安装 PR 已创建：${result.url}`
   })
 }
-async function openSnapshot(id: string) {
-  await perform(async () => {
-    preview.value = await api(`snapshots/${id}`)
-    snapshotId.value = id
-    selectedId.value = preview.value!.snapshot.projectId
-    view.value = 'preview'
-    confirmation.value = undefined
+async function openSnapshot(id: string, compareTo = '') {
+  if (!id) {
+    return
+  }
+  await requestNavigation({
+    label: '预览与差异',
+    run() {
+      const snapshot = data.value.snapshots.find(item => item.id === id)
+      if (snapshot) {
+        selectedId.value = snapshot.projectId
+      }
+      view.value = 'preview'
+      publication.close()
+      void review.open(id, compareTo)
+      return true
+    },
   })
+}
+function selectSnapshot(event: Event, comparison = false) {
+  const element = event.target as HTMLSelectElement
+  const value = element.value
+  // Keep the controls bound to the committed content while the next pair loads.
+  element.value = comparison ? comparisonTarget.value : snapshotId.value
+  void openSnapshot(comparison ? snapshotId.value : value, comparison ? value : '')
+}
+function comparisonLabel(comparison: SnapshotComparison) {
+  if (comparison.release) {
+    return `发布版本 v${comparison.release.version}`
+  }
+  if (!comparison.snapshot) {
+    return comparison.mode === 'release' ? '首次发布 · 空图标集' : '无历史快照 · 空图标集'
+  }
+  return `${comparison.mode === 'previous' ? '上次同步' : '指定快照'} · ${date(comparison.snapshot.createdAt)}`
 }
 function iconImage(json: IconJSON | undefined, name: string) {
   const icon = json?.icons[name]
@@ -307,26 +524,10 @@ function iconImage(json: IconJSON | undefined, name: string) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 async function previewRelease() {
-  await perform(async () => {
-    confirmation.value = await api(
-      `projects/${selectedId.value}/release/preview`,
-      { snapshotId: snapshotId.value, bump: bump.value },
-    )
-  })
-}
-async function publish() {
-  if (!confirmation.value) {
+  if (busy.value || reviewState.value.pending || !preview.value || preview.value.snapshot.issues > 0) {
     return
   }
-  await perform(async () => {
-    await api(`projects/${selectedId.value}/release/confirm`, {
-      confirmationId: confirmation.value!.id,
-    })
-    confirmation.value = undefined
-    await refresh()
-    view.value = 'history'
-    notice.value = '发布任务已创建'
-  })
+  await publication.open({ projectId: selectedId.value, snapshotId: snapshotId.value, bump: bump.value })
 }
 async function connectFigma(connectionId?: string) {
   await perform(async () => {
@@ -365,10 +566,7 @@ async function revoke(id: string) {
   })
 }
 async function retry(job: Job) {
-  await perform(async () => {
-    await api(`jobs/${job.id}/retry`, {})
-    await refresh()
-  })
+  await submitTask(() => api<Job>(`jobs/${job.id}/retry`, {}), '任务已重试')
 }
 async function restoreFile(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
@@ -382,8 +580,18 @@ async function restoreFile(event: Event) {
   })
 }
 async function logout() {
-  await api('logout', {})
-  location.assign('/login')
+  await requestNavigation({
+    label: '退出登录',
+    async run() {
+      await api('logout', {})
+      if (disposed) {
+        return false
+      }
+      allowDocumentLeave.value = true
+      location.assign('/login')
+      return true
+    },
+  })
 }
 let poll: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
@@ -398,7 +606,16 @@ onMounted(async () => {
     }
   }, 10_000)
 })
-onUnmounted(() => clearInterval(poll))
+onUnmounted(() => {
+  disposed = true
+  draftNavigation.dispose()
+  window.removeEventListener('beforeunload', protectDocumentLeave)
+  editor.dispose()
+  submission.dispose()
+  clearInterval(poll)
+  review.invalidate(true)
+  publication.dispose()
+})
 </script>
 
 <template>
@@ -413,7 +630,7 @@ onUnmounted(() => clearInterval(poll))
           v-for="item in navigation"
           :key="item.id"
           :class="{ active: view === item.id }"
-          @click="item.id === 'config' ? edit(activeProject) : (view = item.id)"
+          @click="navigateView(item.id)"
         >
           <span aria-hidden="true">{{ item.symbol }}</span>{{ item.name }}
         </button>
@@ -430,6 +647,38 @@ onUnmounted(() => clearInterval(poll))
       </div>
     </aside>
     <main>
+      <dialog
+        ref="navigationDialog"
+        class="release-dialog navigation-dialog"
+        aria-labelledby="navigation-title"
+        aria-describedby="navigation-description"
+        @keydown.tab="keepNavigationFocus"
+        @cancel.prevent="draftNavigation.cancel()"
+        @close="!navigationDialog?.open && draftNavigation.cancel()"
+      >
+        <h2 id="navigation-title">
+          离开项目编辑
+        </h2>
+        <p id="navigation-description">
+          <template v-if="protectedDraft">
+            「{{ draft.name || '未命名项目' }}」有未保存修改。继续前往「{{ navigationState.pending?.label }}」将放弃这些修改。
+          </template>
+          <template v-else>
+            当前项目配置已保存。是否继续前往「{{ navigationState.pending?.label }}」？
+          </template>
+        </p>
+        <p v-if="editorState.pending" class="help">
+          已提交的保存仍会继续；离开只会放弃本地未保存修改。
+        </p>
+        <div class="inline-controls">
+          <button autofocus @click="draftNavigation.cancel()">
+            继续编辑
+          </button>
+          <button class="primary" @click="draftNavigation.confirm()">
+            {{ protectedDraft ? '放弃修改并继续' : '继续前往' }}
+          </button>
+        </div>
+      </dialog>
       <header class="page-header">
         <div>
           <p class="eyebrow">
@@ -461,11 +710,41 @@ onUnmounted(() => clearInterval(poll))
           </button>
         </div>
       </header>
+      <div v-if="linkedJobError" role="alert" class="message error">
+        {{ linkedJobError }}
+      </div>
+      <p v-if="linkedJobHidden" class="linked-job-navigation">
+        链接任务未显示在当前视图中。
+        <button :disabled="busy" @click="perform(() => locateLinkedJob())">
+          定位链接任务
+        </button>
+      </p>
       <div v-if="error" role="alert" class="message error">
         {{ error }}
       </div>
+      <div v-if="navigationState.error" role="alert" class="message error" aria-label="导航失败">
+        {{ navigationState.error }}
+      </div>
       <div v-if="notice" role="status" class="message notice">
         {{ notice }}
+      </div>
+      <div v-if="submissionState.error" role="alert" class="message error" aria-label="任务提交失败">
+        {{ submissionState.error }}
+      </div>
+      <div v-if="submissionState.notice" role="status" class="message notice">
+        {{ submissionState.notice }}
+      </div>
+      <div v-for="job in submissionState.late" :key="job.id" role="status" class="message notice" aria-label="提交任务已完成">
+        任务已提交：{{ job.id }}。当前位置已保留。
+        <button @click="submission.locate(job)">
+          定位任务
+        </button>
+      </div>
+      <div v-if="latePublication" role="status" class="message notice" aria-label="发布任务已创建">
+        发布任务已创建：{{ latePublication.id }}。当前审核位置已保留。
+        <button @click="locatePublication">
+          定位发布任务
+        </button>
       </div>
       <p v-if="!ready && !error" class="loading">
         正在载入工作空间…
@@ -481,7 +760,7 @@ onUnmounted(() => clearInterval(poll))
             <span>＋</span><span>◯</span><span>↗</span><span>⌘</span>
           </div>
           <h3>创建你的第一个图标项目</h3>
-          <p>连接 GitHub 仓库，选择 Figma 或 SVG 来源。</p>
+          <p>连接 GitHub 仓库，选择 Figma、SVG 或 Iconify JSON 来源。</p>
           <button class="primary" @click="edit()">
             新建项目
           </button>
@@ -525,10 +804,33 @@ onUnmounted(() => clearInterval(poll))
       </section>
 
       <section v-if="view === 'config'" class="editor-layout">
-        <form class="editor" @submit.prevent="save">
+        <form class="editor" aria-label="项目编辑" @submit.prevent="save">
           <div class="section-heading">
             <h2>{{ editing ? "编辑项目" : "新建项目" }}</h2>
-            <span v-if="editing" class="mono">配置 v{{ editing.revision }}</span>
+            <span v-if="editing" class="mono" aria-label="编辑基线">配置 v{{ editing.revision }}</span>
+          </div>
+          <p v-if="editorState.pending || editorState.saved" role="status" aria-label="保存状态" class="message notice">
+            {{ editorState.pending ? '正在保存提交的配置…' : '项目配置已保存' }}
+          </p>
+          <p v-if="editorDirty" role="status" aria-label="未保存修改" class="message notice">
+            当前草稿有未保存修改{{ editorState.saved ? '；提交后的修改仍保留在此处。' : '。' }}
+          </p>
+          <div v-if="editorState.error" role="alert" aria-label="保存失败" class="message error">
+            {{ editorState.error }}
+          </div>
+          <div v-if="editorState.serverChanged || editorState.conflict" role="status" aria-label="服务器配置已更新" class="message notice">
+            {{ editorState.serverChanged ? '服务器已有更新的配置。' : '配置已变化、项目身份受限或有任务运行，请核对后恢复。' }}
+            载入最新配置将替换当前草稿；不会自动再次保存。
+            <button type="button" :disabled="busy || editorState.refreshing" @click="editor.reload()">
+              载入最新配置
+            </button>
+          </div>
+          <div v-if="editorState.refreshError" role="alert" aria-label="工作空间刷新失败" class="message error">
+            {{ editorState.saved ? '项目已保存，工作空间状态暂未刷新。' : '工作空间状态暂未刷新，当前草稿已保留。' }}
+            {{ editorState.refreshError }}
+            <button type="button" :disabled="busy || editorState.refreshing" @click="editor.refresh()">
+              重新刷新工作空间
+            </button>
           </div>
           <div class="form-grid">
             <label>项目名称<input
@@ -570,6 +872,9 @@ onUnmounted(() => clearInterval(poll))
                 </option>
                 <option value="directory">
                   SVG 目录
+                </option>
+                <option value="iconify">
+                  Iconify JSON
                 </option>
                 <option value="jsdesign">
                   即时设计 SVG
@@ -645,6 +950,40 @@ onUnmounted(() => clearInterval(poll))
                 required
                 placeholder="https://at.alicdn.com/t/…js"
               ></label><label>移除名称前缀<input v-model="source.stripPrefix"></label>
+            </div>
+            <div v-else-if="source.type === 'iconify'" class="form-grid">
+              <label class="full-width">仓库内 JSON 文件路径<input
+                v-model="source.file"
+                required
+                maxlength="240"
+                placeholder="vendor/icons.json"
+              ></label>
+              <p class="help full-width">
+                从所选 GitHub 仓库读取 Iconify JSON，路径相对于仓库根目录。
+              </p>
+              <label>导入范围<select
+                :value="source.include === undefined ? 'all' : 'selected'"
+                @change="selectIconifyNames(source, $event)"
+              >
+                <option value="all">全部图标</option>
+                <option value="selected">指定图标</option>
+              </select></label>
+              <label>名称前缀（原样添加）<input
+                v-model="source.namePrefix"
+                placeholder="vendor-"
+              ></label>
+              <p class="help full-width">
+                前缀填 <code>vendor-</code> 时，<code>home</code> 会导入为 <code>vendor-home</code>；不会自动添加分隔符。
+              </p>
+              <label v-if="source.include !== undefined" class="full-width">图标名称（每行一个）<textarea
+                :value="source.include.join('\n')"
+                rows="4"
+                placeholder="home&#10;arrow-left"
+                @change="source.include = iconifyNames($event)"
+              /></label>
+              <p v-if="source.include !== undefined" class="help full-width">
+                空行会忽略；名单留空时不导入任何图标。
+              </p>
             </div>
             <div v-else class="form-grid">
               <label>仓库内目录 / ZIP 子目录<input
@@ -748,7 +1087,7 @@ onUnmounted(() => clearInterval(poll))
             </div>
           </details>
           <div class="form-footer">
-            <button class="primary" type="submit" :disabled="busy">
+            <button class="primary" type="submit" :disabled="busy || editorState.refreshing || editorState.serverChanged || editorState.conflict">
               {{ busy ? "保存中…" : "保存项目" }}
             </button>
           </div>
@@ -795,7 +1134,7 @@ onUnmounted(() => clearInterval(poll))
           <select
             :value="snapshotId"
             aria-label="选择快照"
-            @change="openSnapshot(($event.target as HTMLSelectElement).value)"
+            @change="selectSnapshot($event)"
           >
             <option value="" disabled>
               选择一个同步快照
@@ -805,7 +1144,23 @@ onUnmounted(() => clearInterval(poll))
               :key="snapshot.id"
               :value="snapshot.id"
             >
-              {{ date(snapshot.createdAt) }} · {{ snapshot.iconCount }} 个图标
+              {{ date(snapshot.createdAt) }} · 第 {{ snapshot.attempt ?? 1 }} 次尝试 · {{ snapshot.iconCount }} 个图标
+            </option>
+          </select>
+          <select
+            v-if="preview"
+            :value="comparisonTarget"
+            aria-label="比较基准"
+            @change="selectSnapshot($event, true)"
+          >
+            <option value="">
+              上次同步
+            </option>
+            <option value="release">
+              最近发布
+            </option>
+            <option v-for="snapshot in snapshots" :key="snapshot.id" :value="snapshot.id">
+              快照 {{ date(snapshot.createdAt) }} · 第 {{ snapshot.attempt ?? 1 }} 次尝试 · {{ snapshot.iconCount }} 个图标
             </option>
           </select><input
             v-model="search"
@@ -813,9 +1168,15 @@ onUnmounted(() => clearInterval(poll))
             placeholder="搜索图标名称…"
           >
         </div>
+        <p v-if="reviewState.pending" role="status" aria-label="快照加载状态" class="help">
+          正在加载快照与比较结果…{{ preview ? '当前仍显示上次审核内容，加载完成后可发布。' : '' }}
+        </p>
+        <p v-if="reviewState.error" role="alert" aria-label="快照加载失败" class="message error">
+          {{ reviewState.error }}。{{ preview ? '已保留上次审核内容，请重新选择后重试。' : '请重新选择快照后重试。' }}
+        </p>
         <div v-if="!preview" class="empty-state">
           <h3>同步之后，在这里审核变化</h3>
-          <p>比较上一次成功快照，检查新增、修改和删除的图标。</p>
+          <p>选择上次同步、最近发布或指定快照，检查新增、修改和删除的图标。</p>
           <button
             v-if="activeProject"
             class="primary"
@@ -826,6 +1187,9 @@ onUnmounted(() => clearInterval(poll))
           </button>
         </div>
         <template v-else>
+          <p v-if="preview.comparison" class="help" aria-label="当前比较基准">
+            比较基准：{{ comparisonLabel(preview.comparison) }}
+          </p>
           <div class="diff-header">
             <div class="diff-tabs">
               <button
@@ -848,20 +1212,10 @@ onUnmounted(() => clearInterval(poll))
             </div>
             <span class="mono">{{ preview.snapshot.digest.slice(0, 12) }}</span>
           </div>
-          <div
-            v-if="
-              preview.content.issues.length || preview.content.failed.length
-            "
-            class="validation-issues"
-          >
-            <h3>请先修复校验问题</h3>
-            <p v-for="(issue, index) in preview.content.issues" :key="index">
-              <code>{{ issue.name }}</code> · {{ issue.message }}
-            </p>
-            <p v-for="name in preview.content.failed" :key="name">
-              处理失败：{{ name }}
-            </p>
-          </div>
+          <p class="help" aria-label="快照尝试">
+            第 {{ preview.snapshot.attempt ?? 1 }} 次尝试 · {{ date(preview.snapshot.createdAt) }}
+          </p>
+          <SnapshotDiagnostics :issues="preview.content.issues" :failed="preview.content.failed" />
           <div class="icon-grid">
             <article v-for="name in iconNames" :key="name" class="icon-tile">
               <div class="icon-comparison">
@@ -929,7 +1283,7 @@ onUnmounted(() => clearInterval(poll))
               </option>
             </select><button
               class="primary"
-              :disabled="busy || preview.snapshot.issues > 0"
+              :disabled="busy || !!reviewState.pending || preview.snapshot.issues > 0"
               @click="previewRelease"
             >
               查看发布确认
@@ -938,8 +1292,12 @@ onUnmounted(() => clearInterval(poll))
           <dialog
             ref="releaseDialog"
             class="release-dialog"
-            @cancel.prevent="confirmation = undefined"
+            aria-label="发布确认"
+            @cancel.prevent="publication.close()"
           >
+            <p v-if="releaseState.pending" role="status" aria-label="发布请求状态">
+              {{ releaseState.pending === 'preview' ? '正在获取发布确认…' : '正在提交发布请求…' }}
+            </p>
             <template v-if="confirmation">
               <p class="eyebrow">
                 确认公开发布
@@ -949,18 +1307,43 @@ onUnmounted(() => clearInterval(poll))
                 v{{ confirmation.release.version }}
               </div>
               <p>{{ confirmation.iconCount }} 个图标 · npm / latest</p>
+              <template v-if="confirmation.comparison && confirmation.diff">
+                <p aria-label="发布比较基准">
+                  相对{{ comparisonLabel(confirmation.comparison) }}的累计变化
+                </p>
+                <p aria-label="发布累计差异">
+                  新增 {{ confirmation.diff.added.length }} · 修改 {{ confirmation.diff.changed.length }} · 删除 {{ confirmation.diff.removed.length }}
+                </p>
+                <details v-if="confirmation.diff.removed.length">
+                  <summary>查看将删除的图标</summary>
+                  <p>{{ confirmation.diff.removed.join('、') }}</p>
+                </details>
+              </template>
               <p class="help mono">
                 SHA-256 {{ confirmation.release.digest }}
               </p>
               <p>发布后会生成 Git 提交、版本标签和 GitHub Release。</p>
-              <div class="inline-controls">
-                <button :disabled="busy" @click="confirmation = undefined">
-                  返回审核
-                </button><button class="primary" :disabled="busy" @click="publish">
-                  确认发布 {{ confirmation.release.version }}
-                </button>
-              </div>
             </template>
+            <div v-if="releaseState.error" role="alert" aria-label="发布失败" class="message error">
+              <p>{{ releaseState.error }}</p>
+              <p v-if="releaseState.needsPreview">
+                请重新获取发布确认并检查版本和差异。如项目配置已变更，请返回审核并选择新的同步快照。
+              </p>
+              <p v-else>
+                请求结果尚未确认。可使用同一次确认重试，已创建的任务不会重复创建。
+              </p>
+            </div>
+            <div class="inline-controls">
+              <button @click="publication.close()">
+                返回审核
+              </button>
+              <button v-if="releaseState.needsPreview" :disabled="!!releaseState.pending" @click="publication.preview()">
+                重新获取发布确认
+              </button>
+              <button v-if="confirmation" class="primary" :disabled="!!releaseState.pending || releaseState.needsPreview" @click="publication.publish()">
+                {{ releaseState.failedPublish && !releaseState.needsPreview ? '重试发布请求' : `确认发布 ${confirmation.release.version}` }}
+              </button>
+            </div>
           </dialog>
         </template>
       </section>
@@ -972,8 +1355,28 @@ onUnmounted(() => clearInterval(poll))
             刷新状态
           </button>
         </div>
-        <p v-if="!jobs.length" class="empty-state">
+        <div class="task-filters" role="search" aria-label="任务筛选">
+          <label>任务状态<select v-model="taskFilters.status">
+            <option value="all">全部状态</option>
+            <option v-for="status in ['queued', 'running', 'succeeded', 'failed', 'reconciling']" :key="status" :value="status">{{ labels[status] }}</option>
+          </select></label>
+          <label>任务操作<select v-model="taskFilters.operation">
+            <option value="all">全部操作</option>
+            <option v-for="operation in ['sync', 'check', 'preview', 'dry-run', 'publish']" :key="operation" :value="operation">{{ labels[operation] }}</option>
+          </select></label>
+          <label class="task-search">搜索任务<input v-model="taskFilters.query" type="search" placeholder="任务 ID、SHA、Actions、阶段或错误"></label>
+          <button :disabled="!hasTaskFilters" @click="clearTaskFilters">
+            清除任务筛选
+          </button>
+        </div>
+        <p class="help task-filter-count" aria-label="任务筛选结果" aria-live="polite">
+          匹配 {{ jobs.length }} / 当前项目 {{ projectJobs.length }}
+        </p>
+        <p v-if="!projectJobs.length" class="empty-state">
           还没有任务。从项目配置中发起一次同步。
+        </p>
+        <p v-else-if="!jobs.length" class="empty-state">
+          没有匹配的任务。调整条件或清除任务筛选。
         </p>
         <div v-else class="table-scroll">
           <table>
@@ -987,7 +1390,7 @@ onUnmounted(() => clearInterval(poll))
               </tr>
             </thead>
             <tbody>
-              <tr v-for="job in jobs" :key="job.id">
+              <tr v-for="job in jobs" :id="`job-${job.id}`" :key="job.id" tabindex="-1" :class="{ 'linked-job': job.id === linkedJobId }">
                 <td>
                   <strong>{{ labels[job.operation] }}</strong><small>{{ date(job.createdAt) }}</small>
                 </td>
@@ -1001,15 +1404,7 @@ onUnmounted(() => clearInterval(poll))
                   }}<small v-if="job.error" class="error-text">{{
                     job.error
                   }}</small>
-                  <details v-if="job.events?.length">
-                    <summary>阶段记录</summary>
-                    <ol>
-                      <li v-for="(event, index) in job.events" :key="index">
-                        {{ date(event.at) }} · {{ labels[event.stage] ?? event.stage }} · {{ labels[event.status] ?? event.status }}
-                        <small v-if="event.error" class="error-text">{{ event.error }}</small>
-                      </li>
-                    </ol>
-                  </details>
+                  <JobAttempts :job="job" :snapshots="data.snapshots" :busy="busy" :labels="labels" :date="date" @snapshot="openSnapshot" />
                 </td>
                 <td>
                   <a

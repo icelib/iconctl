@@ -1,9 +1,9 @@
 import type { IconSet } from '@iconify/tools'
 import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import process from 'node:process'
-import { exportJSONPackage, writeJSONFile } from '@iconify/tools'
+import { exportJSONPackage, IconSet as IconSetClass, writeJSONFile } from '@iconify/tools'
 import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'pathe'
 import { checkpoint } from './abort'
 import { IconctlError } from './errors'
@@ -12,6 +12,44 @@ import { OutputTransaction } from './output-transaction'
 export interface ExportResult {
   files: string[]
   json: IconifyJSON
+}
+
+const svgManifest = '.iconctl-manifest.json'
+const safeSvgName = /^[^/\\\0]+\.svg$/
+
+async function readOptional(file: string): Promise<string | undefined> {
+  try {
+    return await readFile(file, 'utf8')
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw error
+  }
+}
+
+async function managedSvgFiles(directory: string, previous: IconifyJSON | undefined, signal?: AbortSignal): Promise<string[]> {
+  const manifest = await readOptional(join(directory, svgManifest))
+  if (manifest !== undefined) {
+    const parsed: unknown = JSON.parse(manifest)
+    if (!parsed || typeof parsed !== 'object' || !('version' in parsed) || parsed.version !== 1 || !('files' in parsed) || !Array.isArray(parsed.files) || !parsed.files.every(file => typeof file === 'string' && safeSvgName.test(file))) {
+      throw new IconctlError(`Invalid SVG output manifest: ${join(directory, svgManifest)}`)
+    }
+    return parsed.files as string[]
+  }
+  const managed: string[] = []
+  if (previous) {
+    const oldSet = new IconSetClass(previous)
+    for (const name of oldSet.list()) {
+      await checkpoint(signal)
+      const file = `${name}.svg`
+      if (safeSvgName.test(file) && await readOptional(join(directory, file)) === oldSet.toString(name, { width: 'auto', height: 'auto' })) {
+        managed.push(file)
+      }
+    }
+  }
+  return managed
 }
 
 async function writeTextFile(file: string, contents: string) {
@@ -46,16 +84,46 @@ export async function generateOutputs(
 
   if (!options.dryRun) {
     await checkpoint(options.signal)
+    const generatedFiles = new Set<string>()
+    if (config.output.svg) {
+      for (const name of [...iconSet.list().map(name => `${name}.svg`), svgManifest]) {
+        generatedFiles.add(resolvePath(resolve(config.output.svg), name))
+      }
+    }
+    if (config.output.jsonPackage) {
+      for (const name of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
+        generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
+      }
+    }
+    for (const file of [config.output.json, config.output.types, config.output.preview, config.output.changelog]) {
+      if (!file) {
+        continue
+      }
+      const target = resolvePath(resolve(file))
+      // The package's Iconify JSON can intentionally share the primary JSON
+      // output. All other generated files have distinct contents and owners.
+      const sharedJson = file === config.output.json && config.output.jsonPackage
+        && target === resolvePath(resolve(config.output.jsonPackage.dir), 'icons.json')
+      if (generatedFiles.has(target) && !sharedJson) {
+        throw new IconctlError(`Conflicting output targets: generated file and ${target}`)
+      }
+    }
+    const previous = await readPreviousIconJson(resolve(config.output.json))
+    const managed = config.output.svg
+      ? await managedSvgFiles(resolve(config.output.svg), previous, options.signal)
+      : []
     if (config.output.jsonPackage) {
       const pkg = config.output.jsonPackage
       const dir = resolve(pkg.dir)
       let existing: Record<string, unknown> = {}
       if (pkg.clean === false) {
-        try {
-          existing = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
+        const contents = await readOptional(join(dir, 'package.json'))
+        if (contents) {
+          existing = JSON.parse(contents) as Record<string, unknown>
         }
-        catch {
-          existing = {}
+        for (const file of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
+          await checkpoint(options.signal)
+          await rm(join(dir, file), { force: true })
         }
       }
       await exportJSONPackage(iconSet, {
@@ -90,6 +158,16 @@ export async function generateOutputs(
     if (config.output.svg) {
       const svgDir = resolve(config.output.svg)
       await mkdir(svgDir, { recursive: true })
+      const next = iconSet.list().map(name => `${name}.svg`)
+      if (!next.every(file => safeSvgName.test(file))) {
+        throw new IconctlError('SVG name escapes the output directory: names must be filenames without path separators')
+      }
+      for (const file of managed) {
+        await checkpoint(options.signal)
+        if (!next.includes(file)) {
+          await rm(join(svgDir, file), { force: true })
+        }
+      }
       await iconSet.forEach(async (name) => {
         await checkpoint(options.signal)
         const svg = iconSet.toString(name, { width: 'auto', height: 'auto' })
@@ -99,9 +177,13 @@ export async function generateOutputs(
           if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
             throw new IconctlError(`SVG name escapes the output directory: ${name}`)
           }
+          await rm(target, { force: true })
           await writeTextFile(target, svg)
         }
       })
+      await checkpoint(options.signal)
+      await rm(join(svgDir, svgManifest), { force: true })
+      await writeFile(join(svgDir, svgManifest), `${JSON.stringify({ version: 1, files: next.sort() }, null, 2)}\n`)
       files.push(svgDir)
     }
 

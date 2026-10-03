@@ -1,4 +1,4 @@
-import type { ConsoleState, Project } from '@iconctl/console-contracts'
+import type { ConsoleState, Job, Project } from '@iconctl/console-contracts'
 import { expect, test } from '@playwright/test'
 
 const project: Project = {
@@ -85,7 +85,7 @@ test('creates a project with a CSRF protected mutation', async ({ page }) => {
   await page.getByLabel('图标前缀', { exact: true }).fill('brand')
   await page.getByLabel('公开 npm 包名').fill(project.packageName)
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(saved).toBe(true)
   expect(errors).toEqual([])
 })
@@ -94,6 +94,22 @@ test('reviews image differences and requires a distinct publication confirmation
   page,
 }) => {
   let published = false
+  const publication: Job = {
+    id: '55555555-5555-4555-8555-555555555555',
+    projectId: project.id,
+    project,
+    operation: 'publish',
+    status: 'queued',
+    sourceCommit: 'a'.repeat(40),
+    workflowCommit: 'b'.repeat(40),
+    executorCommit: 'c'.repeat(40),
+    workflowDigest: 'd'.repeat(64),
+    createdAt: snapshot.createdAt + 1000,
+    updatedAt: snapshot.createdAt + 1000,
+    dispatchAttempts: 1,
+    attempt: 1,
+    stage: 'dispatching',
+  }
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/**', async (route) => {
@@ -102,7 +118,7 @@ test('reviews image differences and requires a distinct publication confirmation
       return route.fulfill({ json: { csrf: 'test-csrf' } })
     }
     if (path === '/api/state') {
-      return route.fulfill({ json: state })
+      return route.fulfill({ json: { ...state, jobs: published ? [publication] : [] } })
     }
     if (path === `/api/snapshots/${snapshot.id}`) {
       return route.fulfill({
@@ -140,7 +156,7 @@ test('reviews image differences and requires a distinct publication confirmation
         confirmationId: 'confirmation',
       })
       published = true
-      return route.fulfill({ json: { id: 'publish-job' } })
+      return route.fulfill({ status: 202, json: publication })
     }
     return route.fulfill({
       status: 404,
@@ -189,4 +205,32 @@ test('supports narrow screens and editing an existing reactive project', async (
     path: 'test-results/console-mobile.png',
     fullPage: true,
   })
+})
+
+test('opens a task link in its owning project and reports missing tasks', async ({ page }) => {
+  const other = { ...project, id: '44444444-4444-4444-8444-444444444444', name: 'other-project' }
+  const linked = {
+    id: snapshot.jobId,
+    projectId: other.id,
+    project: other,
+    operation: 'sync',
+    status: 'running',
+    sourceCommit: 'a'.repeat(40),
+    workflowCommit: 'a'.repeat(40),
+    executorCommit: 'a'.repeat(40),
+    workflowDigest: 'digest',
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.createdAt,
+    dispatchAttempts: 1,
+    attempt: 1,
+    stage: 'fetching',
+  }
+  await page.route('**/api/session', route => route.fulfill({ json: { csrf: 'test' } }))
+  await page.route('**/api/state', route => route.fulfill({ json: { ...state, projects: [project, other], jobs: [linked] } }))
+  await page.goto(`/app/?job=${linked.id}`)
+  await expect(page.locator(`#job-${linked.id}`)).toBeVisible()
+  await expect(page.locator(`#job-${linked.id}`)).toBeFocused()
+  await expect(page.locator('select').first()).toHaveValue(other.id)
+  await page.goto('/app/?job=missing')
+  await expect(page.getByRole('alert')).toHaveText('任务链接无效，或该任务已不可用。')
 })

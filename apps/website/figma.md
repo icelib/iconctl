@@ -14,6 +14,10 @@ Keep icons in a dedicated library file, not inside product screens.
 - Chinese labels belong in the description, not the layer name
 - Drafts start with `_` or `.` and are skipped
 
+Names must be unique within each configured Figma source after normalization: `Arrow Left` and `arrow_left` both become `arrow-left`. A custom `iconNameForNode` hook must also return unique final names. Conflicts report every affected node and stop the default sync before replacing outputs. Rename the layers or adjust the hook to resolve them.
+
+With `--continue`, every icon in a conflicting group is excluded; unrelated valid icons can still be published with an incomplete result. If no valid icons remain, sync fails and preserves existing outputs even with `--continue`. Conflicting nodes are not sent for SVG export. This check applies after page and node filtering; the existing order of precedence between separate configured sources is unchanged.
+
 ## Color
 
 Monochrome icons only. The pipeline rewrites fills to `currentColor`.

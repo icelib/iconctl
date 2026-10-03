@@ -8,12 +8,17 @@ import type {
   ProjectInput,
   Release,
   ReleaseIntent,
+  ReleasePreview,
   Snapshot,
+  SnapshotCompareTo,
+  SnapshotComparison,
   SnapshotContent,
+  SnapshotPreview,
 } from '@iconctl/console-contracts'
 import type { RunnerIdentity } from './github'
 import {
   commit,
+  iconDiff,
   nextVersion,
   OWNER_ID,
   snapshotInput,
@@ -76,6 +81,10 @@ interface Confirmation {
   release: ReleaseIntent
   expiresAt: number
 }
+interface SnapshotReservation {
+  snapshotId: string
+  digest: string
+}
 
 export class AccountState extends DurableObject<Env> {
   private releasePreparations = new Map<
@@ -113,6 +122,9 @@ export class AccountState extends DurableObject<Env> {
         || previous.stage !== job.stage
         || previous.status !== job.status
         || previous.error !== job.error
+        || previous.attempt !== job.attempt
+        || previous.runId !== job.runId
+        || previous.runAttempt !== job.runAttempt
       ) {
         value = {
           ...job,
@@ -122,6 +134,9 @@ export class AccountState extends DurableObject<Env> {
               at: Date.now(),
               stage: job.stage,
               status: job.status,
+              attempt: job.attempt,
+              ...(job.runId ? { runId: job.runId } : {}),
+              ...(job.runAttempt ? { runAttempt: job.runAttempt } : {}),
               ...(job.error ? { error: job.error } : {}),
             },
           ].slice(-500),
@@ -424,47 +439,36 @@ export class AccountState extends DurableObject<Env> {
     id?: string,
     expectedRevision?: number,
   ) {
-    const existing = id ? this.required<Project>(`project:${id}`) : undefined
-    if (
-      existing
-      && (this.locked(existing.id) || existing.revision !== expectedRevision)
-    ) {
-      fail(409, 'Project changed or a task is active')
-    }
-    if (
-      existing?.releaseId
-      && (input.name !== existing.name
-        || input.packageName !== existing.packageName
-        || input.repository !== existing.repository)
-    ) {
-      fail(
-        409,
-        'A published project cannot change its package, branch or repository identity',
-      )
-    }
-    for (const source of input.sources) {
-      if ('connection' in source) {
-        const connection = this.required<Connection>(
-          `connection:${source.connection}`,
-        )
-        if (connection.type !== source.type) {
-          fail(400, 'Source connection type does not match')
+    const currentProject = () => {
+      const current = id ? this.required<Project>(`project:${id}`) : undefined
+      if (current && (this.locked(current.id) || current.revision !== expectedRevision)) {
+        fail(409, 'Project changed or a task is active')
+      }
+      if (current?.releaseId
+        && (input.name !== current.name
+          || input.packageName !== current.packageName
+          || input.repository !== current.repository)) {
+        fail(409, 'A published project cannot change its package, branch or repository identity')
+      }
+      for (const source of input.sources) {
+        if ('connection' in source) {
+          const connection = this.required<Connection>(`connection:${source.connection}`)
+          if (connection.type !== source.type) {
+            fail(400, 'Source connection type does not match')
+          }
+        }
+        if ('upload' in source && source.upload) {
+          this.required(`upload:${source.upload}`)
         }
       }
-      if ('upload' in source && source.upload) {
-        this.required(`upload:${source.upload}`)
-      }
+      return current
     }
+    currentProject()
     const info = await repositoryInfo(this.env, input.repository)
-    // Recheck after the GitHub request; another mutation may have completed.
-    if (
-      existing
-      && (this.locked(existing.id)
-        || this.required<Project>(`project:${existing.id}`).revision
-        !== expectedRevision)
-    ) {
-      fail(409, 'Project changed')
-    }
+    // Task completion advances snapshot/release pointers without changing the
+    // configuration revision. Re-read and validate the full current record at
+    // the final synchronous commit boundary, including first-release identity.
+    const existing = currentProject()
     if (
       this.list<Project>('project').some(
         project =>
@@ -560,13 +564,33 @@ export class AccountState extends DurableObject<Env> {
     operation: Operation,
     idempotency: string,
     confirmationId?: string,
+    plugin?: { deviceId: string, hash: string, expectedRevision?: number },
   ) {
+    const checkDevice = () => {
+      if (plugin) {
+        const device = this.required<Device>(`device:${plugin.deviceId}`)
+        if (device.hash !== plugin.hash || device.projectId !== projectId) {
+          fail(403, 'Plugin credential was revoked')
+        }
+      }
+    }
+    const previousJob = (id: string) => {
+      const job = this.required<Job>(`job:${id}`)
+      if (plugin?.expectedRevision !== undefined && job.project.revision !== plugin.expectedRevision) {
+        fail(409, 'Idempotency key was used with a different project revision')
+      }
+      return job
+    }
+    checkDevice()
     const requestKey = `request:${projectId}:${idempotency}`
     const previous = this.get<string>(requestKey)
     if (previous) {
-      return this.required<Job>(`job:${previous}`)
+      return previousJob(previous)
     }
     const project = this.required<Project>(`project:${projectId}`)
+    if (plugin?.expectedRevision !== undefined && plugin.expectedRevision !== project.revision) {
+      fail(409, 'Project rules changed; refresh the preflight')
+    }
     if (this.locked(projectId)) {
       fail(409, 'This project already has an active task')
     }
@@ -611,9 +635,10 @@ export class AccountState extends DurableObject<Env> {
       fail(409, 'Install or update the pinned runner workflow first')
     }
     const workflowDigest = await digest(expected)
+    checkDevice()
     const duplicate = this.get<string>(requestKey)
     if (duplicate) {
-      return this.required<Job>(`job:${duplicate}`)
+      return previousJob(duplicate)
     }
     if (
       this.locked(projectId)
@@ -767,7 +792,19 @@ export class AccountState extends DurableObject<Env> {
     identity: RunnerIdentity,
     input: SnapshotContent,
   ) {
-    const job = this.runnerJob(id, identity)
+    const job = this.getJob(id)
+    const currentAttempt = () => {
+      const current = this.getJob(id)
+      if (
+        current.attempt !== job.attempt
+        || current.runId !== identity.runId
+        || current.runAttempt !== identity.runAttempt
+      ) {
+        fail(409, 'Task attempt changed while uploading')
+      }
+      return current
+    }
+    currentAttempt()
     if (job.operation === 'publish') {
       fail(403, 'Release jobs cannot replace snapshots')
     }
@@ -777,22 +814,39 @@ export class AccountState extends DurableObject<Env> {
     }
     const serialized = JSON.stringify(content)
     const hash = await digest(serialized)
-    const snapshotId = job.id
-    const existing = this.get<Snapshot>(`snapshot:${snapshotId}`)
+    const current = currentAttempt()
+    const reservationKey = `snapshot-reservation:${id}:${job.attempt}`
+    let reservation = this.get<SnapshotReservation>(reservationKey)
+    // Old snapshots and reservations used the job ID, and belong only to its
+    // first attempt. Keep their object URLs intact without claiming later retries.
+    if (!reservation && job.attempt === 1) {
+      const legacy = this.get<Snapshot>(`snapshot:${id}`)
+      const legacyDigest = this.get<string>(`snapshot-reservation:${id}`)
+      if (legacy || legacyDigest) {
+        reservation = { snapshotId: id, digest: legacy?.digest ?? legacyDigest! }
+      }
+    }
+    const existing = reservation
+      ? this.get<Snapshot>(`snapshot:${reservation.snapshotId}`)
+      : undefined
     if (existing) {
       if (existing.digest !== hash) {
         fail(409, 'Snapshot is immutable')
       }
+      if (!['running', 'succeeded', 'failed'].includes(current.status)) {
+        fail(409, 'Task is not running')
+      }
       return existing
     }
-    if (job.status !== 'running') {
+    if (current.status !== 'running') {
       fail(409, 'Task is not running')
     }
-    const reserved = this.get<string>(`snapshot-reservation:${id}`)
-    if (reserved && reserved !== hash) {
+    if (reservation && reservation.digest !== hash) {
       fail(409, 'Snapshot upload already started')
     }
-    this.put(`snapshot-reservation:${id}`, hash)
+    reservation ??= { snapshotId: crypto.randomUUID(), digest: hash }
+    const { snapshotId } = reservation
+    this.put(reservationKey, reservation)
     await this.env.ARTIFACTS.put(
       `snapshots/${snapshotId}/${hash}`,
       serialized,
@@ -801,13 +855,20 @@ export class AccountState extends DurableObject<Env> {
         httpMetadata: { contentType: 'application/json' },
       },
     )
-    const current = this.getJob(id)
-    if (current.runId !== identity.runId || current.status !== 'running') {
+    const latest = currentAttempt()
+    // Concurrent identical callbacks share the reservation and its completed
+    // snapshot, including a validation failure, instead of finalizing it twice.
+    const completed = this.get<Snapshot>(`snapshot:${snapshotId}`)
+    if (completed && ['running', 'succeeded', 'failed'].includes(latest.status)) {
+      return completed
+    }
+    if (latest.status !== 'running') {
       fail(409, 'Task changed while uploading')
     }
     const snapshot: Snapshot = {
       id: snapshotId,
       jobId: id,
+      attempt: job.attempt,
       projectId: job.projectId,
       createdAt: Date.now(),
       digest: hash,
@@ -818,7 +879,7 @@ export class AccountState extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.put(`snapshot:${snapshotId}`, snapshot)
       this.put(`job:${id}`, {
-        ...current,
+        ...latest,
         snapshotId,
         status: snapshot.issues ? 'failed' : 'succeeded',
         stage: 'complete',
@@ -862,11 +923,57 @@ export class AccountState extends DurableObject<Env> {
     return JSON.stringify(await this.snapshotContent(id))
   }
 
+  private releaseComparison(release?: Release): SnapshotComparison {
+    return {
+      mode: 'release',
+      snapshot: release ? this.snapshot(release.snapshotId) : null,
+      release: release
+        ? { id: release.id, version: release.version, snapshotId: release.snapshotId }
+        : null,
+    }
+  }
+
+  private async compareSnapshot(
+    snapshot: Snapshot,
+    comparison: SnapshotComparison,
+  ): Promise<SnapshotPreview> {
+    if (comparison.snapshot && comparison.snapshot.projectId !== snapshot.projectId) {
+      fail(400, 'Comparison snapshot belongs to another project')
+    }
+    const [content, previous] = await Promise.all([
+      this.snapshotContent(snapshot.id),
+      comparison.snapshot ? this.snapshotContent(comparison.snapshot.id) : undefined,
+    ])
+    return { snapshot, content, previous: previous?.json, diff: iconDiff(previous?.json, content.json), comparison }
+  }
+
+  async snapshotPreviewDocument(id: string, compareTo?: SnapshotCompareTo) {
+    const snapshot = this.snapshot(id)
+    let comparison: SnapshotComparison
+    if (compareTo === 'release') {
+      const project = this.required<Project>(`project:${snapshot.projectId}`)
+      const release = project.releaseId
+        ? this.required<Release>(`release:${project.releaseId}`)
+        : undefined
+      comparison = this.releaseComparison(release)
+    }
+    else {
+      const baselineId = compareTo ?? snapshot.baselineId
+      comparison = {
+        mode: compareTo ? 'snapshot' : 'previous',
+        snapshot: baselineId ? this.snapshot(baselineId) : null,
+        release: null,
+      }
+    }
+    // Iconify JSON permits extension fields; serialize them at the RPC boundary.
+    return JSON.stringify(await this.compareSnapshot(snapshot, comparison))
+  }
+
   async confirmRelease(
     projectId: string,
     snapshotId: string,
     bump: 'patch' | 'minor' | 'major',
-  ) {
+  ): Promise<ReleasePreview> {
     const project = this.required<Project>(`project:${projectId}`)
     if (this.locked(projectId)) {
       fail(409, 'Project has an active task')
@@ -898,6 +1005,12 @@ export class AccountState extends DurableObject<Env> {
     if (!previous && head) {
       fail(409, 'Project branch already exists; choose a new project name')
     }
+    // Use the captured release, never resolve "latest" again after external I/O.
+    const { comparison, diff } = await this.compareSnapshot(snapshot, this.releaseComparison(previous))
+    const current = this.required<Project>(`project:${projectId}`)
+    if (current.revision !== project.revision || current.releaseId !== project.releaseId || this.locked(projectId)) {
+      fail(409, 'Project or release baseline changed while preparing confirmation')
+    }
     const id = crypto.randomUUID()
     const confirmation: Confirmation = {
       id,
@@ -918,6 +1031,8 @@ export class AccountState extends DurableObject<Env> {
       ...confirmation,
       packageName: project.packageName,
       iconCount: snapshot.iconCount,
+      comparison,
+      diff,
     }
   }
 
@@ -1027,7 +1142,23 @@ export class AccountState extends DurableObject<Env> {
     this.remove(`pair:${id}`)
   }
 
-  async deviceJob(id: string, token: string, idempotency: string) {
+  async deviceContext(id: string, token: string) {
+    const hash = await digest(token)
+    const device = this.required<Device>(`device:${id}`)
+    if (device.hash !== hash) {
+      fail(403, 'Plugin credential was revoked')
+    }
+    const project = this.required<Project>(`project:${device.projectId}`)
+    return {
+      projectId: project.id,
+      name: project.name,
+      revision: project.revision,
+      validate: project.validate,
+      namingMode: project.advancedConfig ? 'server' as const : 'default' as const,
+    }
+  }
+
+  async deviceJob(id: string, token: string, idempotency: string, expectedRevision?: number) {
     const hash = await digest(token)
     const device = this.required<Device>(`device:${id}`)
     if (device.hash !== hash) {
@@ -1037,6 +1168,8 @@ export class AccountState extends DurableObject<Env> {
       device.projectId,
       'sync',
       `device:${id}:${idempotency}`,
+      undefined,
+      { deviceId: id, hash, ...(expectedRevision === undefined ? {} : { expectedRevision }) },
     )
   }
 
@@ -1359,6 +1492,9 @@ export class AccountState extends DurableObject<Env> {
       stage: 'queued',
       updatedAt: Date.now(),
       attemptStartedAt: Date.now(),
+    }
+    if (updated.operation !== 'publish') {
+      delete updated.snapshotId
     }
     this.put(`job:${id}`, updated)
     await this.schedule()

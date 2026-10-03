@@ -17,15 +17,20 @@ export interface ProcessResult {
   issues: SyncIssue[]
 }
 
-function processIcon(iconSet: IconSet, config: ResolvedIconctlConfig, name: string, result: ProcessResult): void {
+type ProcessOptions = Pick<ResolvedIconctlConfig, 'color'>
+
+function processIcon(iconSet: IconSet, config: ProcessOptions, name: string, result: ProcessResult): void {
+  let stage = 'reading SVG'
   try {
     const svg = iconSet.toSVG(name)
     if (!svg) {
       throw new Error('Icon is not a valid SVG')
     }
+    stage = 'cleaning SVG'
     cleanupSVG(svg)
     removeFigmaClipPathFromSVG(svg)
     if (config.color !== false) {
+      stage = 'normalizing SVG colors'
       const color = config.color
       parseColors(svg, {
         defaultColor: color,
@@ -37,20 +42,21 @@ function processIcon(iconSet: IconSet, config: ResolvedIconctlConfig, name: stri
         },
       })
     }
+    stage = 'optimizing SVG'
     runSVGO(svg)
     if (!iconSet.fromSVG(name, svg)) {
       throw new Error('Could not import the processed SVG')
     }
     result.processed++
   }
-  catch (error) {
+  catch {
     iconSet.remove(name)
     result.failed.push(name)
-    result.issues.push({ name, stage: 'process', message: error instanceof Error ? error.message : 'SVG processing failed' })
+    result.issues.push({ name, stage: 'process', message: `Failed while ${stage}. Check the source SVG.` })
   }
 }
 
-export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig): ProcessResult {
+export function processIconSet(iconSet: IconSet, config: ProcessOptions): ProcessResult {
   const result: ProcessResult = { processed: 0, failed: [], issues: [] }
   iconSet.forEachSync((name, type) => {
     if (type === 'icon') {
@@ -60,7 +66,7 @@ export function processIconSet(iconSet: IconSet, config: ResolvedIconctlConfig):
   return result
 }
 
-export async function processIconSetAsync(iconSet: IconSet, config: ResolvedIconctlConfig, signal?: AbortSignal): Promise<ProcessResult> {
+export async function processIconSetAsync(iconSet: IconSet, config: ProcessOptions, signal?: AbortSignal): Promise<ProcessResult> {
   const result: ProcessResult = { processed: 0, failed: [], issues: [] }
   await iconSet.forEach(async (name, type) => {
     await checkpoint(signal)

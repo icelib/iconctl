@@ -31,7 +31,7 @@ async function stagedFiles() {
 beforeEach(async () => {
   vi.mocked(fs.rename).mockImplementation(actual.rename)
   vi.mocked(fs.writeFile).mockImplementation(actual.writeFile)
-  cwd = await fs.mkdtemp(join(tmpdir(), 'iconctl-output-'))
+  cwd = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'iconctl-output-')))
   await fs.mkdir(join(cwd, 'svg'))
   await fs.mkdir(join(cwd, 'pkg'))
   for (const file of originalFiles) {

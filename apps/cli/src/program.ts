@@ -1,15 +1,20 @@
+import type { CheckCommandOptions } from './check'
+import type { CommandContext } from './failure'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import process from 'node:process'
 import {
-  check,
-  IconctlError,
   loadConfig,
   sync,
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
+import { runCheck } from './check'
+import { runDiff } from './diff'
+import { reportCliError } from './failure'
 import { runFigmaAuth } from './figma-auth'
+import { syncSummary } from './sync-summary'
+import { runWatch } from './watch'
 
 interface GlobalOptions {
   config?: string
@@ -18,42 +23,19 @@ interface GlobalOptions {
   continue?: boolean
 }
 
-function loadOptions(options: GlobalOptions) {
-  return loadConfig({
+async function loadOptions(options: GlobalOptions, context: CommandContext) {
+  context.phase = 'configuration'
+  const config = await loadConfig({
     cwd: process.cwd(),
     ...(options.config ? { configFile: options.config } : {}),
   })
-}
-
-function printError(error: unknown): never {
-  const message = error instanceof Error ? error.message : String(error)
-  if (error instanceof IconctlError) {
-    consola.error(message)
-  }
-  else {
-    consola.error(error)
-  }
-  process.exitCode = 1
-  throw error
+  context.phase = 'execution'
+  return config
 }
 
 function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boolean) {
   if (asJson) {
-    process.stdout.write(`${JSON.stringify({
-      prefix: result.prefix,
-      complete: result.complete,
-      deletionsReliable: result.diff.deletionsReliable,
-      fileKey: result.fileKey,
-      fileVersion: result.fileVersion,
-      notModified: result.notModified,
-      sources: result.sources,
-      added: result.diff.added,
-      removed: result.diff.removed,
-      changed: result.diff.changed,
-      skipped: result.failed,
-      issues: result.issues,
-      outputFiles: result.files,
-    }, null, 2)}\n`)
+    process.stdout.write(`${JSON.stringify(syncSummary(result), null, 2)}\n`)
     return
   }
 
@@ -67,6 +49,9 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
   else {
     consola.warn(`Incomplete sync: ${result.processed} icons for prefix "${result.prefix}". Deletions are unknown; changelog was not updated.`)
+    if (result.failed.length) {
+      consola.warn(`skipped: ${result.failed.join(', ')}`)
+    }
     for (const issue of result.issues) {
       consola.warn(`${issue.name}${issue.nodeId ? ` (${issue.nodeId})` : ''} [${issue.stage}]: ${issue.message}`)
     }
@@ -82,7 +67,7 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   }
 }
 
-function configTemplate(input: { prefix: string, json: string, sourceBlock: string }) {
+function configTemplate(input: { prefix: string, json: string, sourceBlock: string, fixedSize: boolean }) {
   return `import { defineConfig } from 'iconctl'
 
 export default defineConfig({
@@ -98,8 +83,8 @@ export default defineConfig({
     // jsonPackage: { dir: 'packages/icons', name: '@iconify-json/brand' },
   },
   validate: {
-    width: 24,
-    height: 24,
+    ${input.fixedSize ? '' : '// '}width: 24,
+    ${input.fixedSize ? '' : '// '}height: 24,
   },
 })
 `
@@ -107,6 +92,13 @@ export default defineConfig({
 
 export async function runCli(argv: string[] = process.argv) {
   const cli = cac('iconctl')
+  const context: CommandContext = { phase: 'arguments' }
+  // Parser validation runs before this wrapper, so command work has an
+  // explicit boundary without classifying exceptions by their message.
+  const action = <Args extends unknown[]>(handler: (...args: Args) => unknown) => (...args: Args) => {
+    context.phase = 'execution'
+    return handler(...args)
+  }
 
   cli.option('--config <path>', 'Path to iconctl config')
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
@@ -114,143 +106,136 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
 
   cli
+    .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')
+    .option('--html <path>', 'Write a standalone offline HTML comparison')
+    .option('--check', 'Exit with status 1 when icons or the prefix differ')
+    .action(action(runDiff))
+
+  cli
+    .command('watch', 'Watch local SVG sources and reload config on change')
+    .action(runWatch)
+
+  cli
     .command('auth <provider> <action>', 'Manage Figma OAuth: auth figma login|status|logout')
     .option('--redirect-uri <url>', 'Registered HTTP loopback callback URL')
     .option('--no-open', 'Print the authorization URL without opening a browser')
-    .action(async (provider: string, action: string, options) => {
-      try {
-        await runFigmaAuth(provider, action, options)
-      }
-      catch (error) {
-        printError(error)
-      }
-    })
+    .action(action((provider: string, operation: string, options) => runFigmaAuth(provider, operation, options, context)))
 
   cli
     .command('sync', 'Load icon sources and export Iconify JSON')
-    .action(async (options: GlobalOptions) => {
-      try {
-        const config = await loadOptions(options)
-        const result = await sync({
-          cwd: process.cwd(),
-          config,
-          ...(options.dryRun ? { dryRun: true } : {}),
-          ...(options.continue ? { continueOnError: true } : {}),
-        })
-        printSyncResult(result, Boolean(options.json))
-      }
-      catch (error) {
-        printError(error)
-      }
-    })
+    .action(action(async (options: GlobalOptions) => {
+      const config = await loadOptions(options, context)
+      const result = await sync({
+        cwd: process.cwd(),
+        config,
+        ...(options.dryRun ? { dryRun: true } : {}),
+        ...(options.continue ? { continueOnError: true } : {}),
+      })
+      printSyncResult(result, Boolean(options.json))
+    }))
 
   cli
-    .command('check', 'Validate generated SVG or JSON without loading remote sources')
-    .action(async (options: GlobalOptions) => {
-      try {
-        const config = await loadOptions(options)
-        const result = await check({ cwd: process.cwd(), config })
-        if (options.json) {
-          process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
-          return
-        }
-        consola.success(`Checked ${result.count} icons from ${result.source}`)
-      }
-      catch (error) {
-        printError(error)
-      }
-    })
+    .command('check', 'Validate configured output or a standalone Iconify JSON file')
+    .option('--input <file>', 'Check a local Iconify JSON file without a config')
+    .option('--name <pattern>', 'Override the icon-name regular expression source')
+    .option('--width <number>', 'Require this positive canvas width')
+    .option('--height <number>', 'Require this positive canvas height')
+    .action(action((options: CheckCommandOptions) => runCheck(options, context)))
 
   cli
     .command('preview', 'Generate a static HTML gallery from the current config')
-    .action(async (options: GlobalOptions) => {
-      try {
-        const config = await loadOptions(options)
-        if (!config.output.preview) {
-          config.output.preview = 'preview.html'
-        }
-        const result = await sync({
-          cwd: process.cwd(),
-          config,
-          ...(options.dryRun ? { dryRun: true } : {}),
-        })
-        printSyncResult(result, Boolean(options.json))
+    .action(action(async (options: GlobalOptions) => {
+      const config = await loadOptions(options, context)
+      if (!config.output.preview) {
+        config.output.preview = 'preview.html'
       }
-      catch (error) {
-        printError(error)
-      }
-    })
+      const result = await sync({
+        cwd: process.cwd(),
+        config,
+        ...(options.dryRun ? { dryRun: true } : {}),
+        ...(options.continue ? { continueOnError: true } : {}),
+      })
+      printSyncResult(result, Boolean(options.json))
+    }))
 
   cli
     .command('init', 'Write an iconctl.config.ts in the current directory')
-    .action(async () => {
-      try {
-        const sourceType = await consola.prompt('Icon source', {
-          type: 'select',
-          options: [
-            { label: 'Figma file', value: 'figma' },
-            { label: 'Local SVG directory', value: 'directory' },
-            { label: 'MasterGo file', value: 'mastergo' },
-            { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
-            { label: '即时设计 exported SVG folder', value: 'jsdesign' },
-          ],
-        })
-        const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
-        const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
-        let sourceBlock = `{ type: 'directory', dir: './svg' }`
-        let hint = 'Put SVGs in ./svg, then run `iconctl sync`.'
-        if (sourceType === 'figma') {
-          const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
-          sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
-          hint = 'Run `iconctl auth figma login` for OAuth with automatic refresh, or set FIGMA_TOKEN, then run `iconctl sync`.'
-        }
-        else if (sourceType === 'mastergo') {
-          const file = await consola.prompt('MasterGo file URL (include layer_id)', { type: 'text' })
-          sourceBlock = `{ type: 'mastergo', file: ${JSON.stringify(file)} }`
-          hint = 'Set MASTERGO_TOKEN, then run `iconctl sync`. Team edition and a team-project file are required.'
-        }
-        else if (sourceType === 'iconfont') {
-          const url = await consola.prompt('iconfont Symbol JS URL (or leave empty for a folder)', { type: 'text' })
-          if (url) {
-            sourceBlock = `{ type: 'iconfont', url: ${JSON.stringify(url)}, stripPrefix: 'icon-' }`
-            hint = 'No token needed for a public Symbol URL. Run `iconctl sync`.'
-          }
-          else {
-            const dir = await consola.prompt('iconfont download folder', { type: 'text', placeholder: './iconfont', default: './iconfont' })
-            sourceBlock = `{ type: 'iconfont', dir: ${JSON.stringify(dir || './iconfont')}, stripPrefix: 'icon-' }`
-          }
-        }
-        else if (sourceType === 'jsdesign') {
-          const dir = await consola.prompt('Exported SVG folder from 即时设计', { type: 'text', placeholder: './jsdesign-svg', default: './jsdesign-svg' })
-          sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
-          hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
+    .action(action(async () => {
+      const sourceType = await consola.prompt('Icon source', {
+        type: 'select',
+        options: [
+          { label: 'Figma file', value: 'figma' },
+          { label: 'Local SVG directory', value: 'directory' },
+          { label: 'Local Iconify JSON', value: 'iconify' },
+          { label: 'MasterGo file', value: 'mastergo' },
+          { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
+          { label: '即时设计 exported SVG folder', value: 'jsdesign' },
+        ],
+      })
+      const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
+      const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
+      let sourceBlock = `{ type: 'directory', dir: './raw-svg' }`
+      let hint = 'Put SVGs in ./raw-svg, then run `iconctl sync` or `iconctl watch`.'
+      if (sourceType === 'figma') {
+        const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
+        sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
+        hint = 'Run `iconctl auth figma login` for OAuth with automatic refresh, or set FIGMA_TOKEN, then run `iconctl sync`.'
+      }
+      else if (sourceType === 'mastergo') {
+        const file = await consola.prompt('MasterGo file URL (include layer_id)', { type: 'text' })
+        sourceBlock = `{ type: 'mastergo', file: ${JSON.stringify(file)} }`
+        hint = 'Set MASTERGO_TOKEN, then run `iconctl sync`. Team edition and a team-project file are required.'
+      }
+      else if (sourceType === 'iconfont') {
+        const url = await consola.prompt('iconfont Symbol JS URL (or leave empty for a folder)', { type: 'text' })
+        if (url) {
+          sourceBlock = `{ type: 'iconfont', url: ${JSON.stringify(url)}, stripPrefix: 'icon-' }`
+          hint = 'No token needed for a public Symbol URL. Run `iconctl sync`.'
         }
         else {
-          const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './svg', default: './svg' })
-          sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './svg')} }`
+          const dir = await consola.prompt('iconfont download folder', { type: 'text', placeholder: './iconfont', default: './iconfont' })
+          sourceBlock = `{ type: 'iconfont', dir: ${JSON.stringify(dir || './iconfont')}, stripPrefix: 'icon-' }`
         }
-        const contents = configTemplate({
-          prefix: prefix || 'brand',
-          json: json || 'icons.json',
-          sourceBlock,
-        })
-        const target = join(process.cwd(), 'iconctl.config.ts')
-        await writeFile(target, contents, 'utf8')
-        consola.success(`Wrote ${target}`)
-        consola.info(hint)
       }
-      catch (error) {
-        printError(error)
+      else if (sourceType === 'jsdesign') {
+        const dir = await consola.prompt('Exported SVG folder from 即时设计', { type: 'text', placeholder: './jsdesign-svg', default: './jsdesign-svg' })
+        sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
+        hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
       }
-    })
+      else if (sourceType === 'iconify') {
+        const file = await consola.prompt('Iconify JSON file', { type: 'text', placeholder: './vendor/icons.json', default: './vendor/icons.json' })
+        sourceBlock = `{ type: 'iconify', file: ${JSON.stringify(file || './vendor/icons.json')} }`
+        hint = 'Keep the vendor JSON separate from output paths, then run `iconctl sync` or `iconctl watch`.'
+      }
+      else {
+        const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './raw-svg', default: './raw-svg' })
+        sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './raw-svg')} }`
+      }
+      const contents = configTemplate({
+        prefix: prefix || 'brand',
+        json: json || 'icons.json',
+        sourceBlock,
+        fixedSize: sourceType !== 'iconify',
+      })
+      const target = join(process.cwd(), 'iconctl.config.ts')
+      await writeFile(target, contents, 'utf8')
+      consola.success(`Wrote ${target}`)
+      consola.info(hint)
+    }))
 
   cli.help()
   cli.version('0.0.0')
 
-  const parsed = cli.parse(argv, { run: false })
-  if (!cli.matchedCommand && !parsed.options['help'] && !parsed.options['version']) {
-    cli.outputHelp()
-    return
+  try {
+    const parsed = cli.parse(argv, { run: false })
+    if (!cli.matchedCommand && !parsed.options['help'] && !parsed.options['version']) {
+      cli.outputHelp()
+      return
+    }
+    await cli.runMatchedCommand()
   }
-  await cli.runMatchedCommand()
+  catch (error) {
+    reportCliError(error, cli.matchedCommand?.name ?? null, cli.options, context)
+    throw error
+  }
 }

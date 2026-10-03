@@ -1,7 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { iconDiff, nextVersion, projectInput, safePath } from '../src'
+import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo, snapshotIssue, sourceSchema } from '../src'
 
 describe('console contracts', () => {
+  it('keeps bounded structured diagnostics while accepting legacy issues', () => {
+    const legacy = { name: 'arrow', message: 'Invalid size' }
+    expect(snapshotIssue.parse(legacy)).toEqual(legacy)
+    const structured = { ...legacy, stage: 'validation', sourceType: 'figma', sourceIndex: 0, fileKey: 'abc123', nodeId: '12:34' }
+    expect(snapshotIssue.parse(structured)).toEqual(structured)
+    for (const extra of [{ sourceIndex: -1 }, { sourceIndex: 1.5 }, { stage: 'x'.repeat(41) }, { fileKey: 'x'.repeat(201) }]) {
+      expect(() => snapshotIssue.parse({ ...legacy, ...extra })).toThrow()
+    }
+  })
+  it('accepts only an omitted, published or explicit snapshot comparison', () => {
+    const id = crypto.randomUUID()
+    expect(snapshotCompareTo.parse(undefined)).toBeUndefined()
+    expect(snapshotCompareTo.parse('release')).toBe('release')
+    expect(snapshotCompareTo.parse(id)).toBe(id)
+    for (const value of ['', 'previous', '../snapshot', ['release']]) {
+      expect(() => snapshotCompareTo.parse(value)).toThrow()
+    }
+  })
+  it('preserves exact Iconify selections and literal prefixes', () => {
+    expect(sourceSchema.parse({ type: 'iconify', file: 'vendor/icons.json' })).toEqual({ type: 'iconify', file: 'vendor/icons.json' })
+    expect(sourceSchema.parse({ type: 'iconify', file: 'vendor/icons.json', include: [], namePrefix: '' })).toEqual({ type: 'iconify', file: 'vendor/icons.json', include: [], namePrefix: '' })
+    expect(sourceSchema.parse({ type: 'iconify', file: 'vendor/icons.json', include: ['arrow', 'arrow'], namePrefix: ' Vendor ' })).toMatchObject({ include: ['arrow', 'arrow'], namePrefix: ' Vendor ' })
+  })
+  it.each([
+    { file: '../icons.json' },
+    { file: '/icons.json' },
+    { file: '.git/config' },
+    { file: 'https://example.com/icons.json' },
+    { include: [''] },
+    { upload: crypto.randomUUID() },
+    { connection: crypto.randomUUID() },
+    { token: 'secret' },
+    { dir: 'raw' },
+  ])('rejects invalid or out-of-scope Iconify source fields: %j', (fields) => {
+    expect(() => sourceSchema.parse({ type: 'iconify', file: 'icons.json', ...fields })).toThrow()
+  })
   it('uses stable semantic versions and starts at 0.1.0', () => {
     expect(nextVersion(undefined, 'major')).toBe('0.1.0')
     expect(nextVersion('1.2.3', 'patch')).toBe('1.2.4')

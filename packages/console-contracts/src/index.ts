@@ -63,6 +63,14 @@ export const sourceSchema = z.discriminatedUnion('type', [
       stripPrefix: z.string().default('icon-'),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('iconify'),
+      file: safePath,
+      include: z.array(z.string().min(1)).optional(),
+      namePrefix: z.string().optional(),
+    })
+    .strict(),
   z.object({ type: z.literal('directory'), ...localSource }).strict(),
   z.object({ type: z.literal('jsdesign'), ...localSource }).strict(),
 ])
@@ -125,6 +133,16 @@ export interface ReleaseIntent {
   branchHead: string | null
   confirmation: string
 }
+export interface JobEvent {
+  at: number
+  stage: string
+  status: JobStatus
+  error?: string
+  /** Absent on legacy records; do not infer the attempt from the current job. */
+  attempt?: number
+  runId?: string
+  runAttempt?: string
+}
 export interface Job {
   id: string
   projectId: string
@@ -147,7 +165,7 @@ export interface Job {
   snapshotId?: string
   integrity?: string
   releaseCommit?: string
-  events?: { at: number, stage: string, status: JobStatus, error?: string }[]
+  events?: JobEvent[]
   attemptStartedAt?: number
 }
 export interface IconJSON {
@@ -173,13 +191,21 @@ export const iconJsonSchema = z
     height: z.number().optional(),
   })
   .passthrough()
+export const snapshotIssue = z.object({
+  name: z.string().max(200),
+  message: z.string().max(1000),
+  stage: z.string().min(1).max(40).optional(),
+  sourceType: z.string().min(1).max(40).optional(),
+  sourceIndex: z.number().int().nonnegative().optional(),
+  fileKey: z.string().min(1).max(200).optional(),
+  nodeId: z.string().min(1).max(200).optional(),
+})
+export type SnapshotIssue = z.infer<typeof snapshotIssue>
 export const snapshotInput = z
   .object({
     json: iconJsonSchema,
     files: z.record(safePath, z.string()),
-    issues: z.array(
-      z.object({ name: z.string().max(200), message: z.string().max(1000) }),
-    ),
+    issues: z.array(snapshotIssue),
     failed: z.array(z.string().max(200)),
     sources: z.array(
       z.object({
@@ -194,6 +220,8 @@ export type SnapshotContent = z.infer<typeof snapshotInput>
 export interface Snapshot {
   id: string
   jobId: string
+  /** Defaults to 1 for snapshots created before attempts had separate artifacts. */
+  attempt?: number
   projectId: string
   createdAt: number
   digest: string
@@ -212,6 +240,32 @@ export interface Release {
   commit: string
   createdAt: number
   url: string
+}
+/** Omitted selects the snapshot's original successful-sync baseline. */
+export const snapshotCompareTo = z.union([z.literal('release'), identifier]).optional()
+export type SnapshotCompareTo = z.infer<typeof snapshotCompareTo>
+export interface SnapshotComparison {
+  mode: 'previous' | 'release' | 'snapshot'
+  snapshot: Snapshot | null
+  release: Pick<Release, 'id' | 'version' | 'snapshotId'> | null
+}
+export interface SnapshotPreview {
+  snapshot: Snapshot
+  content: SnapshotContent
+  previous?: IconJSON
+  diff: ReturnType<typeof iconDiff>
+  comparison: SnapshotComparison
+}
+export interface ReleasePreview {
+  id: string
+  projectId: string
+  revision: number
+  expiresAt: number
+  release: ReleaseIntent
+  packageName: string
+  iconCount: number
+  comparison: SnapshotComparison
+  diff: ReturnType<typeof iconDiff>
 }
 export interface ConnectionStatus {
   id: string
@@ -279,4 +333,13 @@ export function iconDiff(before: IconJSON | undefined, after: IconJSON) {
       )
       .sort(),
   }
+}
+
+/** Public device context deliberately omits source credentials and repository configuration. */
+export interface PluginContext {
+  projectId: string
+  name: string
+  revision: number
+  validate: ProjectInput['validate']
+  namingMode: 'default' | 'server'
 }

@@ -53,6 +53,15 @@ export interface ResolvedIconctlConfig {
 
 const defaultNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+export function resolveValidation(config: IconctlValidateConfig = {}): ResolvedIconctlConfig['validate'] {
+  return {
+    name: config.name instanceof RegExp ? config.name : new RegExp(config.name ?? defaultNamePattern.source),
+    skipPrefix: config.skipPrefix ?? ['_', '.'],
+    ...(config.width != null ? { width: config.width } : {}),
+    ...(config.height != null ? { height: config.height } : {}),
+  }
+}
+
 export function defineConfig<T extends IconctlConfig>(config: T): T {
   return config
 }
@@ -110,6 +119,23 @@ function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): E
 
 function resolveSource(source: SourceConfig): ResolvedSourceConfig {
   switch (source.type) {
+    case 'iconify': {
+      if (typeof source.file !== 'string' || !source.file.trim() || /^[a-z][\w+.-]*:\/\//i.test(source.file)) {
+        throw new IconctlError('iconctl iconify source needs a local `file` path')
+      }
+      if (source.include !== undefined && (!Array.isArray(source.include) || source.include.some(name => typeof name !== 'string' || !name))) {
+        throw new IconctlError('iconctl iconify `include` must be an array of nonempty icon names')
+      }
+      if (source.namePrefix !== undefined && typeof source.namePrefix !== 'string') {
+        throw new IconctlError('iconctl iconify `namePrefix` must be a string')
+      }
+      return {
+        type: 'iconify',
+        file: source.file.trim(),
+        namePrefix: source.namePrefix ?? '',
+        ...(source.include !== undefined ? { include: [...new Set(source.include)] } : {}),
+      }
+    }
     case 'directory': {
       if (!source.dir?.trim()) {
         throw new IconctlError('iconctl directory source is missing `dir`')
@@ -174,7 +200,6 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
     throw new IconctlError('iconctl config is missing `sources`')
   }
 
-  const name = config.validate?.name
   const output: ResolvedIconctlConfig['output'] = {
     json: config.output?.json ?? 'icons.json',
   }
@@ -194,16 +219,7 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
     output.changelog = config.output.changelog
   }
 
-  const validate: ResolvedIconctlConfig['validate'] = {
-    name: name instanceof RegExp ? name : new RegExp(name ?? defaultNamePattern.source),
-    skipPrefix: config.validate?.skipPrefix ?? ['_', '.'],
-  }
-  if (config.validate?.width != null) {
-    validate.width = config.validate.width
-  }
-  if (config.validate?.height != null) {
-    validate.height = config.validate.height
-  }
+  const validate = resolveValidation(config.validate)
 
   const resolved: ResolvedIconctlConfig = {
     prefix: config.prefix.trim(),
