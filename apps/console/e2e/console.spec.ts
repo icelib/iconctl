@@ -85,7 +85,7 @@ test('creates a project with a CSRF protected mutation', async ({ page }) => {
   await page.getByLabel('图标前缀', { exact: true }).fill('brand')
   await page.getByLabel('公开 npm 包名').fill(project.packageName)
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('项目配置已保存')
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   expect(saved).toBe(true)
   expect(errors).toEqual([])
 })

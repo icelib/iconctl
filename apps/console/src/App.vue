@@ -15,6 +15,8 @@ import JobAttempts from './features/history/JobAttempts.vue'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
 import { upsertSubmittedJob } from './features/history/submitted-job'
 import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
+import { createTaskSubmission } from './features/history/task-submission'
+import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
 import { createReleaseReview } from './features/review/release-review'
 import { createSnapshotReview } from './features/review/snapshot-review'
 
@@ -52,7 +54,6 @@ const linkedJobLocated = ref(false)
 let locatingLinkedJob = false
 let stateRequest = 0
 const selectedId = ref('')
-const editing = ref<Project>()
 function blank(): ProjectInput {
   return {
     name: '',
@@ -65,7 +66,27 @@ function blank(): ProjectInput {
     output: { svg: true, types: true, preview: true, changelog: true },
   }
 }
-const draft = reactive<ProjectInput>(blank())
+const editor = createProjectEditor({
+  blank,
+  save: (input, project) => project
+    ? api<Project>(`projects/${project.id}`, { project: input, revision: project.revision }, 'PUT')
+    : api<Project>('projects', input),
+  committed(project, current) {
+    stateRequest++
+    data.value.projects = upsertSavedProject(data.value.projects, project)
+    if (current) {
+      selectedId.value = project.id
+    }
+  },
+  async refresh() {
+    await refresh(false)
+    return data.value.projects
+  },
+})
+const draft = editor.draft
+const editorState = editor.state
+const editorDirty = editor.dirty
+const editing = computed(() => editorState.value.project)
 const activeProject = computed(() =>
   data.value.projects.find(project => project.id === selectedId.value),
 )
@@ -87,6 +108,9 @@ function clearTaskFilters() {
   Object.assign(taskFilters, emptyTaskFilters())
 }
 watch(selectedId, clearTaskFilters, { flush: 'sync' })
+const submission = createTaskSubmission({ record: recordSubmittedJob, reveal: revealJob })
+const submissionState = submission.state
+watch([selectedId, view, taskFilters], submission.invalidate, { flush: 'sync', deep: true })
 const releases = computed(() =>
   data.value.releases.filter(
     release => !selectedId.value || release.projectId === selectedId.value,
@@ -163,6 +187,7 @@ watch(selectedId, () => {
 watch(view, () => {
   review.invalidate()
   publication.close()
+  editor.invalidate()
 }, { flush: 'sync' })
 function selectProject(event: Event) {
   selectedId.value = (event.target as HTMLSelectElement).value
@@ -210,23 +235,23 @@ async function locateLinkedJob() {
     locatingLinkedJob = false
   }
 }
-async function refresh() {
+async function refresh(selectDefault = true) {
   const request = ++stateRequest
   const state = await api<ConsoleState>('state')
   if (request !== stateRequest) {
     return
   }
+  for (const project of data.value.projects) {
+    state.projects = upsertSavedProject(state.projects, project)
+  }
   data.value = state
+  editor.observe(state.projects)
   if (linkedJobId && !linkedJobLocated.value) {
     await locateLinkedJob()
   }
-  if (!selectedId.value && data.value.projects[0]) {
+  if (selectDefault && !selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
   }
-}
-async function showSubmittedJob(job: Job) {
-  recordSubmittedJob(job)
-  await revealJob(job)
 }
 async function locatePublication() {
   const job = latePublication.value
@@ -252,51 +277,23 @@ async function perform(action: () => Promise<void>) {
   }
 }
 function edit(project?: Project) {
-  editing.value = project
-  Object.keys(draft).forEach(
-    key => delete (draft as unknown as Record<string, unknown>)[key],
-  )
-  Object.assign(
-    draft,
-    project
-      ? {
-          name: project.name,
-          repository: project.repository,
-          prefix: project.prefix,
-          packageName: project.packageName,
-          sources: JSON.parse(JSON.stringify(project.sources)),
-          color: project.color,
-          validate: JSON.parse(JSON.stringify(project.validate)),
-          output: JSON.parse(JSON.stringify(project.output)),
-          ...(project.advancedConfig
-            ? {
-                advancedConfig: JSON.parse(
-                  JSON.stringify(project.advancedConfig),
-                ),
-              }
-            : {}),
-        }
-      : blank(),
-  )
   if (project) {
     selectedId.value = project.id
   }
   view.value = 'config'
+  editor.open(project)
 }
 async function save() {
-  await perform(async () => {
-    const result = editing.value
-      ? await api<Project>(
-          `projects/${editing.value.id}`,
-          { project: draft, revision: editing.value.revision },
-          'PUT',
-        )
-      : await api<Project>('projects', draft)
-    selectedId.value = result.id
-    editing.value = result
-    await refresh()
-    notice.value = '项目配置已保存'
-  })
+  if (busy.value) {
+    return
+  }
+  busy.value = true
+  try {
+    await editor.save()
+  }
+  finally {
+    busy.value = false
+  }
 }
 function addSource() {
   const type = sourceType.value
@@ -340,11 +337,19 @@ async function attachUpload(event: Event, source: Source) {
   })
 }
 async function start(operation: string, projectId = selectedId.value) {
-  await perform(async () => {
-    const job = await api<Job>(`projects/${projectId}/jobs`, { operation })
-    await showSubmittedJob(job)
-    notice.value = '任务已创建，将由 GitHub Actions 执行'
-  })
+  await submitTask(() => api<Job>(`projects/${projectId}/jobs`, { operation }), '任务已创建，将由 GitHub Actions 执行')
+}
+async function submitTask(action: () => Promise<Job>, message: string) {
+  if (busy.value) {
+    return
+  }
+  busy.value = true
+  try {
+    await submission.submit(action, message)
+  }
+  finally {
+    busy.value = false
+  }
 }
 async function install() {
   if (!activeProject.value) {
@@ -438,10 +443,7 @@ async function revoke(id: string) {
   })
 }
 async function retry(job: Job) {
-  await perform(async () => {
-    const result = await api<Job>(`jobs/${job.id}/retry`, {})
-    await showSubmittedJob(result)
-  })
+  await submitTask(() => api<Job>(`jobs/${job.id}/retry`, {}), '任务已重试')
 }
 async function restoreFile(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
@@ -472,6 +474,8 @@ onMounted(async () => {
   }, 10_000)
 })
 onUnmounted(() => {
+  editor.dispose()
+  submission.dispose()
   clearInterval(poll)
   review.invalidate(true)
   publication.dispose()
@@ -553,6 +557,18 @@ onUnmounted(() => {
       <div v-if="notice" role="status" class="message notice">
         {{ notice }}
       </div>
+      <div v-if="submissionState.error" role="alert" class="message error" aria-label="任务提交失败">
+        {{ submissionState.error }}
+      </div>
+      <div v-if="submissionState.notice" role="status" class="message notice">
+        {{ submissionState.notice }}
+      </div>
+      <div v-for="job in submissionState.late" :key="job.id" role="status" class="message notice" aria-label="提交任务已完成">
+        任务已提交：{{ job.id }}。当前位置已保留。
+        <button @click="submission.locate(job)">
+          定位任务
+        </button>
+      </div>
       <div v-if="latePublication" role="status" class="message notice" aria-label="发布任务已创建">
         发布任务已创建：{{ latePublication.id }}。当前审核位置已保留。
         <button @click="locatePublication">
@@ -617,10 +633,33 @@ onUnmounted(() => {
       </section>
 
       <section v-if="view === 'config'" class="editor-layout">
-        <form class="editor" @submit.prevent="save">
+        <form class="editor" aria-label="项目编辑" @submit.prevent="save">
           <div class="section-heading">
             <h2>{{ editing ? "编辑项目" : "新建项目" }}</h2>
-            <span v-if="editing" class="mono">配置 v{{ editing.revision }}</span>
+            <span v-if="editing" class="mono" aria-label="编辑基线">配置 v{{ editing.revision }}</span>
+          </div>
+          <p v-if="editorState.pending || editorState.saved" role="status" aria-label="保存状态" class="message notice">
+            {{ editorState.pending ? '正在保存提交的配置…' : '项目配置已保存' }}
+          </p>
+          <p v-if="editorDirty" role="status" aria-label="未保存修改" class="message notice">
+            当前草稿有未保存修改{{ editorState.saved ? '；提交后的修改仍保留在此处。' : '。' }}
+          </p>
+          <div v-if="editorState.error" role="alert" aria-label="保存失败" class="message error">
+            {{ editorState.error }}
+          </div>
+          <div v-if="editorState.serverChanged || editorState.conflict" role="status" aria-label="服务器配置已更新" class="message notice">
+            {{ editorState.serverChanged ? '服务器已有更新的配置。' : '配置已变化、项目身份受限或有任务运行，请核对后恢复。' }}
+            载入最新配置将替换当前草稿；不会自动再次保存。
+            <button type="button" :disabled="busy || editorState.refreshing" @click="editor.reload()">
+              载入最新配置
+            </button>
+          </div>
+          <div v-if="editorState.refreshError" role="alert" aria-label="工作空间刷新失败" class="message error">
+            {{ editorState.saved ? '项目已保存，工作空间状态暂未刷新。' : '工作空间状态暂未刷新，当前草稿已保留。' }}
+            {{ editorState.refreshError }}
+            <button type="button" :disabled="busy || editorState.refreshing" @click="editor.refresh()">
+              重新刷新工作空间
+            </button>
           </div>
           <div class="form-grid">
             <label>项目名称<input
@@ -840,7 +879,7 @@ onUnmounted(() => {
             </div>
           </details>
           <div class="form-footer">
-            <button class="primary" type="submit" :disabled="busy">
+            <button class="primary" type="submit" :disabled="busy || editorState.refreshing || editorState.serverChanged || editorState.conflict">
               {{ busy ? "保存中…" : "保存项目" }}
             </button>
           </div>
