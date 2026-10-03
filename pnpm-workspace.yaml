@@ -28,3 +28,5 @@ overrides:
   adm-zip: 0.6.1
   uuid: 14.0.2
   esbuild: 0.28.2
+patchedDependencies:
+  readdirp@5.1.1: patches/readdirp@5.1.1.patch
