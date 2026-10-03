@@ -190,7 +190,7 @@ test('keeps unrestricted dimensions and empty skip prefixes explicit', async ({ 
   await expect(plugin.field('Width')).toHaveText('Unrestricted')
   await expect(plugin.field('Height')).toHaveText('Unrestricted')
   await expect(plugin.field('Skip prefixes')).toHaveText('None')
-  await expect(plugin.field('Naming')).toHaveText('Default local naming')
+  await expect(plugin.field('Naming')).toHaveText('Default local naming. Duplicate names are checked on this page.')
   await expect(plugin.ui.getByRole('button', { name: 'Refresh project rules', exact: true })).toBeDisabled()
   await page.locator('iframe').screenshot({ path: info.outputPath('rules-unrestricted-empty-prefixes.png') })
 })
