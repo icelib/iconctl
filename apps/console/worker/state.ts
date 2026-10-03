@@ -439,47 +439,36 @@ export class AccountState extends DurableObject<Env> {
     id?: string,
     expectedRevision?: number,
   ) {
-    const existing = id ? this.required<Project>(`project:${id}`) : undefined
-    if (
-      existing
-      && (this.locked(existing.id) || existing.revision !== expectedRevision)
-    ) {
-      fail(409, 'Project changed or a task is active')
-    }
-    if (
-      existing?.releaseId
-      && (input.name !== existing.name
-        || input.packageName !== existing.packageName
-        || input.repository !== existing.repository)
-    ) {
-      fail(
-        409,
-        'A published project cannot change its package, branch or repository identity',
-      )
-    }
-    for (const source of input.sources) {
-      if ('connection' in source) {
-        const connection = this.required<Connection>(
-          `connection:${source.connection}`,
-        )
-        if (connection.type !== source.type) {
-          fail(400, 'Source connection type does not match')
+    const currentProject = () => {
+      const current = id ? this.required<Project>(`project:${id}`) : undefined
+      if (current && (this.locked(current.id) || current.revision !== expectedRevision)) {
+        fail(409, 'Project changed or a task is active')
+      }
+      if (current?.releaseId
+        && (input.name !== current.name
+          || input.packageName !== current.packageName
+          || input.repository !== current.repository)) {
+        fail(409, 'A published project cannot change its package, branch or repository identity')
+      }
+      for (const source of input.sources) {
+        if ('connection' in source) {
+          const connection = this.required<Connection>(`connection:${source.connection}`)
+          if (connection.type !== source.type) {
+            fail(400, 'Source connection type does not match')
+          }
+        }
+        if ('upload' in source && source.upload) {
+          this.required(`upload:${source.upload}`)
         }
       }
-      if ('upload' in source && source.upload) {
-        this.required(`upload:${source.upload}`)
-      }
+      return current
     }
+    currentProject()
     const info = await repositoryInfo(this.env, input.repository)
-    // Recheck after the GitHub request; another mutation may have completed.
-    if (
-      existing
-      && (this.locked(existing.id)
-        || this.required<Project>(`project:${existing.id}`).revision
-        !== expectedRevision)
-    ) {
-      fail(409, 'Project changed')
-    }
+    // Task completion advances snapshot/release pointers without changing the
+    // configuration revision. Re-read and validate the full current record at
+    // the final synchronous commit boundary, including first-release identity.
+    const existing = currentProject()
     if (
       this.list<Project>('project').some(
         project =>

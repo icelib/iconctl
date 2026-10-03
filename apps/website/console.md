@@ -49,11 +49,19 @@ This source uses only repository files and needs no source credentials or upload
 
 After upgrading the console, create and merge an updated runner installation PR in each target repository before selecting this source. The workflow pins its executor commit; older pinned runners do not recognize `type: "iconify"`.
 
+### Save project configuration
+
+Saving captures the current project's configuration and revision. You can keep typing or navigate while it is pending. Later edits remain marked as unsaved; a delayed result from another editing session updates the project list without changing your current project or draft. A newly created project adopts its server ID only in the original editor, so the next save updates it instead of creating it again.
+
+A successful save remains successful if refreshing the workspace fails. **Refresh workspace again** (「重新刷新工作空间」) retries the read only. When the server configuration changes or a save returns a conflict, your draft stays intact and saving requires explicit recovery: **Load latest configuration** (「载入最新配置」) replaces the draft after reading the latest state. An active task or a published project's identity restrictions may still prevent saving; recovery never retries the write automatically.
+
+Saving rechecks the current configuration revision, task lock, source references and published identity after checking the repository. A sync or publication that finishes during that check keeps its latest snapshot and release pointers. Published projects cannot change their project name, package name or repository.
+
 ### Find a task
 
 In **Tasks and versions** (「任务与版本」), combine status, operation and keyword filters for the current project. Keywords match task IDs, source SHAs, Actions run IDs, the current stage or error, and their displayed labels. Matching ignores case and surrounding whitespace; punctuation is literal, so `[name]` does not act as a regular expression. The count shows matching tasks / all tasks in the current project, with separate messages for an empty project and no matching results.
 
-Polling, **Refresh status**, and opening a snapshot then returning keep your filters. Changing projects clears them. Successfully creating, retrying or confirming publication clears the filters and focuses the returned task, including its new queued or running state. A rejected action preserves your filters. Filtering does not change project execution locks or the published-version list.
+Polling, **Refresh status**, and opening a snapshot then returning keep your filters. Changing projects clears them. Successfully creating or retrying a task clears the filters and focuses the returned task while you remain in its original context. If you change projects, views or filters before the response arrives, the task is recorded and **Locate task** (「定位任务」) lets you reveal it explicitly. Publication uses the same navigation behavior while its confirmation is active. A rejected action preserves your filters. Filtering does not change project execution locks or the published-version list.
 
 A `?job=...` link selects the task's project and focuses its record once. Later updates leave keyboard focus and your selection alone. If you hide the linked task by switching projects, views or filters, **Locate linked task** (「定位链接任务」) restores its project and clears the filters. An unavailable link displays an error.
 
