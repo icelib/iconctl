@@ -95,7 +95,7 @@ function renderRules(overview?: AppliedRules) {
     ['Height', overview.rules.height === undefined ? 'Unrestricted' : String(overview.rules.height)],
     ['Name pattern', overview.rules.name],
     ['Skip prefixes', overview.rules.skipPrefix.length ? overview.rules.skipPrefix.map(prefix => JSON.stringify(prefix)).join(', ') : 'None'],
-    ['Naming', overview.rules.namingMode === 'server' ? 'Provisional — custom naming is validated by the server.' : 'Default local naming'],
+    ['Naming', overview.rules.namingMode === 'server' ? 'Provisional — custom naming is validated by the server.' : 'Default local naming. Duplicate names are checked on this page.'],
   ]
   for (const [label, value] of fields) {
     const term = document.createElement('dt')

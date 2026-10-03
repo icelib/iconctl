@@ -48,6 +48,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "latest",
+    "@iconctl/figma-plugin": "workspace:*",
     "@iconctl/website": "workspace:*",
     "@playwright/test": "latest",
     "@vitejs/plugin-vue": "^6.0.9",

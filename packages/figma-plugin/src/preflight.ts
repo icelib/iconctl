@@ -78,7 +78,26 @@ export function inspectComponent(input: PreflightInput, rules: PreflightRules = 
 }
 
 export function inspectComponents(nodes: PreflightInput[], rules?: PreflightRules): PreflightItem[] {
-  return nodes.map(node => inspectComponent(node, rules))
+  const items = nodes.map(node => inspectComponent(node, rules))
+  // A server hook can assign different final names to equal local previews.
+  if (rules?.namingMode === 'server') {
+    return items
+  }
+  const names = new Map<string, Set<string>>()
+  for (const item of items) {
+    if (!item.skipped && item.iconName) {
+      const ids = names.get(item.iconName) ?? new Set<string>()
+      ids.add(item.id)
+      names.set(item.iconName, ids)
+    }
+  }
+  for (const item of items) {
+    const count = !item.skipped && item.iconName ? names.get(item.iconName)?.size ?? 0 : 0
+    if (count > 1) {
+      item.issues.push(`Duplicate icon name "${item.iconName}" on this page (${count} components). Rename a component and rescan.`)
+    }
+  }
+  return items
 }
 
 export function canSubmit(items: PreflightItem[]): boolean {

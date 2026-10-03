@@ -32,6 +32,8 @@ Figma Library “Publish” is still for other **design** files. This button is 
 1. Name components `arrow-left`, 24×24, drafts as `_…`
 2. Open the plugin on the icon page, choose **GitHub dispatch (legacy)**, then use **Locate** beside a red result to find its component. Fix it and choose **Rescan**.
 
+   Default preflight also rejects duplicate normalized names on the current page. Both components are shown as errors; locate them, rename and rescan before dispatching. This does not prove uniqueness across other pages or server naming hooks.
+
    **Search preflight** matches original/final names and issue text; **Problems only** narrows the list to errors. Hidden errors still block dispatch. Filtering preserves workflow feedback, and rescanning preserves your filters. The problems-only preference is saved locally; search text is session-only. Settings restore without overwriting edits, and local storage failures offer a separate retry action.
 
    **Applied rules** shows the current dimensions, naming and draft rules. Use **Refresh project rules** while idle to update them without submitting a task; a failed read requires an explicit retry before console submission.
