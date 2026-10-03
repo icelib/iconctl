@@ -157,6 +157,10 @@ Source roots must not contain, equal or sit inside generated SVG or JSON-package
 
 When a new external link changes the watched paths, its replacement listener becomes ready and links are checked again before importing. Links created during that startup are watched or rejected in the same run, even when no discovery notification arrives. Removing or repairing a rejected link resumes syncing without restarting watch.
 
+If a source directory becomes a regular file while a listener is starting, watch finishes setup and reports a recoverable source error. Existing outputs are preserved, and recreating the directory resumes syncing through its parent observer. Cancellation also closes listeners that are still starting. This behavior is included in installed core and CLI packages.
+
+Core supports both `import` and synchronous `require()` on Node.js 22.13 or newer. The CommonJS entry loads the same ESM implementation, including the bundled watcher fix; named exports and error classes share their identity across both entry points.
+
 `--json` writes one compact object per stdout line: `ready`, `start`, `result`, `error` or `stopped`. Each run has an increasing `runId`; `start.reason` is `initial`, `source` or `config`. A `result` contains the same summary as `sync --json`, without SVG bodies. Errors contain only `name`, `message` and available `issues`. Human-readable output goes to stderr. Recoverable failures keep the process running; fatal failures exit 1. SIGINT and SIGTERM drain the current run, close watchers and exit 130 and 143 respectively.
 
 ```ts

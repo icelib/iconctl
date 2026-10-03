@@ -44,6 +44,7 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "files": [
+    "THIRD_PARTY_NOTICES",
     "dist"
   ],
   "publishConfig": {
@@ -58,6 +59,7 @@
     "build": "tsdown",
     "test": "vitest run",
     "test:dev": "vitest",
+    "test:package": "pnpm build && pnpm --filter iconctl build && node scripts/test-watch-package.mjs",
     "release": "pnpm publish",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

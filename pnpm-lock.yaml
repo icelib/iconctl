@@ -176,6 +176,9 @@ overrides:
   uuid: 14.0.2
   esbuild: 0.28.2
 
+patchedDependencies:
+  readdirp@5.1.1: e7dcc0312fd702da26185bcef837569448071e34d8dcbe6df7b5b456eb73e45c
+
 importers:
 
   .:
@@ -11441,7 +11444,7 @@ snapshots:
 
   chokidar@5.0.0:
     dependencies:
-      readdirp: 5.1.1
+      readdirp: 5.1.1(patch_hash=e7dcc0312fd702da26185bcef837569448071e34d8dcbe6df7b5b456eb73e45c)
 
   chownr@3.0.0: {}
 
@@ -14373,7 +14376,7 @@ snapshots:
       js-yaml: 5.4.2
       strip-bom: 4.0.0
 
-  readdirp@5.1.1: {}
+  readdirp@5.1.1(patch_hash=e7dcc0312fd702da26185bcef837569448071e34d8dcbe6df7b5b456eb73e45c): {}
 
   realpath-missing@1.1.0: {}
 

@@ -1,0 +1,13 @@
+diff --git a/index.js b/index.js
+index ef0ec5172c7ccaa1968b673600fdf48fa35a1651..a8ca6542266b3c2b1e816b3fd123eb2b7b060e52 100644
+--- a/index.js
++++ b/index.js
+@@ -21,7 +21,7 @@ const defaultOptions = {
+ };
+ Object.freeze(defaultOptions);
+ const RECURSIVE_ERROR_CODE = 'READDIRP_RECURSIVE_ERROR';
+-const NORMAL_FLOW_ERRORS = new Set(['ENOENT', 'EPERM', 'EACCES', 'ELOOP', RECURSIVE_ERROR_CODE]);
++const NORMAL_FLOW_ERRORS = new Set(['ENOENT', 'ENOTDIR', 'EPERM', 'EACCES', 'ELOOP', RECURSIVE_ERROR_CODE]);
+ const ALL_TYPES = [
+     EntryTypes.DIR_TYPE,
+     EntryTypes.EVERYTHING_TYPE,

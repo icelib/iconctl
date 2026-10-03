@@ -157,6 +157,10 @@ pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
 
 外部链接改变监听范围时，会等待新的监听器就绪，再次检查链接后才开始导入。即使没有收到发现通知，启动过程中新增的链接也会在本轮纳入监听或被拒绝；删除或修复无效链接后会恢复同步，无需重启监听。
 
+如果来源目录在监听器启动过程中被替换为普通文件，监听会完成初始化并报告可恢复的来源错误。已有产物保持不变，重新创建该目录后会通过父目录监听恢复同步。取消操作也会关闭仍在启动的监听器。这一修复随安装后的 core 和 CLI 包一起提供。
+
+Core 在 Node.js 22.13 及以上版本支持 `import` 和同步 `require()`。CommonJS 入口加载同一份 ESM 实现，其中包含监听修复；两种入口共享命名导出和错误类的身份。
+
 `--json` 在 stdout 每行输出一个紧凑 JSON 对象：`ready`、`start`、`result`、`error` 或 `stopped`。每轮有递增的 `runId`；`start.reason` 为 `initial`、`source` 或 `config`。`result` 与 `sync --json` 使用相同摘要，不包含 SVG 内容；错误只序列化 `name`、`message` 和可用的 `issues`。人类可读日志写入 stderr。可恢复错误不会结束进程，致命错误退出码为 1。SIGINT／SIGTERM 等待当前同步结束、关闭监听后分别以 130／143 退出。
 
 ```ts
