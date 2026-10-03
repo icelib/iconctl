@@ -1,5 +1,35 @@
 # @iconctl/core
 
+## 0.3.0
+
+### Minor Changes
+
+- Add local SVG watch with serial sync, recoverable configuration reload, path isolation and structured CLI events.
+
+- Import local Iconify JSON collections with alias transforms, name selection and prefixes; watch JSON source files with output isolation.
+
+- Add offline Iconify JSON comparison and safe standalone HTML reports
+
+- Add standalone Iconify JSON checks with aggregated diagnostics, rendered alias geometry, original SVG names, and stable stateful regex validation.
+
+### Patch Changes
+
+- Reject ambiguous same-source Figma icon names and revalidate completion caches after validation rules change.
+
+- Preserve the winning icon source and Figma node coordinates in processing and validation diagnostics, including renamed and replaced icons.
+
+  Revalidate linked inputs after replacement watchers become ready, and retain rejected links and their path aliases so removal or repair resumes syncing safely.
+
+  Coalesce repeated link-removal notifications across path aliases without losing separate source edits or link recreation.
+
+- Ignore replayed watch notifications without a new input version while preserving configuration saves, atomic replacements, and symbolic-link recovery.
+
+- Report malformed icons consistently across local, MasterGo and iconfont sources; refresh failed Figma imports after a file revision changes; and preserve sync integrity and cancellation while cleaning managed SVGs and reporting output recovery failures.
+
+- Keep watch responsive when a directory becomes a file during startup, ship the fixed traversal stack, and make CommonJS consumers share the ESM implementation.
+
+- Reload each watch configuration in an isolated worker so JavaScript and JSON helper modules refresh without changing native ESM semantics; preserve cancellation drain and structured error reporting.
+
 ## 0.2.0
 
 ### Minor Changes

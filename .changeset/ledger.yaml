@@ -15,6 +15,19 @@
   dir: packages/core
   intents:
     - neat-grapes-behave
+"@iconctl/core@0.3.0":
+  dir: packages/core
+  intents:
+    - fast-trains-tie
+    - itchy-flowers-matter
+    - mean-hairs-greet
+    - polite-icons-kick
+    - quick-tigers-heal
+    - quiet-taxis-type
+    - real-teeth-invent
+    - slow-tigers-tan
+    - strong-pumas-mix
+    - wise-waves-clean
 iconctl@0.0.1:
   dir: apps/cli
   intents:
@@ -30,3 +43,17 @@ iconctl@0.2.0:
   dir: apps/cli
   intents:
     - neat-grapes-behave
+iconctl@0.3.0:
+  dir: apps/cli
+  intents:
+    - fast-trains-tie
+    - itchy-flowers-matter
+    - mean-hairs-greet
+    - polite-icons-kick
+    - quick-tigers-heal
+    - quiet-taxis-type
+    - real-teeth-invent
+    - slow-tigers-tan
+    - strong-pumas-mix
+    - tiny-pigs-repair
+    - wise-waves-clean
