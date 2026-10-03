@@ -847,6 +847,15 @@ label {
   margin-top: 25px;
 }
 
+.navigation-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.navigation-dialog .inline-controls {
+  flex-wrap: wrap;
+}
+
 .task-filters {
   display: flex;
   flex-wrap: wrap;

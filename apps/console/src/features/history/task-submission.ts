@@ -3,7 +3,7 @@ import { shallowRef } from 'vue'
 
 export function createTaskSubmission(options: {
   record: (job: Job) => void
-  reveal: (job: Job) => Promise<unknown>
+  reveal: (job: Job, automatic?: boolean) => Promise<unknown>
 }) {
   let generation = 0
   let disposed = false
@@ -27,12 +27,15 @@ export function createTaskSubmission(options: {
       }
       options.record(job)
       if (request === generation) {
-        const reveal = options.reveal(job)
+        const reveal = options.reveal(job, true)
         // The reveal itself changes navigation synchronously. Only subsequent
         // user navigation should suppress its completion notice.
         const revealedGeneration = generation
-        await reveal
-        if (!disposed && generation === revealedGeneration) {
+        const revealed = await reveal
+        if (!disposed && revealed === false) {
+          state.value = { ...state.value, late: [...state.value.late.filter(item => item.id !== job.id), job] }
+        }
+        else if (!disposed && generation === revealedGeneration) {
           state.value = { ...state.value, notice }
         }
       }

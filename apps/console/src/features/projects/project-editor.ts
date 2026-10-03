@@ -37,6 +37,7 @@ interface EditorOptions {
 
 export function createProjectEditor(options: EditorOptions) {
   let generation = 0
+  const session = shallowRef(0)
   let disposed = false
   let saving = false
   const known = new Map<string, Project>()
@@ -70,12 +71,14 @@ export function createProjectEditor(options: EditorOptions) {
   }
   function open(project?: Project) {
     generation++
+    session.value = generation
     state.value = initial(project)
     replaceDraft(state.value.baseline)
     observe(project ? [project] : [])
   }
   function invalidate() {
     generation++
+    session.value = generation
     state.value = { ...state.value, pending: false, refreshing: false, error: '', refreshError: '', saved: false }
   }
   async function refresh(request = generation) {
@@ -159,6 +162,7 @@ export function createProjectEditor(options: EditorOptions) {
   function dispose() {
     disposed = true
     generation++
+    session.value = generation
   }
-  return { draft, state, dirty, open, observe, invalidate, save, refresh, reload, dispose }
+  return { draft, state, dirty, session, open, observe, invalidate, save, refresh, reload, dispose }
 }

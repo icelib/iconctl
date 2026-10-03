@@ -37,6 +37,25 @@ function setup() {
   return { editor, request, save, committed, refresh }
 }
 
+it('exposes session changes for draft replacement without invalidating a pending save on edits', async () => {
+  const { editor, request } = setup()
+  editor.open(project())
+  const session = editor.session.value
+  editor.draft.prefix = 'submitted'
+  const work = editor.save()
+  editor.draft.output.svg = false
+  expect(editor.session.value).toBe(session)
+  request.resolve({ ...project('A', 2), prefix: 'submitted' })
+  await work
+  expect(editor.session.value).toBe(session)
+  expect(editor.dirty.value).toBe(true)
+  editor.invalidate()
+  expect(editor.session.value).toBeGreaterThan(session)
+  const invalidated = editor.session.value
+  editor.open(project('B'))
+  expect(editor.session.value).toBeGreaterThan(invalidated)
+})
+
 it('keeps B identity and body after a late A save, including re-entry into A', async () => {
   for (const target of ['B', 'A']) {
     const { editor, request, save, committed } = setup()

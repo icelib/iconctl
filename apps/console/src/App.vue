@@ -9,6 +9,7 @@ import type {
   SnapshotPreview,
   Source,
 } from '@iconctl/console-contracts'
+import type { NavigationIntent } from './features/projects/draft-navigation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, initializeSession, restoreBackup, upload } from './api'
 import JobAttempts from './features/history/JobAttempts.vue'
@@ -16,6 +17,7 @@ import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
 import { upsertSubmittedJob } from './features/history/submitted-job'
 import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
 import { createTaskSubmission } from './features/history/task-submission'
+import { createDraftNavigation } from './features/projects/draft-navigation'
 import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
 import { createReleaseReview } from './features/review/release-review'
 import { createSnapshotReview } from './features/review/snapshot-review'
@@ -87,6 +89,53 @@ const draft = editor.draft
 const editorState = editor.state
 const editorDirty = editor.dirty
 const editing = computed(() => editorState.value.project)
+const protectedDraft = computed(() => view.value === 'config' && editorDirty.value)
+const draftNavigation = createDraftNavigation({ dirty: () => protectedDraft.value, session: () => editor.session.value })
+const navigationState = draftNavigation.state
+const navigationDialog = ref<HTMLDialogElement>()
+const allowDocumentLeave = ref(false)
+let disposed = false
+watch(editor.session, draftNavigation.invalidate, { flush: 'sync' })
+watch(() => !!navigationState.value.pending, (pending) => {
+  if (pending) {
+    navigationDialog.value?.showModal()
+  }
+  else { navigationDialog.value?.close() }
+}, { flush: 'post' })
+async function requestNavigation(intent: NavigationIntent, automatic = false) {
+  const trigger = document.activeElement
+  const result = await draftNavigation.request(intent, automatic)
+  if (result === 'cancelled' && !disposed) {
+    await nextTick()
+    if (!disposed && trigger instanceof HTMLElement && trigger.isConnected) {
+      trigger.focus()
+    }
+  }
+  return result
+}
+function keepNavigationFocus(event: KeyboardEvent) {
+  const buttons = navigationDialog.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+  const first = buttons?.[0]
+  const last = buttons?.[buttons.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  }
+  else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+function protectDocumentLeave(event: BeforeUnloadEvent) {
+  event.preventDefault()
+  event.returnValue = ''
+}
+watch(() => protectedDraft.value && !allowDocumentLeave.value, (protect) => {
+  if (protect) {
+    window.addEventListener('beforeunload', protectDocumentLeave)
+  }
+  else { window.removeEventListener('beforeunload', protectDocumentLeave) }
+}, { flush: 'sync' })
 const activeProject = computed(() =>
   data.value.projects.find(project => project.id === selectedId.value),
 )
@@ -116,18 +165,24 @@ const releases = computed(() =>
     release => !selectedId.value || release.projectId === selectedId.value,
   ),
 )
-async function revealJob(job: Job) {
-  selectedId.value = job.projectId
-  clearTaskFilters()
-  view.value = 'history'
-  await nextTick()
-  const row = document.getElementById(`job-${job.id}`)
-  if (!row) {
-    return false
-  }
-  row.scrollIntoView({ block: 'center' })
-  row.focus()
-  return document.activeElement === row
+async function revealJob(job: Job, automatic = false) {
+  const result = await requestNavigation({
+    label: `任务 ${job.id}`,
+    async run() {
+      selectedId.value = job.projectId
+      clearTaskFilters()
+      view.value = 'history'
+      await nextTick()
+      const row = disposed ? null : document.getElementById(`job-${job.id}`)
+      if (!row) {
+        return false
+      }
+      row.scrollIntoView({ block: 'center' })
+      row.focus()
+      return document.activeElement === row
+    },
+  }, automatic)
+  return result === 'completed'
 }
 function recordSubmittedJob(job: Job) {
   // The mutation response is authoritative, including a retry's new attempt.
@@ -157,8 +212,7 @@ const publication = createReleaseReview({
   publish: (context, confirmationId, idempotencyKey) => api<Job>(`projects/${context.projectId}/release/confirm`, { confirmationId }, 'POST', { idempotencyKey }),
   async published(job, current) {
     recordSubmittedJob(job)
-    if (current) {
-      await revealJob(job)
+    if (current && await revealJob(job, true)) {
       notice.value = '发布任务已创建'
     }
     else {
@@ -190,10 +244,26 @@ watch(view, () => {
   editor.invalidate()
 }, { flush: 'sync' })
 function selectProject(event: Event) {
-  selectedId.value = (event.target as HTMLSelectElement).value
-  if (view.value === 'config') {
-    edit(activeProject.value)
+  const element = event.target as HTMLSelectElement
+  const id = element.value
+  element.value = selectedId.value
+  if (id === selectedId.value && (view.value !== 'config' || editing.value?.id === id)) {
+    return
   }
+  void requestNavigation({
+    label: data.value.projects.find(project => project.id === id)?.name ?? '所选项目',
+    run() {
+      const project = data.value.projects.find(project => project.id === id)
+      if (!project) {
+        return false
+      }
+      if (view.value === 'config') {
+        applyEdit(project)
+      }
+      else { selectedId.value = id }
+      return true
+    },
+  })
 }
 const iconNames = computed(() => {
   if (!preview.value) {
@@ -216,7 +286,7 @@ function date(value: number) {
     timeStyle: 'short',
   }).format(value)
 }
-async function locateLinkedJob() {
+async function locateLinkedJob(automatic = false) {
   if (locatingLinkedJob) {
     return
   }
@@ -225,7 +295,7 @@ async function locateLinkedJob() {
     const job = data.value.jobs.find(item => item.id === linkedJobId)
     if (job && data.value.projects.some(project => project.id === job.projectId)) {
       linkedJobError.value = ''
-      if (await revealJob(job)) {
+      if (await revealJob(job, automatic)) {
         linkedJobLocated.value = true
       }
     }
@@ -247,7 +317,7 @@ async function refresh(selectDefault = true) {
   data.value = state
   editor.observe(state.projects)
   if (linkedJobId && !linkedJobLocated.value) {
-    await locateLinkedJob()
+    await locateLinkedJob(true)
   }
   if (selectDefault && !selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
@@ -276,12 +346,45 @@ async function perform(action: () => Promise<void>) {
     busy.value = false
   }
 }
-function edit(project?: Project) {
+function applyEdit(project?: Project) {
   if (project) {
     selectedId.value = project.id
   }
   view.value = 'config'
   editor.open(project)
+}
+function edit(project?: Project) {
+  const id = project?.id
+  if (view.value === 'config' && editing.value?.id === id) {
+    return
+  }
+  void requestNavigation({
+    label: project?.name ?? '新建项目',
+    run() {
+      const latest = id ? data.value.projects.find(item => item.id === id) : undefined
+      if (id && !latest) {
+        return false
+      }
+      applyEdit(latest)
+      return true
+    },
+  })
+}
+function navigateView(target: View) {
+  if (target === view.value) {
+    return
+  }
+  if (target === 'config') {
+    edit(activeProject.value)
+    return
+  }
+  void requestNavigation({
+    label: navigation.find(item => item.id === target)!.name,
+    run() {
+      view.value = target
+      return true
+    },
+  })
 }
 async function save() {
   if (busy.value) {
@@ -368,13 +471,19 @@ async function openSnapshot(id: string, compareTo = '') {
   if (!id) {
     return
   }
-  const snapshot = data.value.snapshots.find(item => item.id === id)
-  if (snapshot) {
-    selectedId.value = snapshot.projectId
-  }
-  view.value = 'preview'
-  publication.close()
-  await review.open(id, compareTo)
+  await requestNavigation({
+    label: '预览与差异',
+    run() {
+      const snapshot = data.value.snapshots.find(item => item.id === id)
+      if (snapshot) {
+        selectedId.value = snapshot.projectId
+      }
+      view.value = 'preview'
+      publication.close()
+      void review.open(id, compareTo)
+      return true
+    },
+  })
 }
 function selectSnapshot(event: Event, comparison = false) {
   const element = event.target as HTMLSelectElement
@@ -457,8 +566,18 @@ async function restoreFile(event: Event) {
   })
 }
 async function logout() {
-  await api('logout', {})
-  location.assign('/login')
+  await requestNavigation({
+    label: '退出登录',
+    async run() {
+      await api('logout', {})
+      if (disposed) {
+        return false
+      }
+      allowDocumentLeave.value = true
+      location.assign('/login')
+      return true
+    },
+  })
 }
 let poll: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
@@ -474,6 +593,9 @@ onMounted(async () => {
   }, 10_000)
 })
 onUnmounted(() => {
+  disposed = true
+  draftNavigation.dispose()
+  window.removeEventListener('beforeunload', protectDocumentLeave)
   editor.dispose()
   submission.dispose()
   clearInterval(poll)
@@ -494,7 +616,7 @@ onUnmounted(() => {
           v-for="item in navigation"
           :key="item.id"
           :class="{ active: view === item.id }"
-          @click="item.id === 'config' ? edit(activeProject) : (view = item.id)"
+          @click="navigateView(item.id)"
         >
           <span aria-hidden="true">{{ item.symbol }}</span>{{ item.name }}
         </button>
@@ -511,6 +633,38 @@ onUnmounted(() => {
       </div>
     </aside>
     <main>
+      <dialog
+        ref="navigationDialog"
+        class="release-dialog navigation-dialog"
+        aria-labelledby="navigation-title"
+        aria-describedby="navigation-description"
+        @keydown.tab="keepNavigationFocus"
+        @cancel.prevent="draftNavigation.cancel()"
+        @close="!navigationDialog?.open && draftNavigation.cancel()"
+      >
+        <h2 id="navigation-title">
+          离开项目编辑
+        </h2>
+        <p id="navigation-description">
+          <template v-if="protectedDraft">
+            「{{ draft.name || '未命名项目' }}」有未保存修改。继续前往「{{ navigationState.pending?.label }}」将放弃这些修改。
+          </template>
+          <template v-else>
+            当前项目配置已保存。是否继续前往「{{ navigationState.pending?.label }}」？
+          </template>
+        </p>
+        <p v-if="editorState.pending" class="help">
+          已提交的保存仍会继续；离开只会放弃本地未保存修改。
+        </p>
+        <div class="inline-controls">
+          <button autofocus @click="draftNavigation.cancel()">
+            继续编辑
+          </button>
+          <button class="primary" @click="draftNavigation.confirm()">
+            {{ protectedDraft ? '放弃修改并继续' : '继续前往' }}
+          </button>
+        </div>
+      </dialog>
       <header class="page-header">
         <div>
           <p class="eyebrow">
@@ -547,12 +701,15 @@ onUnmounted(() => {
       </div>
       <p v-if="linkedJobHidden" class="linked-job-navigation">
         链接任务未显示在当前视图中。
-        <button :disabled="busy" @click="perform(locateLinkedJob)">
+        <button :disabled="busy" @click="perform(() => locateLinkedJob())">
           定位链接任务
         </button>
       </p>
       <div v-if="error" role="alert" class="message error">
         {{ error }}
+      </div>
+      <div v-if="navigationState.error" role="alert" class="message error" aria-label="导航失败">
+        {{ navigationState.error }}
       </div>
       <div v-if="notice" role="status" class="message notice">
         {{ notice }}
