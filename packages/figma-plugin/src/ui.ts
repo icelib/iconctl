@@ -1,10 +1,15 @@
 import type { PreflightItem } from './preflight'
+import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
 
 interface PluginMessage {
   type: string
+  appliedRules?: AppliedRules
+  paired?: boolean
+  stale?: boolean
+  outcome?: 'accepted' | 'success' | 'error' | 'ignored'
   text?: string
   origin?: string
   url?: string
@@ -14,6 +19,7 @@ interface PluginMessage {
   items?: PreflightItem[]
   scanId?: number
   requestId?: number
+  rulesRequestId?: number
   reportAvailable?: boolean
   json?: string
   rescan?: boolean
@@ -42,6 +48,10 @@ const emptyView = document.querySelector<HTMLElement>('#empty-view')!
 const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
 const reportBtn = document.querySelector<HTMLButtonElement>('#export-report')!
 const reportStatus = document.querySelector<HTMLElement>('#report-status')!
+const rulesBtn = document.querySelector<HTMLButtonElement>('#refresh-rules')!
+const rulesStatus = document.querySelector<HTMLElement>('#rules-status')!
+const rulesContent = document.querySelector<HTMLElement>('#rules-content')!
+const rulesValidity = document.querySelector<HTMLElement>('#rules-validity')!
 const editedSettings = new Set<keyof LegacySettings>()
 const settingsInputs = { repo: repoInput, token: tokenInput, eventType: eventInput }
 let editedPreferences = false
@@ -55,8 +65,47 @@ let currentPreflight = false
 let reportAvailable = false
 let reportRequest = 0
 let reportPending: { scanId: number, requestId: number } | undefined
+let rulesPaired = false
+let hasRulesState = false
+let rulesRequest = 0
+let rulesPending: number | undefined
 let uiActive = true
 const reportUrls = new Map<string, number | undefined>()
+function updateRules() {
+  rulesBtn.hidden = modeInput.value !== 'console'
+  rulesBtn.disabled = !uiActive || !rulesPaired || consoleBusy || rulesPending !== undefined
+}
+function clearRulesRequest() {
+  rulesRequest++
+  rulesPending = undefined
+  rulesStatus.textContent = ''
+  rulesStatus.className = ''
+  updateRules()
+}
+function renderRules(overview?: AppliedRules) {
+  rulesContent.replaceChildren()
+  if (!overview) {
+    rulesValidity.textContent = 'Rule details unavailable. Rescan with the updated plugin.'
+    return
+  }
+  const fields = [
+    ['Source', overview.rulesSource === 'project' ? 'Project rules' : overview.rulesSource === 'legacy-defaults' ? 'Legacy GitHub defaults' : 'Unpaired defaults'],
+    ...(overview.project ? [['Project', `${overview.project.name} · revision ${overview.project.revision}`]] : []),
+    ['Width', overview.rules.width === undefined ? 'Unrestricted' : String(overview.rules.width)],
+    ['Height', overview.rules.height === undefined ? 'Unrestricted' : String(overview.rules.height)],
+    ['Name pattern', overview.rules.name],
+    ['Skip prefixes', overview.rules.skipPrefix.length ? overview.rules.skipPrefix.map(prefix => JSON.stringify(prefix)).join(', ') : 'None'],
+    ['Naming', overview.rules.namingMode === 'server' ? 'Provisional — custom naming is validated by the server.' : 'Default local naming'],
+  ]
+  for (const [label, value] of fields) {
+    const term = document.createElement('dt')
+    term.textContent = label!
+    const detail = document.createElement('dd')
+    detail.textContent = value!
+    rulesContent.append(term, detail)
+  }
+  rulesValidity.textContent = 'Applied to this scan. Server validation is still required.'
+}
 function updateReport() {
   reportBtn.disabled = !uiActive || !reportAvailable || scanId === undefined || reportPending !== undefined
 }
@@ -137,6 +186,7 @@ function updateSubmit() {
 }
 window.addEventListener('pagehide', () => {
   uiActive = false
+  clearRulesRequest()
   updateSubmit()
   reportPending = undefined
   for (const url of [...reportUrls.keys()]) {
@@ -230,6 +280,7 @@ for (const scope of ['settings', 'preferences'] as const) {
 }
 function invalidatePreflight(text: string, error = false) {
   currentPreflight = false
+  rulesValidity.textContent = 'Scan out of date. Rescan or refresh project rules before using these results.'
   updateSubmit()
   scanId = undefined
   navigationRequest++
@@ -240,6 +291,17 @@ function invalidatePreflight(text: string, error = false) {
   })
   invalidateReport(text, error)
 }
+rulesBtn.addEventListener('click', () => {
+  if (!uiActive || !rulesPaired || consoleBusy || rulesPending !== undefined || modeInput.value !== 'console') {
+    return
+  }
+  rulesPending = ++rulesRequest
+  invalidatePreflight('Refreshing project rules…')
+  rulesStatus.textContent = 'Refreshing project rules…'
+  rulesStatus.className = ''
+  updateRules()
+  parent.postMessage({ pluginMessage: { type: 'console-refresh-rules', requestId: rulesPending } }, '*')
+})
 listEl.addEventListener('click', (event) => {
   const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-node-id]') : null
   if (!button || !listEl.contains(button) || button.disabled || scanId === undefined) {
@@ -324,8 +386,27 @@ window.onmessage = (event: MessageEvent<{
     }
     if (message.connected !== undefined) {
       consoleConnected = message.connected
+      if (message.connected && !hasRulesState) {
+        rulesPaired = true
+      }
     }
     updateSubmit()
+    updateRules()
+  }
+  if (message.type === 'project-rules-state') {
+    hasRulesState = true
+    if (message.paired !== undefined) {
+      rulesPaired = message.paired
+    }
+    updateRules()
+  }
+  if (message.type === 'project-rules-status' && rulesPending !== undefined && message.requestId === rulesPending) {
+    rulesStatus.textContent = message.text ?? ''
+    rulesStatus.className = message.error ? 'err' : message.outcome === 'success' ? 'ok' : ''
+    if (message.outcome !== 'accepted') {
+      rulesPending = undefined
+    }
+    updateRules()
   }
   if (message.type === 'console-status') {
     consoleStatus.textContent = message.text ?? ''
@@ -346,11 +427,16 @@ window.onmessage = (event: MessageEvent<{
     }
   }
   if (message.type === 'preflight' && message.items) {
+    if ((message.appliedRules && message.appliedRules.mode !== modeInput.value)
+      || (message.rulesRequestId !== undefined && message.rulesRequestId !== rulesPending)) {
+      return
+    }
     scanId = Number.isSafeInteger(message.scanId) ? message.scanId : undefined
     navigationRequest++
     navigationStatus.textContent = ''
     navigationStatus.className = ''
     items = message.items
+    renderRules(message.appliedRules)
     currentPreflight = true
     reportPending = undefined
     reportRequest++
@@ -386,6 +472,7 @@ window.onmessage = (event: MessageEvent<{
   }
 }
 modeInput.addEventListener('change', () => {
+  clearRulesRequest()
   invalidatePreflight('Rescanning page…')
   const consoleMode = modeInput.value === 'console'
   consoleFields.hidden = !consoleMode
@@ -399,12 +486,18 @@ modeInput.addEventListener('change', () => {
 document
   .querySelector('#connect')!
   .addEventListener('click', () => {
+    clearRulesRequest()
+    rulesPaired = false
+    updateRules()
     invalidatePreflight('Updating project connection…')
     parent.postMessage({ pluginMessage: { type: 'console-pair', origin: originInput.value } }, '*')
   })
 document
   .querySelector('#disconnect')!
   .addEventListener('click', () => {
+    clearRulesRequest()
+    rulesPaired = false
+    updateRules()
     invalidatePreflight('Updating project connection…')
     parent.postMessage({ pluginMessage: { type: 'console-disconnect' } }, '*')
   })

@@ -5,7 +5,7 @@ import type { ScanMetadata } from './report'
 import { PluginConsole } from './console'
 import { PreflightNavigation } from './navigation'
 import { inspectComponents } from './preflight'
-import { PreflightReport } from './report'
+import { appliedRules, PreflightReport } from './report'
 import { PluginSettings } from './settings'
 
 function collectComponents(
@@ -70,7 +70,7 @@ const consoleSession = new PluginConsole({
       const page = figma.currentPage
       navigation.capture(page.id, items)
       reports.capture(navigation.scanId, page, items, message['metadata'] as ScanMetadata)
-      figma.ui.postMessage({ type: 'preflight', items, scanId: navigation.scanId, reportAvailable: true })
+      figma.ui.postMessage({ type: 'preflight', items, scanId: navigation.scanId, reportAvailable: true, ...(Number.isSafeInteger(message['rulesRequestId']) ? { rulesRequestId: message['rulesRequestId'] } : {}), appliedRules: appliedRules(message['metadata'] as ScanMetadata) })
       return
     }
     figma.ui.postMessage(message)
