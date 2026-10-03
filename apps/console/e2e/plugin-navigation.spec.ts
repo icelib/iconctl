@@ -59,7 +59,7 @@ test('locates visible preflight rows and treats hostile node metadata as text', 
   await expect(ui.getByRole('button', { name: /^Locate / })).toHaveCount(2)
   await expect(ui.getByRole('button', { name: 'Locate _draft', exact: true })).toHaveCount(0)
   await expect(ui.locator('#list strong').nth(1)).toHaveText(name)
-  await expect(ui.locator('#list span').nth(1)).toHaveText(issue)
+  await expect(ui.locator('#list > li').nth(1).locator('span:not(.node-id)')).toHaveText(issue)
   await expect(ui.locator('#list [data-injected], #list img, #list svg')).toHaveCount(0)
   await expect(ui.locator('body')).not.toHaveAttribute('data-compromised')
   await ui.getByRole('button', { name: `Locate ${name}`, exact: true }).click()

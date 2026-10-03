@@ -34,7 +34,9 @@ Figma Library “Publish” is still for other **design** files. This button is 
 
    Default preflight also rejects duplicate normalized names on the current page. Both components are shown as errors; locate them, rename and rescan before dispatching. This does not prove uniqueness across other pages or server naming hooks.
 
-   **Search preflight** matches original/final names and issue text; **Problems only** narrows the list to errors. Hidden errors still block dispatch. Filtering preserves workflow feedback, and rescanning preserves your filters. The problems-only preference is saved locally; search text is session-only. Settings restore without overwriting edits, and local storage failures offer a separate retry action.
+   **Search preflight** matches node IDs, original/final names and issue text; **Problems only** narrows the list to errors. Hidden errors still block dispatch. Filtering preserves workflow feedback, and rescanning preserves your filters. The problems-only preference is saved locally; search text is session-only. Settings restore without overwriting edits, and local storage failures offer a separate retry action.
+
+   **Previous problem** and **Next problem** traverse the visible components with errors, wrapping at each end. Each component counts once; changing filters or rescanning resets the position. Paste a reported node ID into search to return to a specific component.
 
    **Applied rules** shows the current dimensions, naming and draft rules. Use **Refresh project rules** while idle to update them without submitting a task; a failed read requires an explicit retry before console submission.
 

@@ -65,6 +65,24 @@
       li.err strong {
         color: #c00;
       }
+      li[aria-current='true'] {
+        box-shadow: inset 3px 0 #0d99ff;
+        padding-left: 8px;
+      }
+      li .node-id {
+        color: #666;
+        font-size: 11px;
+        overflow-wrap: anywhere;
+      }
+      .problem-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .problem-controls button.secondary {
+        margin: 0;
+      }
       #status {
         margin: 8px 0;
         color: #555;
@@ -113,6 +131,7 @@
         margin: 4px 0 0;
       }
       #view-count,
+      #problem-position,
       #empty-view {
         color: #555;
         margin: 6px 0;
@@ -180,7 +199,7 @@
       <p id="rules-status" aria-label="Project rules status" aria-live="polite" aria-atomic="true"></p>
     </details>
     <p id="status">Scanning this page…</p>
-    <label>Search preflight<input id="search" type="search" placeholder="Name or issue" /></label>
+    <label>Search preflight<input id="search" type="search" placeholder="Name, node ID or issue" /></label>
     <div class="view-options">
       <label><input id="problems-only" type="checkbox" />Problems only</label>
       <button id="clear-filters" class="secondary" type="button">Clear filters</button>
@@ -191,8 +210,13 @@
     </div>
     <p id="view-count" aria-live="polite"></p>
     <p id="empty-view" hidden></p>
+    <div class="problem-controls" role="group" aria-label="Navigate visible problems">
+      <button id="previous-problem" class="secondary" type="button" disabled>Previous problem</button>
+      <button id="next-problem" class="secondary" type="button" disabled>Next problem</button>
+    </div>
+    <p id="problem-position" aria-live="polite" aria-atomic="true">Rescan to navigate problems.</p>
     <ul id="list"></ul>
-    <p id="navigation-status" role="status" aria-live="polite"></p>
+    <p id="navigation-status" role="status" aria-label="Navigation status" aria-live="polite"></p>
     <button id="export-report" class="secondary" type="button" disabled>Export JSON report</button>
     <button id="export-html-report" class="secondary" type="button" disabled>Export HTML report</button>
     <p id="report-status" aria-live="polite" aria-atomic="true">Rescan to prepare a complete report.</p>

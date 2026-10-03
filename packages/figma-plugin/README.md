@@ -32,6 +32,12 @@ The plugin saves a submission ID before sending it. Reopening the plugin or reco
 
 New plugins require the project-context endpoint. Upgrade the console first; the console continues accepting older plugins without a revision field. Task links open the owning project in the console.
 
+## Find and navigate problems
+
+Use **Previous problem** and **Next problem** to locate components with errors in the current filtered list. Each component counts once, even with several issues. Next starts at the first problem, Previous at the last, and both wrap at the ends. The position follows the latest location request; if a component was deleted or moved, continue to the next problem or rescan. A row’s **Locate** also sets the position when it has an error. Changing filters or rescanning resets the position. Paste a node ID from a JSON or HTML report into search to find that component; IDs are shown on each row. These controls also work with keyboard focus and Enter or Space, without changing task tracking or submission rules.
+
+Search is literal and case-insensitive across node IDs, original/final names and issues. Skipped drafts stay outside the list. Filtering to a healthy component keeps its ordinary Locate available; hidden errors still block submission. Refreshing project rules, switching pages or modes, disconnecting or closing the plugin cancels old navigation and requires a current scan.
+
 ## Complete page report
 
 With default naming, two components on the current page that produce the same icon name (for example, `Arrow Left` and `arrow_left`) both receive a **Duplicate icon name** error. This includes component-set variants and blocks new submissions until you rename and rescan. Use **Problems only**, search, **Locate** and the complete JSON report to review every conflicting component. Skipped drafts do not participate. Custom server naming remains provisional and is not blocked based on local name collisions. The check covers only the current page; server validation is still required across the configured sync scope. Existing tasks continue to be tracked even when the current page has errors.

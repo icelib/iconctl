@@ -18,6 +18,7 @@ interface PluginMessage {
   connected?: boolean
   items?: PreflightItem[]
   scanId?: number
+  nodeId?: string
   requestId?: number
   rulesRequestId?: number
   reportAvailable?: boolean
@@ -43,6 +44,9 @@ const listEl = document.querySelector('#list')!
 const publishBtn = document.querySelector<HTMLButtonElement>('#publish')!
 const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
 const navigationStatus = document.querySelector<HTMLElement>('#navigation-status')!
+const previousProblem = document.querySelector<HTMLButtonElement>('#previous-problem')!
+const nextProblem = document.querySelector<HTMLButtonElement>('#next-problem')!
+const problemPosition = document.querySelector<HTMLElement>('#problem-position')!
 const searchInput = document.querySelector<HTMLInputElement>('#search')!
 const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')!
 const viewCount = document.querySelector<HTMLElement>('#view-count')!
@@ -61,6 +65,8 @@ let editedPreferences = false
 let items: PreflightItem[] = []
 let scanId: number | undefined
 let navigationRequest = 0
+let navigationPending: { scanId: number, requestId: number, nodeId: string } | undefined
+let problemCursor: string | undefined
 let consoleBusy = false
 let consoleConnected = false
 let githubBusy = false
@@ -193,17 +199,6 @@ function updateSubmit() {
     ? consoleBusy || !consoleConnected
     : githubBusy)
 }
-window.addEventListener('pagehide', () => {
-  uiActive = false
-  clearRulesRequest()
-  updateSubmit()
-  reportPending = undefined
-  for (const url of [...reportUrls.keys()]) {
-    releaseReportUrl(url)
-  }
-  updateReport()
-})
-
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
   statusEl.className = kind
@@ -217,11 +212,94 @@ function escapeHtml(value: string) {
     '\'': '&#39;',
   })[char] || char)
 }
+function visibleItems() {
+  const query = searchInput.value.trim().toLowerCase()
+  return items.filter(item => !item.skipped && (!problemsInput.checked || item.issues.length > 0)
+    && [item.id, item.name, item.iconName ?? '', ...item.issues].some(value => value.toLowerCase().includes(query)))
+}
+function updateProblemNavigation() {
+  const problems = visibleItems().filter(item => item.issues.length > 0)
+  const active = uiActive && currentPreflight && scanId !== undefined
+  previousProblem.disabled = nextProblem.disabled = !active || !problems.length
+  const index = problems.findIndex(item => item.id === problemCursor)
+  if (!active) {
+    problemPosition.textContent = 'Rescan to navigate problems.'
+  }
+  else if (!problems.length) {
+    problemPosition.textContent = items.some(item => !item.skipped && item.issues.length > 0)
+      ? 'No problems match these filters.'
+      : 'No problems in this scan.'
+  }
+  else if (index < 0) {
+    problemPosition.textContent = `${problems.length} ${problems.length === 1 ? 'problem' : 'problems'} in this view. Choose Next or Previous.`
+  }
+  else {
+    problemPosition.textContent = `Problem ${index + 1} of ${problems.length}`
+  }
+  listEl.querySelectorAll<HTMLElement>('li[data-icon-id]').forEach((row) => {
+    if (active && index >= 0 && row.dataset['iconId'] === problemCursor) {
+      row.setAttribute('aria-current', 'true')
+    }
+    else {
+      row.removeAttribute('aria-current')
+    }
+    row.querySelector<HTMLButtonElement>('button[data-node-id]')!.disabled = !active
+  })
+}
+function clearNavigation(cancel = true) {
+  navigationRequest++
+  navigationPending = undefined
+  problemCursor = undefined
+  if (cancel && scanId !== undefined) {
+    parent.postMessage({ pluginMessage: { type: 'cancel-navigation', scanId } }, '*')
+  }
+  updateProblemNavigation()
+}
+function locateItem(nodeId: string) {
+  if (!uiActive || !currentPreflight || scanId === undefined) {
+    return
+  }
+  const item = visibleItems().find(item => item.id === nodeId)
+  if (!item) {
+    return
+  }
+  // Remember the attempted component so a failed lookup can move on to the next.
+  problemCursor = item.issues.length ? item.id : undefined
+  navigationPending = { nodeId, scanId, requestId: ++navigationRequest }
+  navigationStatus.textContent = 'Locating component…'
+  navigationStatus.className = ''
+  updateProblemNavigation()
+  const row = [...listEl.querySelectorAll<HTMLElement>('li[data-icon-id]')].find(row => row.dataset['iconId'] === nodeId)
+  row?.scrollIntoView({ block: 'nearest' })
+  parent.postMessage({ pluginMessage: { type: 'locate', ...navigationPending } }, '*')
+}
+function stepProblem(direction: 1 | -1) {
+  const problems = visibleItems().filter(item => item.issues.length > 0)
+  if (!problems.length) {
+    return
+  }
+  const index = problems.findIndex(item => item.id === problemCursor)
+  const next = index < 0
+    ? direction === 1 ? 0 : problems.length - 1
+    : (index + direction + problems.length) % problems.length
+  locateItem(problems[next]!.id)
+}
+previousProblem.addEventListener('click', () => stepProblem(-1))
+nextProblem.addEventListener('click', () => stepProblem(1))
+window.addEventListener('pagehide', () => {
+  uiActive = false
+  clearNavigation()
+  clearRulesRequest()
+  updateSubmit()
+  reportPending = undefined
+  for (const url of [...reportUrls.keys()]) {
+    releaseReportUrl(url)
+  }
+  updateReport()
+})
 function renderList() {
   const available = items.filter(item => !item.skipped)
-  const query = searchInput.value.trim().toLowerCase()
-  const visible = available.filter(item => (!problemsInput.checked || item.issues.length > 0)
-    && [item.name, item.iconName ?? '', ...item.issues].some(value => value.toLowerCase().includes(query)))
+  const visible = visibleItems()
   viewCount.textContent = `Showing ${visible.length} of ${available.length} icons`
   emptyView.hidden = visible.length > 0
   emptyView.textContent = available.length ? 'No icons match these filters.' : 'No icons to display on this page.'
@@ -232,9 +310,10 @@ function renderList() {
       const detail = item.issues.length
         ? item.issues.join(' · ')
         : item.iconName
-      return `<li class="${state}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(detail || '')}</span><button class="secondary locate" type="button" data-node-id="${escapeHtml(item.id)}"${scanId === undefined ? ' disabled' : ''} aria-label="Locate ${escapeHtml(item.name)}">Locate</button></li>`
+      return `<li class="${state}" data-icon-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(detail || '')}</span><span class="node-id">ID: ${escapeHtml(item.id)}</span><button class="secondary locate" type="button" data-node-id="${escapeHtml(item.id)}" aria-label="Locate ${escapeHtml(item.name)}">Locate</button></li>`
     })
     .join('')
+  updateProblemNavigation()
 }
 function render() {
   renderList()
@@ -248,12 +327,9 @@ function render() {
   updateSubmit()
 }
 function changeView() {
-  navigationRequest++
+  clearNavigation()
   navigationStatus.textContent = ''
   navigationStatus.className = ''
-  if (scanId !== undefined) {
-    parent.postMessage({ pluginMessage: { type: 'cancel-navigation', scanId } }, '*')
-  }
   renderList()
 }
 function savePreferences() {
@@ -289,15 +365,12 @@ for (const scope of ['settings', 'preferences'] as const) {
 }
 function invalidatePreflight(text: string, error = false) {
   currentPreflight = false
+  clearNavigation()
   rulesValidity.textContent = 'Scan out of date. Rescan or refresh project rules before using these results.'
   updateSubmit()
   scanId = undefined
-  navigationRequest++
   navigationStatus.textContent = text
   navigationStatus.className = error ? 'err' : ''
-  listEl.querySelectorAll<HTMLButtonElement>('button[data-node-id]').forEach((button) => {
-    button.disabled = true
-  })
   invalidateReport(text, error)
 }
 rulesBtn.addEventListener('click', () => {
@@ -316,9 +389,7 @@ listEl.addEventListener('click', (event) => {
   if (!button || !listEl.contains(button) || button.disabled || scanId === undefined) {
     return
   }
-  navigationStatus.textContent = 'Locating component…'
-  navigationStatus.className = ''
-  parent.postMessage({ pluginMessage: { type: 'locate', nodeId: button.dataset['nodeId'], scanId, requestId: ++navigationRequest } }, '*')
+  locateItem(button.dataset['nodeId']!)
 })
 function readSettings() {
   const { owner, repo } = parseRepo(repoInput.value)
@@ -440,8 +511,8 @@ window.onmessage = (event: MessageEvent<{
       || (message.rulesRequestId !== undefined && message.rulesRequestId !== rulesPending)) {
       return
     }
+    clearNavigation(false)
     scanId = Number.isSafeInteger(message.scanId) ? message.scanId : undefined
-    navigationRequest++
     navigationStatus.textContent = ''
     navigationStatus.className = ''
     items = message.items
@@ -460,7 +531,11 @@ window.onmessage = (event: MessageEvent<{
   if (message.type === 'navigation-invalidated') {
     invalidatePreflight(message.text ?? '', message.error ?? true)
   }
-  if (message.type === 'navigation-result' && message.scanId === scanId && message.requestId === navigationRequest) {
+  if (message.type === 'navigation-result' && navigationPending
+    && message.scanId === scanId && message.scanId === navigationPending.scanId
+    && message.requestId === navigationPending.requestId
+    && (message.nodeId === undefined || message.nodeId === navigationPending.nodeId)) {
+    navigationPending = undefined
     navigationStatus.textContent = message.text ?? ''
     navigationStatus.className = message.error ? 'err' : 'ok'
   }
