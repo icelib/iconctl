@@ -70,6 +70,29 @@ async function exists(file) {
   })
 }
 
+function openWatch(cwd, configFile = 'iconctl.config.mjs', expectedStop = 'aborted') {
+  const session = { events: [], controller: new AbortController(), settled: false, outcome: undefined, expectedStop }
+  session.finished = core.watch({
+    cwd,
+    configFile,
+    signal: session.controller.signal,
+    onEvent: event => session.events.push(event),
+  }).catch(error => error).then((outcome) => {
+    session.settled = true
+    session.outcome = outcome
+    return outcome
+  })
+  return session
+}
+
+async function closeWatch(session, name) {
+  session.controller.abort('consumer completed')
+  const outcome = await bounded(session.finished, `${name} cleanup`)
+  assert(outcome instanceof (session.expectedStop === 'aborted' ? core.IconctlAbortError : core.IconctlError), `${name} cleanup: ${outcome?.stack ?? outcome}`)
+  assert.deepEqual(session.events.at(-1), { type: 'stopped', reason: session.expectedStop })
+  assert.equal(session.events.filter(event => event.type === 'stopped').length, 1)
+}
+
 async function scenario(name, action) {
   const cwd = join(fixture, name)
   await mkdir(join(cwd, 'raw'), { recursive: true })
@@ -83,17 +106,7 @@ async function scenario(name, action) {
     write: (file, source) => writeFile(join(cwd, file), source),
     start(configFile = 'iconctl.config.mjs', expectedStop = 'aborted') {
       assert.equal(session, undefined, 'A fixture owns one public watch call')
-      session = { events: [], controller: new AbortController(), settled: false, outcome: undefined, expectedStop }
-      session.finished = core.watch({
-        cwd,
-        configFile,
-        signal: session.controller.signal,
-        onEvent: event => session.events.push(event),
-      }).catch(error => error).then((outcome) => {
-        session.settled = true
-        session.outcome = outcome
-        return outcome
-      })
+      session = openWatch(cwd, configFile, expectedStop)
       return session
     },
   }
@@ -112,11 +125,7 @@ async function scenario(name, action) {
     finally {
       try {
         if (session) {
-          session.controller.abort('consumer completed')
-          const outcome = await bounded(session.finished, `${name} cleanup`)
-          assert(outcome instanceof (session.expectedStop === 'aborted' ? core.IconctlAbortError : core.IconctlError), `${name} cleanup: ${outcome?.stack ?? outcome}`)
-          assert.deepEqual(session.events.at(-1), { type: 'stopped', reason: session.expectedStop })
-          assert.equal(session.events.filter(event => event.type === 'stopped').length, 1)
+          await closeWatch(session, name)
         }
       }
       finally {
@@ -266,6 +275,85 @@ try {
     assert.deepEqual(next.map(item => item.loads), [1, 1])
     assert.deepEqual(results(session).map(event => event.result.prefix), ['generation-1', 'generation-1', 'generation-1'])
     assert.deepEqual(session.events.filter(event => event.type === 'start').map(event => event.reason), ['initial', 'source', 'config'])
+  })
+
+  await scenario('concurrent-watch-generations', async ({ write, start, cwd, cleanup }) => {
+    const secondCwd = join(cwd, 'second')
+    await mkdir(join(secondCwd, 'raw'), { recursive: true })
+    await write('second/raw/home.svg', svg)
+    const helper = value => `
+      import { threadId } from 'node:worker_threads'
+      globalThis.iconctlConcurrentLoads = (globalThis.iconctlConcurrentLoads ?? 0) + 1
+      export const state = { value: ${JSON.stringify(value)}, threadId, loads: globalThis.iconctlConcurrentLoads }
+    `
+    const config = (name, helperPath) => `
+      import { appendFile } from 'node:fs/promises'
+      import { state } from '${helperPath}'
+      import { state as again } from '${helperPath}'
+      if (state !== again) throw new Error('A generation must preserve its module identity')
+      await appendFile(new URL('./generations.ndjson', import.meta.url), JSON.stringify(state) + String.fromCharCode(10))
+      export default ${settings(`${JSON.stringify(name)} + '-' + state.value + '-' + state.loads`)}
+    `
+    const firstConfig = config('first', './shared-helper.mjs')
+    const secondConfig = config('second', '../shared-helper.mjs')
+    const generations = async directory => (await readFile(join(directory, 'generations.ndjson'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    await write('shared-helper.mjs', helper('before'))
+    await write('iconctl.config.mjs', firstConfig)
+    await write('second/iconctl.config.mjs', secondConfig)
+    const first = start()
+    const second = openWatch(secondCwd)
+    cleanup.push(() => closeWatch(second, 'concurrent second watch'))
+    await Promise.all([
+      until(() => results(first).length === 1, 'first concurrent watch is ready', first),
+      until(() => results(second).length === 1, 'second concurrent watch is ready', second),
+    ])
+    const firstInitial = await generations(cwd)
+    const secondInitial = await generations(secondCwd)
+    assert.deepEqual(firstInitial.map(({ value, loads }) => ({ value, loads })), [{ value: 'before', loads: 1 }])
+    assert.deepEqual(secondInitial.map(({ value, loads }) => ({ value, loads })), [{ value: 'before', loads: 1 }])
+    assert(firstInitial[0].threadId > 0)
+    assert(secondInitial[0].threadId > 0)
+    assert.notEqual(firstInitial[0].threadId, secondInitial[0].threadId)
+
+    await write('shared-helper.mjs', helper('after'))
+    await write('iconctl.config.mjs', `${firstConfig}\n// Reload only the first watch.\n`)
+    await until(() => results(first).length === 2, 'first watch refreshes the shared helper', first)
+    const firstReloaded = await generations(cwd)
+    assert.deepEqual(firstReloaded.map(({ value, loads }) => ({ value, loads })), [{ value: 'before', loads: 1 }, { value: 'after', loads: 1 }])
+    assert.notEqual(firstReloaded[1].threadId, firstInitial[0].threadId)
+    assert.notEqual(firstReloaded[1].threadId, secondInitial[0].threadId)
+    assert.deepEqual(await generations(secondCwd), secondInitial)
+    assert.equal(results(second).length, 1)
+    await write('second/raw/while-first-reloaded.svg', svg)
+    await until(() => results(second).length === 2, 'second source run retains its original generation', second)
+    assert.deepEqual(await generations(secondCwd), secondInitial)
+    assert.deepEqual(results(second).map(event => event.result.prefix), ['second-before-1', 'second-before-1'])
+
+    await closeWatch(first, 'first watch stops independently')
+    const stoppedEvents = [...first.events]
+    const stoppedOutput = await readFile(join(cwd, 'icons.json'), 'utf8')
+    await write('raw/after-stop.svg', svg)
+    await write('iconctl.config.mjs', `${firstConfig}\n// A stopped watch must stay stopped.\n`)
+    await write('second/raw/after-first-stopped.svg', svg)
+    await until(() => results(second).length === 3, 'second watch survives the first watch stopping', second)
+    assert.deepEqual(await generations(secondCwd), secondInitial)
+    assert.equal(results(second)[2].result.prefix, 'second-before-1')
+    await write('second/iconctl.config.mjs', `${secondConfig}\n// The second watch now reloads independently.\n`)
+    await until(() => results(second).length === 4, 'second watch starts its own fresh generation', second)
+    const secondReloaded = await generations(secondCwd)
+    assert.deepEqual(secondReloaded.map(({ value, loads }) => ({ value, loads })), [{ value: 'before', loads: 1 }, { value: 'after', loads: 1 }])
+    assert.notEqual(secondReloaded[1].threadId, secondInitial[0].threadId)
+    assert.deepEqual(results(first).map(event => event.result.prefix), ['first-before-1', 'first-after-1'])
+    assert.deepEqual(results(second).map(event => event.result.prefix), ['second-before-1', 'second-before-1', 'second-before-1', 'second-after-1'])
+    assert.deepEqual(Object.keys(results(second)[3].result.json.icons), ['after-first-stopped', 'home', 'while-first-reloaded'])
+    assert.deepEqual(first.events, stoppedEvents)
+    assert.deepEqual(await generations(cwd), firstReloaded)
+    assert.equal(await readFile(join(cwd, 'icons.json'), 'utf8'), stoppedOutput)
+    assert.equal(JSON.parse(await readFile(join(secondCwd, 'icons.json'), 'utf8')).prefix, 'second-after-1')
+    assert.deepEqual(first.events.filter(event => event.type === 'start').map(event => event.reason), ['initial', 'config'])
+    assert.deepEqual(second.events.filter(event => event.type === 'start').map(event => event.reason), ['initial', 'source', 'source', 'config'])
+    assert.deepEqual(first.events.filter(event => event.type === 'error'), [])
+    assert.deepEqual(second.events.filter(event => event.type === 'error'), [])
   })
 
   await scenario('public-sync-error', async ({ write, start }) => {
