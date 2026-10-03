@@ -71,10 +71,31 @@ export async function loadFigmaSource(
     })),
     ...(source.pages ? { pages: source.pages } : {}),
   })
-  const icons = Object.values(nodes.icons)
-  const report = (icon: typeof icons[number], stage: SyncIssue['stage'], message: string) => {
+  const candidates = Object.values(nodes.icons)
+  const report = (icon: typeof candidates[number], stage: SyncIssue['stage'], message: string) => {
     issues.push({ name: icon.keyword, nodeId: icon.id, fileKey, sourceType: 'figma', stage, message, ...(options.sourceIndex !== undefined ? { sourceIndex: options.sourceIndex } : {}) })
   }
+  // Compare the final keywords after filtering and custom naming. Exclude the
+  // entire ambiguous group before export so traversal/download order cannot
+  // pick a winner, including when one of its SVGs would fail to import.
+  const byName = new Map<string, typeof candidates>()
+  for (const icon of candidates) {
+    const group = byName.get(icon.keyword)
+    if (group) {
+      group.push(icon)
+    }
+    else {
+      byName.set(icon.keyword, [icon])
+    }
+  }
+  for (const [name, group] of byName) {
+    if (group.length > 1) {
+      for (const icon of group) {
+        report(icon, 'import', `Duplicate icon name "${name}" is shared by ${group.length} Figma nodes. Rename the layers or return unique names from iconNameForNode.`)
+      }
+    }
+  }
+  const icons = candidates.filter(icon => byName.get(icon.keyword)!.length === 1)
   // Bound both encoded URL size and the number of simultaneous downloads.
   let batch: string[] = []
   const render = async () => {
@@ -163,7 +184,7 @@ export async function loadFigmaSource(
   }
   issues.sort((left, right) => (left.nodeId ?? '').localeCompare(right.nodeId ?? ''))
   if (!imported) {
-    throw new IconctlSyncError(issues, 'No valid Figma icons could be imported. Check layers, filters and SVG downloads')
+    throw new IconctlSyncError(issues, 'No valid Figma icons could be imported. Check names, layers, filters and SVG downloads')
   }
   const loaded: LoadedSource = {
     type: 'figma',

@@ -107,7 +107,7 @@ pnpm exec iconctl sync --json
 
 仅在需要部分产物时启用 `continueOnError: true`（CLI：`--continue`）。此时返回 `complete: false`，`failed`／`issues` 包含失败明细，`diff.deletionsReliable: false` 且 `removed: []`；不更新 changelog，也不保留完整同步缓存标记。认证失败、来源不可读取或 Figma 来源没有任何成功导入的图标时仍然拒绝。CLI 通过警告说明部分结果；`--json` 提供 `complete`、`deletionsReliable`、`skipped` 和 `issues`。显式请求部分成功时保持成功退出状态。
 
-修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
+修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。完整同步标记也记录校验规则版本；升级后旧标记会触发完整检查，即使远端文件没有变化。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
 
 ```ts
 import { IconctlAbortError, loadConfig, sync } from 'iconctl'

@@ -47,11 +47,16 @@ export interface SyncResult {
 }
 
 interface CacheMeta {
+  validationVersion?: number
   configDigest?: string
   outputDigest?: string
   lastModified?: string
   version?: string
 }
+
+// A completion marker also certifies the import/validation rules used. Bump
+// this when previously accepted inputs must be checked again after an upgrade.
+const validationVersion = 1
 
 async function readCacheMeta(file: string): Promise<CacheMeta | undefined> {
   try {
@@ -105,6 +110,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
         ? { figmaAuthProvider: options.figmaAuthProvider }
         : {}),
       ...(previous
+        && previousMeta?.validationVersion === validationVersion
         && previousMeta?.outputDigest === createHash('sha256').update(JSON.stringify(previous)).digest('hex')
         && previousMeta?.configDigest === configDigest
         && previousMeta?.lastModified
@@ -245,6 +251,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (complete && nextMeta) {
         await writeCacheMeta(stagedMeta, {
           ...nextMeta,
+          validationVersion,
           outputDigest: createHash('sha256').update(JSON.stringify(json)).digest('hex'),
         })
       }
