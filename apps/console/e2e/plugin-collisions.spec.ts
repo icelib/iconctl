@@ -1,10 +1,9 @@
 import type { Page } from '@playwright/test'
 import type { PreflightInput, PreflightRules } from '../../../packages/figma-plugin/src/preflight'
 import { readFile } from 'node:fs/promises'
+import { inspectComponents } from '@iconctl/figma-plugin'
 import { test as base, expect } from '@playwright/test'
 // This consumer test intentionally exercises the freshly built public entry.
-// eslint-disable-next-line antfu/no-import-dist
-import { inspectComponents } from '../../../packages/figma-plugin/dist/index.mjs'
 
 interface Message { type: string, scanId?: number, requestId?: number, nodeId?: string, [key: string]: unknown }
 interface Effects { messages: Message[], fetches: string[], resources: { type: string, url: string }[] }
