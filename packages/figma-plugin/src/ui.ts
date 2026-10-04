@@ -8,6 +8,7 @@ import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
 import { issueType, PreflightView } from './preflight-view'
 import { SvgHandoffUI } from './svg-handoff-ui'
+import { MAX_VISIBLE_SELECTION, selectionError } from './visible-selection'
 
 interface PluginMessage {
   type: string
@@ -57,6 +58,8 @@ const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
 const navigationStatus = document.querySelector<HTMLElement>('#navigation-status')!
 const previousProblem = document.querySelector<HTMLButtonElement>('#previous-problem')!
 const nextProblem = document.querySelector<HTMLButtonElement>('#next-problem')!
+const selectVisibleBtn = document.querySelector<HTMLButtonElement>('#select-visible')!
+const selectionHelp = document.querySelector<HTMLElement>('#selection-help')!
 const problemPosition = document.querySelector<HTMLElement>('#problem-position')!
 const searchInput = document.querySelector<HTMLInputElement>('#search')!
 const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')!
@@ -79,7 +82,9 @@ let selectedIssueType: IssueType = 'all'
 const preflightView = new PreflightView()
 let scanId: number | undefined
 let navigationRequest = 0
-let navigationPending: { scanId: number, requestId: number, nodeId: string } | undefined
+let navigationPending: ({ scanId: number, requestId: number } & (
+  { type: 'locate', nodeId: string } | { type: 'select-visible', nodeIds: string[] }
+)) | undefined
 let problemCursor: string | undefined
 let consoleBusy = false
 let consoleConnected = false
@@ -268,8 +273,12 @@ function escapeHtml(value: string) {
   })[char] || char)
 }
 function updateProblemNavigation() {
-  const problems = visibleItems().filter(item => item.issues.length > 0)
+  const visible = visibleItems()
+  const problems = visible.filter(item => item.issues.length > 0)
   const active = uiActive && currentPreflight && scanId !== undefined
+  const selectionReason = active ? selectionError(visible.map(item => item.id)) : 'Rescan with current rules before selecting components.'
+  selectVisibleBtn.disabled = Boolean(selectionReason) || navigationPending?.type === 'select-visible'
+  selectionHelp.textContent = selectionReason ?? `${visible.length} visible ${visible.length === 1 ? 'component' : 'components'} · Maximum ${MAX_VISIBLE_SELECTION} per selection`
   previousProblem.disabled = nextProblem.disabled = !active || !problems.length
   const index = problems.findIndex(item => item.id === problemCursor)
   if (!active) {
@@ -315,13 +324,28 @@ function locateItem(nodeId: string) {
   }
   // Remember the attempted component so a failed lookup can move on to the next.
   problemCursor = item.issues.length ? item.id : undefined
-  navigationPending = { nodeId, scanId, requestId: ++navigationRequest }
+  navigationPending = { type: 'locate', nodeId, scanId, requestId: ++navigationRequest }
   navigationStatus.textContent = 'Locating component…'
   navigationStatus.className = ''
   updateProblemNavigation()
   const row = [...listEl.querySelectorAll<HTMLElement>('li[data-icon-id]')].find(row => row.dataset['iconId'] === nodeId)
   row?.scrollIntoView({ block: 'nearest' })
-  parent.postMessage({ pluginMessage: { type: 'locate', ...navigationPending } }, '*')
+  parent.postMessage({ pluginMessage: navigationPending }, '*')
+}
+function selectVisible() {
+  if (!uiActive || !currentPreflight || scanId === undefined || navigationPending?.type === 'select-visible') {
+    return
+  }
+  const nodeIds = visibleItems().map(item => item.id)
+  if (selectionError(nodeIds)) {
+    return
+  }
+  problemCursor = undefined
+  navigationPending = { type: 'select-visible', nodeIds, scanId, requestId: ++navigationRequest }
+  navigationStatus.textContent = `Checking ${nodeIds.length} visible components before selecting…`
+  navigationStatus.className = ''
+  updateProblemNavigation()
+  parent.postMessage({ pluginMessage: navigationPending }, '*')
 }
 function stepProblem(direction: 1 | -1) {
   const problems = visibleItems().filter(item => item.issues.length > 0)
@@ -336,6 +360,7 @@ function stepProblem(direction: 1 | -1) {
 }
 previousProblem.addEventListener('click', () => stepProblem(-1))
 nextProblem.addEventListener('click', () => stepProblem(1))
+selectVisibleBtn.addEventListener('click', selectVisible)
 window.addEventListener('pagehide', () => {
   copyNamesUI.dispose()
   handoffUI.dispose()
@@ -617,13 +642,21 @@ window.onmessage = (event: MessageEvent<{
   if (message.type === 'navigation-invalidated') {
     invalidatePreflight(message.text ?? '', message.error ?? true)
   }
-  if (message.type === 'navigation-result' && navigationPending
+  if (message.type === 'navigation-result' && navigationPending?.type === 'locate'
     && message.scanId === scanId && message.scanId === navigationPending.scanId
     && message.requestId === navigationPending.requestId
     && (message.nodeId === undefined || message.nodeId === navigationPending.nodeId)) {
     navigationPending = undefined
     navigationStatus.textContent = message.text ?? ''
     navigationStatus.className = message.error ? 'err' : 'ok'
+  }
+  if (message.type === 'selection-result' && navigationPending?.type === 'select-visible'
+    && message.scanId === scanId && message.scanId === navigationPending.scanId
+    && message.requestId === navigationPending.requestId) {
+    navigationPending = undefined
+    navigationStatus.textContent = message.text ?? ''
+    navigationStatus.className = message.error ? 'err' : 'ok'
+    updateProblemNavigation()
   }
   if (message.type === 'settings' && message.settings) {
     for (const key of ['repo', 'token', 'eventType'] as const) {

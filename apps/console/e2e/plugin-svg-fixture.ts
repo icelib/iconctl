@@ -28,12 +28,26 @@ function designPage(id: string) {
   const listeners = new Set<Change>()
   const attached: Change[] = []
   const detached: Change[] = []
+  let selected: DesignNode[] = []
+  const selectionWrites: string[][] = []
+  const selectionControl = { mode: 'normal' as 'normal' | 'throw' | 'partial', beforeWrite: () => {} }
   return {
     id,
     name: id,
     type: 'PAGE',
     children: [] as DesignNode[],
-    selection: [] as DesignNode[],
+    get selection() { return [...selected] },
+    set selection(nodes: DesignNode[]) {
+      selectionControl.beforeWrite()
+      selectionWrites.push(nodes.map(node => node.id))
+      if (selectionControl.mode === 'throw') {
+        throw new Error('Controlled native selection setter failure')
+      }
+      selected = selectionControl.mode === 'partial' ? nodes.slice(0, 1) : [...nodes]
+    },
+    selectionWrites,
+    selectionControl,
+    manualSelection: (nodes: DesignNode[]) => { selected = [...nodes] },
     listeners,
     attached,
     detached,
@@ -88,7 +102,19 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
   let closed = false
   let deliveries = Promise.resolve()
   const running = new Set<Promise<void>>()
-  const handlers = new Map<string, () => void>()
+  const handlers = new Map<string, Set<() => void>>()
+  const selectionObservers = { attached: [] as (() => void)[], detached: [] as (() => void)[], atWrite: [] as number[] }
+  const emit = (event: string) => {
+    for (const callback of [...(handlers.get(event) ?? [])]) {
+      callback()
+    }
+  }
+  for (const design of [first, second]) {
+    design.selectionControl.beforeWrite = () => selectionObservers.atWrite.push(handlers.get('selectionchange')?.size ?? 0)
+  }
+  const lookups: string[] = []
+  let lookupActive = 0
+  let lookupPeak = 0
   const timers = new Map<number, ReturnType<typeof setTimeout>>()
   let timerId = 0
   let context = { projectId: 'svg-project', name: 'SVG project', revision: 7, validate: { width: 32, height: 16, skipPrefix: ['_', '.'] } as { width?: number, height?: number, name?: string, skipPrefix?: string[] }, namingMode: 'default' }
@@ -164,7 +190,20 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
         }
       },
     },
-    on: (event: string, callback: () => void) => handlers.set(event, callback),
+    on(event: string, callback: () => void) {
+      const listeners = handlers.get(event) ?? new Set<() => void>()
+      listeners.add(callback)
+      handlers.set(event, listeners)
+      if (event === 'selectionchange') {
+        selectionObservers.attached.push(callback)
+      }
+    },
+    off(event: string, callback: () => void) {
+      expect(handlers.get(event)?.delete(callback)).toBe(true)
+      if (event === 'selectionchange') {
+        selectionObservers.detached.push(callback)
+      }
+    },
     clientStorage: {
       getAsync: async (key: string) => stored.get(key),
       setAsync: async (key: string, value: unknown) => {
@@ -177,14 +216,20 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
       },
     },
     getNodeByIdAsync: async (id: string) => {
-      const gate = lookupGates.find(gate => !gate.started)
-      if (gate) {
-        gate.started = true
-        return gate.promise
+      lookups.push(id)
+      lookupActive++
+      lookupPeak = Math.max(lookupPeak, lookupActive)
+      try {
+        const gate = lookupGates.find(gate => !gate.started)
+        if (gate) {
+          gate.started = true
+          return await gate.promise
+        }
+        return nodes.get(id) ?? null
       }
-      return nodes.get(id) ?? null
+      finally { lookupActive-- }
     },
-    viewport: { scrollAndZoomIntoView() {} },
+    viewport: { zoom: 1.25, center: { x: 120, y: 240 }, scrolls: [] as string[][], scrollAndZoomIntoView(nodes: DesignNode[] = []) { this.scrolls.push(nodes.map(node => node.id)) } },
   }
   const sandbox = {
     figma: host,
@@ -232,7 +277,7 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
     active = false
     if (!closed) {
       closed = true
-      handlers.get('close')!()
+      emit('close')
     }
   }
   const close = async () => {
@@ -249,9 +294,13 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
           return (window as unknown as { svgResources: BrowserResources }).svgResources
         })
       : undefined
-    await writeFile(info.outputPath('svg-handoff-evidence.json'), JSON.stringify({ requests, responses: responses.map(({ files, ...rest }) => ({ ...rest, ...(files ? { files: files.map(({ path, bytes }) => ({ path, bytes })) } : {}) })), network, writes, errors, exports, peak, inFlight, downloads, resources, firstListeners: first.listeners.size, secondListeners: second.listeners.size, attached: first.attached.length + second.attached.length, detached: first.detached.length + second.detached.length, timers: timers.size, hostHasEncoder: false }, null, 2))
+    await writeFile(info.outputPath('svg-handoff-evidence.json'), JSON.stringify({ requests, responses: responses.map(({ files, ...rest }) => ({ ...rest, ...(files ? { files: files.map(({ path, bytes }) => ({ path, bytes })) } : {}) })), network, writes, errors, exports, peak, inFlight, downloads, resources, firstListeners: first.listeners.size, secondListeners: second.listeners.size, attached: first.attached.length + second.attached.length, detached: first.detached.length + second.detached.length, timers: timers.size, hostHasEncoder: false, selection: { writes: [...first.selectionWrites, ...second.selectionWrites], atWrite: selectionObservers.atWrite, attached: selectionObservers.attached.length, detached: selectionObservers.detached.length, active: handlers.get('selectionchange')?.size ?? 0 }, lookups, lookupActive, lookupPeak }, null, 2))
     expect(first.listeners.size + second.listeners.size).toBe(0)
     expect(first.attached.length + second.attached.length).toBe(first.detached.length + second.detached.length)
+    expect(handlers.get('selectionchange')?.size ?? 0).toBe(0)
+    expect(selectionObservers.attached).toHaveLength(selectionObservers.detached.length)
+    expect(new Set(selectionObservers.detached).size).toBe(selectionObservers.detached.length)
+    expect(lookupActive).toBe(0)
     expect(timers.size).toBe(0)
     expect(inFlight).toBe(0)
     expect(errors).toEqual([])
@@ -312,6 +361,12 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
       nested,
       draft,
       host,
+      lookups,
+      lookupActive: () => lookupActive,
+      lookupPeak: () => lookupPeak,
+      selectionObservers,
+      selectionListeners: () => [...(handlers.get('selectionchange') ?? [])],
+      emitSelection: () => emit('selectionchange'),
       exports,
       downloads,
       errors,
@@ -338,7 +393,7 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
       },
       changePage: (next = second) => {
         host.currentPage = next
-        handlers.get('currentpagechange')!()
+        emit('currentpagechange')
       },
       flush: () => deliveries,
       settleHost: () => Promise.all(running),

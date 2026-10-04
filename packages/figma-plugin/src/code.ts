@@ -44,6 +44,10 @@ const navigation = new PreflightNavigation({
     figma.currentPage.selection = [node]
     figma.viewport.scrollAndZoomIntoView([node])
   },
+  observeSelection(callback) {
+    figma.on('selectionchange', callback)
+    return () => figma.off('selectionchange', callback)
+  },
   post: message => figma.ui.postMessage(message),
 })
 const reports = new PreflightReport({ currentPage: () => figma.currentPage, post: message => figma.ui.postMessage(message) })
@@ -149,6 +153,7 @@ figma.ui.onmessage = async (message: {
   origin?: string
   mode?: 'console' | 'github'
   nodeId?: string
+  nodeIds?: string[]
   scanId?: number
   requestId?: number
   enabled?: boolean
@@ -192,6 +197,10 @@ figma.ui.onmessage = async (message: {
   }
   if (message.type === 'locate') {
     await navigation.locate(message)
+    return
+  }
+  if (message.type === 'select-visible') {
+    await navigation.selectVisible(message)
     return
   }
   if (message.type.startsWith('console-')) {

@@ -11,6 +11,8 @@ Use the plugin’s **Issue type** filter to review naming, canvas size or duplic
 
 Use [Copy visible names JSON](/console#copy-visible-local-names) to share the filtered local preflight names as a deduplicated JSON array. Server-hook names remain provisional; manual selection is available when clipboard access is blocked.
 
+Use [Select visible components](/console#select-visible-components) to replace the canvas selection with up to 500 components from the filtered list, keeping zoom unchanged. It does not edit nodes or narrow reports and sync.
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.

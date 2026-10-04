@@ -145,6 +145,8 @@
       #live-preflight-help,
       #live-preflight-status,
       #problem-position,
+      #selection-scope,
+      #selection-help,
       #empty-view {
         color: #555;
         margin: 6px 0;
@@ -257,10 +259,21 @@
     </div>
     <p id="view-count" aria-live="polite"></p>
     <p id="empty-view" hidden></p>
-    <div class="problem-controls" role="group" aria-label="Navigate visible problems">
+    <div class="problem-controls" role="group" aria-label="Navigate visible components">
       <button id="previous-problem" class="secondary" type="button" disabled>Previous problem</button>
       <button id="next-problem" class="secondary" type="button" disabled>Next problem</button>
+      <button
+        id="select-visible"
+        class="secondary"
+        type="button"
+        disabled
+        aria-describedby="selection-scope selection-help"
+      >
+        Select visible components
+      </button>
     </div>
+    <p id="selection-scope">Current filtered list · Replaces canvas selection · Keeps zoom</p>
+    <p id="selection-help">Rescan with current rules before selecting components.</p>
     <p id="problem-position" aria-live="polite" aria-atomic="true">Rescan to navigate problems.</p>
     <ul id="list"></ul>
     <p id="navigation-status" role="status" aria-label="Navigation status" aria-live="polite"></p>

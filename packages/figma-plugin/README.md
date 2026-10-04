@@ -49,6 +49,16 @@ The selected issue type lasts for this session and survives Rescan and Live pref
 
 JSON preflight reports keep `schemaVersion: 1` and the existing `issues` strings. An optional per-item `diagnostics` array adds only `code` and `message`, using `name-rule`, `canvas-size` and `duplicate-name` for current checks. Each entry corresponds to the issue at the same index; unknown codes remain readable. Missing or inconsistent metadata is omitted from reports and appears as Other in the plugin. Existing issues remain the authority for submission checks, and consumers can continue reading reports without diagnostics. HTML reports retain their existing issue text and complete captured scan.
 
+## Select visible components
+
+Choose **Select visible components** to replace the Figma canvas selection with the current search × Problems only × Issue type list. Drafts are excluded. “Visible” means the plugin’s filtered list, not the viewport or a layer’s visibility setting. The action keeps canvas zoom and center unchanged; use Locate or Previous/Next problem to focus an individual component. It never edits, renames, moves, unlocks or unhides nodes.
+
+The selection uses the latest accepted scan and supports components with naming, size or duplicate errors, missing local names and provisional server names. Choose **Rescan** after edits when Live preflight is off. An empty view does not clear the current selection. A maximum of **500 components** can be selected per action; narrow the filters above that limit. This is an iconctl operation limit, not a Figma API limit. Missing, repeated, skipped or stale IDs are refused without choosing a partial list.
+
+The host reads nodes serially and rechecks every component’s identity and current-page membership before one selection assignment. If a node disappears, moves or becomes an ancestor/child of another requested component, fix the view with Rescan and try again. Changing the canvas selection while checks are pending cancels the action. A new Locate, Previous/Next or selection request takes over; filtering, rescanning, changing pages, modes or project rules, and closing the plugin discard old pending results. Figma delivers selection events asynchronously, so this is not an atomic document snapshot. If Figma cannot confirm the final selection, the plugin reports failure without attempting a rollback or automatic retry; inspect the canvas before trying again.
+
+Reports, SVG handoffs, task tracking and name copying retain their existing scope and lifecycle. Selecting a filtered subset does not narrow full-page reports, SVG exports or sync eligibility. This is a local host action with no network request or saved preference. Rebuild the plugin to use it; no server upgrade or report-schema migration is needed.
+
 ## Copy visible local names
 
 Choose **Copy visible names JSON** to copy the current search × Problems only × Issue type view from the latest accepted preflight. Drafts are excluded. **Clear filters** restores the whole non-draft page. The action does not rescan; when Live preflight is off, choose **Rescan** after editing. A stale scan or pending project rules must be refreshed before copying.

@@ -13,6 +13,8 @@ Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [ic
 
 可用 [Copy visible names JSON](/zh/console#复制当前视图的本地名称) 将筛选后的本地预检名称复制为去重 JSON 数组。服务端 hook 名称仍是临时结果；剪贴板不可用时可手动选择复制。
 
+使用 [Select visible components](/zh/console#选择当前可见组件) 可将筛选列表中最多 500 个组件设为画布选区，并保持缩放；不会修改节点或缩小报告与同步范围。
+
 ## 文件
 
 图标单独放在 Library 文件里，不要画在业务稿中。
