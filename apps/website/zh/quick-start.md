@@ -107,7 +107,7 @@ pnpm exec iconctl sync --json
 
 仅在需要部分产物时启用 `continueOnError: true`（CLI：`--continue`）。此时返回 `complete: false`，`failed`／`issues` 包含失败明细，`diff.deletionsReliable: false` 且 `removed: []`；不更新 changelog，也不保留完整同步缓存标记。认证失败、来源不可读取或 Figma 来源没有任何成功导入的图标时仍然拒绝。CLI 通过警告说明部分结果；`--json` 提供 `complete`、`deletionsReliable`、`skipped` 和 `issues`。显式请求部分成功时保持成功退出状态。
 
-修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。完整同步标记也记录校验规则版本；升级后旧标记会触发完整检查，即使远端文件没有变化。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
+修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。完整同步标记记录校验规则版本及所有已配置产物的文件指纹，包括 SVG、SVG 清单、JSON 包文件、类型、预览和 changelog。产物缺失、内容改变或标记过旧都会触发完整检查，即使远端文件没有变化。输出目录中的无关文件不影响缓存复用。重新校验会保留修改后的 changelog；已删除的历史无法仅凭当前图标恢复。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
 
 ```ts
 import { IconctlAbortError, loadConfig, sync } from 'iconctl'
@@ -130,7 +130,7 @@ catch (error) {
 
 合法的嵌套输出会统一准备和提交，包括 JSON 包内文件、SVG、预览、类型、变更日志和缓存元数据。冲突目标会在替换产物前拒绝。提交完成后若临时目录清理失败，会通过 `ICONCTL_OUTPUT_CLEANUP` 警告报告残留目录，同步仍视为成功。
 
-SVG 输出目录中的 `.iconctl-manifest.json` 记录生成的 SVG。后续同步据此删除过期产物，并保留无关文件。升级后首次清理旧 SVG 时，只有内容与上一份 Iconify JSON 完全一致的文件才被视作旧产物。无法确认归属的旧文件会保留；本次生成的同名文件仍会更新。请随 SVG 输出目录一起保留该清单。控制台 runner 会从发布产物中排除这一内部清单。
+SVG 输出目录中的 `.iconctl-manifest.json` 记录生成的 SVG，包括别名。只有名称和内容仍与上一份 Iconify JSON 匹配，且被现有清单登记的过期文件才会删除；没有清单时仍需名称和内容匹配。手工修改过或无法确认归属的旧 SVG 会保留；本次生成的同名文件仍会更新。请随 SVG 输出目录一起保留该清单。控制台 runner 会从发布产物中排除这一内部清单。
 
 Promise 结束时，本次调用启动的工作均已结束，不会再写图标产物。已开始的共享 OAuth 刷新及凭据持久化会安全完成后再返回取消，其他同步仍可使用新凭据；自定义认证 provider 也需要先结束，因此可能延迟取消响应。
 

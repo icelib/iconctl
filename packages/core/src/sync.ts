@@ -14,6 +14,7 @@ import { writeChangelog } from './changelog'
 import { diffIconSets } from './diff'
 import { IconctlSyncError } from './errors'
 import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } from './export'
+import { captureOutputProof, matchesOutputProof } from './output-proof'
 import { OutputTransaction } from './output-transaction'
 import { writePreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
@@ -50,6 +51,7 @@ interface CacheMeta {
   validationVersion?: number
   configDigest?: string
   outputDigest?: string
+  outputProof?: unknown
   lastModified?: string
   version?: string
 }
@@ -101,6 +103,12 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const sourceSummaries: SyncResult['sources'] = []
 
   if (!iconSet) {
+    const completedOutputs = previous
+      && previousMeta?.validationVersion === validationVersion
+      && previousMeta?.outputDigest === createHash('sha256').update(JSON.stringify(previous)).digest('hex')
+      && previousMeta?.configDigest === configDigest
+      && previousMeta?.lastModified
+      && await matchesOutputProof(previousMeta.outputProof, config, previous, cwd, options.signal)
     const loaded = await loadSources({
       cwd,
       config,
@@ -109,12 +117,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       ...(options.figmaAuthProvider
         ? { figmaAuthProvider: options.figmaAuthProvider }
         : {}),
-      ...(previous
-        && previousMeta?.validationVersion === validationVersion
-        && previousMeta?.outputDigest === createHash('sha256').update(JSON.stringify(previous)).digest('hex')
-        && previousMeta?.configDigest === configDigest
-        && previousMeta?.lastModified
-        ? { figmaIfModifiedSince: previousMeta.lastModified }
+      ...(completedOutputs
+        ? { figmaIfModifiedSince: previousMeta!.lastModified! }
         : {}),
     })
 
@@ -253,6 +257,10 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
           ...nextMeta,
           validationVersion,
           outputDigest: createHash('sha256').update(JSON.stringify(json)).digest('hex'),
+          outputProof: await captureOutputProof(config, json, cwd, {
+            ...cancellation,
+            stagedPath: path => transaction.path(path),
+          }),
         })
       }
       else {

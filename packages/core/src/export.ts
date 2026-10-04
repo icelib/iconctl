@@ -7,6 +7,7 @@ import { exportJSONPackage, IconSet as IconSetClass, writeJSONFile } from '@icon
 import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'pathe'
 import { checkpoint } from './abort'
 import { IconctlError } from './errors'
+import { createIconifyJsonResolver } from './iconify-json'
 import { OutputTransaction } from './output-transaction'
 
 export interface ExportResult {
@@ -16,6 +17,51 @@ export interface ExportResult {
 
 const svgManifest = '.iconctl-manifest.json'
 const safeSvgName = /^[^/\\\0]+\.svg$/
+const jsonPackageFiles = ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']
+
+function svgOutputNames(iconSet: IconSet): string[] {
+  return iconSet.list(['icon', 'variation', 'alias']).sort().filter((name) => {
+    const file = `${name}.svg`
+    if (!safeSvgName.test(file)) {
+      throw new IconctlError('SVG name escapes the output directory: names must be filenames without path separators')
+    }
+    return iconSet.resolve(name) !== null
+  })
+}
+
+/** Finite generated-file roster; completion proofs never choose filesystem paths. */
+export function managedOutputFiles(config: ResolvedIconctlConfig, json: IconifyJSON, cwd: string): { path: string, optional?: boolean }[] {
+  const files = new Map<string, { path: string, optional?: boolean }>()
+  const add = (file: string, optional = false) => {
+    const path = resolvePath(cwd, file)
+    const existing = files.get(path)
+    if (!existing || !optional) {
+      files.set(path, { path, ...(optional ? { optional: true } : {}) })
+    }
+  }
+  const { output } = config
+  add(output.json)
+  if (output.svg) {
+    add(join(output.svg, svgManifest))
+    for (const name of svgOutputNames(new IconSetClass(json))) {
+      add(join(output.svg, `${name}.svg`))
+    }
+  }
+  if (output.jsonPackage) {
+    for (const file of jsonPackageFiles) {
+      add(join(output.jsonPackage.dir, file))
+    }
+  }
+  for (const file of [output.types, output.preview]) {
+    if (file) {
+      add(file)
+    }
+  }
+  if (output.changelog) {
+    add(output.changelog, true)
+  }
+  return [...files.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+}
 
 async function readOptional(file: string): Promise<string | undefined> {
   try {
@@ -31,22 +77,53 @@ async function readOptional(file: string): Promise<string | undefined> {
 
 async function managedSvgFiles(directory: string, previous: IconifyJSON | undefined, signal?: AbortSignal): Promise<string[]> {
   const manifest = await readOptional(join(directory, svgManifest))
+  let claimed: Set<string> | undefined
   if (manifest !== undefined) {
-    const parsed: unknown = JSON.parse(manifest)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(manifest)
+    }
+    catch (cause) {
+      throw new IconctlError(`Invalid SVG output manifest: ${join(directory, svgManifest)}`, { cause })
+    }
     if (!parsed || typeof parsed !== 'object' || !('version' in parsed) || parsed.version !== 1 || !('files' in parsed) || !Array.isArray(parsed.files) || !parsed.files.every(file => typeof file === 'string' && safeSvgName.test(file))) {
       throw new IconctlError(`Invalid SVG output manifest: ${join(directory, svgManifest)}`)
     }
-    return parsed.files as string[]
+    claimed = new Set(parsed.files as string[])
+  }
+  let oldSet: IconSet
+  let priorNames: string[]
+  try {
+    const resolver = createIconifyJsonResolver(previous)
+    for (const name of resolver.names) {
+      if ('issue' in resolver.resolve(name)) {
+        return []
+      }
+    }
+    oldSet = new IconSetClass(previous!)
+    priorNames = svgOutputNames(oldSet)
+  }
+  catch {
+    // Missing or invalid prior JSON cannot establish ownership of any file.
+    return []
   }
   const managed: string[] = []
-  if (previous) {
-    const oldSet = new IconSetClass(previous)
-    for (const name of oldSet.list()) {
-      await checkpoint(signal)
-      const file = `${name}.svg`
-      if (safeSvgName.test(file) && await readOptional(join(directory, file)) === oldSet.toString(name, { width: 'auto', height: 'auto' })) {
-        managed.push(file)
-      }
+  for (const name of priorNames) {
+    await checkpoint(signal)
+    const file = `${name}.svg`
+    if (claimed && !claimed.has(file)) {
+      continue
+    }
+    let contents: string | null
+    try {
+      contents = oldSet.toString(name, { width: 'auto', height: 'auto' })
+    }
+    catch {
+      // An entry that cannot be reconstructed does not prove file ownership.
+      continue
+    }
+    if (contents && await readOptional(join(directory, file)) === contents) {
+      managed.push(file)
     }
   }
   return managed
@@ -84,14 +161,15 @@ export async function generateOutputs(
 
   if (!options.dryRun) {
     await checkpoint(options.signal)
+    const svgNames = config.output.svg ? svgOutputNames(iconSet) : []
     const generatedFiles = new Set<string>()
     if (config.output.svg) {
-      for (const name of [...iconSet.list().map(name => `${name}.svg`), svgManifest]) {
+      for (const name of [...svgNames.map(name => `${name}.svg`), svgManifest]) {
         generatedFiles.add(resolvePath(resolve(config.output.svg), name))
       }
     }
     if (config.output.jsonPackage) {
-      for (const name of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
+      for (const name of jsonPackageFiles) {
         generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
       }
     }
@@ -121,7 +199,7 @@ export async function generateOutputs(
         if (contents) {
           existing = JSON.parse(contents) as Record<string, unknown>
         }
-        for (const file of ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']) {
+        for (const file of jsonPackageFiles) {
           await checkpoint(options.signal)
           await rm(join(dir, file), { force: true })
         }
@@ -158,29 +236,28 @@ export async function generateOutputs(
     if (config.output.svg) {
       const svgDir = resolve(config.output.svg)
       await mkdir(svgDir, { recursive: true })
-      const next = iconSet.list().map(name => `${name}.svg`)
-      if (!next.every(file => safeSvgName.test(file))) {
-        throw new IconctlError('SVG name escapes the output directory: names must be filenames without path separators')
-      }
+      const next = svgNames.map(name => `${name}.svg`)
       for (const file of managed) {
         await checkpoint(options.signal)
         if (!next.includes(file)) {
           await rm(join(svgDir, file), { force: true })
         }
       }
-      await iconSet.forEach(async (name) => {
+      for (const name of svgNames) {
         await checkpoint(options.signal)
-        const svg = iconSet.toString(name, { width: 'auto', height: 'auto' })
-        if (svg) {
-          const target = join(svgDir, `${name}.svg`)
-          const path = relative(svgDir, target)
-          if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
-            throw new IconctlError(`SVG name escapes the output directory: ${name}`)
-          }
-          await rm(target, { force: true })
-          await writeTextFile(target, svg)
+        const contents = iconSet.toString(name, { width: 'auto', height: 'auto' })
+        if (!contents) {
+          continue
         }
-      })
+        const file = `${name}.svg`
+        const target = join(svgDir, file)
+        const path = relative(svgDir, target)
+        if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
+          throw new IconctlError(`SVG name escapes the output directory: ${file}`)
+        }
+        await rm(target, { force: true })
+        await writeTextFile(target, contents)
+      }
       await checkpoint(options.signal)
       await rm(join(svgDir, svgManifest), { force: true })
       await writeFile(join(svgDir, svgManifest), `${JSON.stringify({ version: 1, files: next.sort() }, null, 2)}\n`)
