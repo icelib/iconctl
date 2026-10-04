@@ -97,6 +97,14 @@ Snapshot diagnostics include the failing stage, source type and position, and de
 
 Older snapshots without `attempt` are shown under attempt 1. Older stage events without an attempt are listed separately as unassigned legacy records; their attempt is not guessed. Older issues remain readable and show unavailable metadata as unrecorded. These optional fields require no data migration or runner request changes. New metadata is available when the pinned executor emits structured issues; update the runner installation after deploying an executor that supports them.
 
+### Trace a snapshot to its generating attempt
+
+The **Snapshot origin** (「快照来源」) panel identifies the generating task, its operation and attempt, frozen project name, configuration revision, repository and source commit. These values belong to the task that produced the reviewed snapshot, even after the project is edited, the task is retried or a publication reuses that snapshot. Actions links come only from stage events explicitly assigned to that snapshot's attempt. If those events are missing or have been truncated, the panel says no corresponding execution link was recorded.
+
+Choose **Locate generating task** (「定位生成任务」) to select its project, clear task filters, and open and focus the exact attempt in **Tasks and versions**. A retained first-attempt snapshot returns to attempt 1 even when the task has already succeeded on attempt 2. This focus happens once; later workspace refreshes preserve your focus and navigation. While a different snapshot is loading or fails to load, the source panel stays with the currently displayed review.
+
+If the generating task is missing or belongs to a different project, the panel reports that the source task is unavailable. If only the current project is missing, the historical source remains visible and locating is disabled. The snapshot stays readable in both cases. Use **Reload workspace** (「重新读取工作空间」) to refresh the association. Legacy snapshots still mean attempt 1; unnumbered legacy events are never treated as evidence of a particular run. No API or persisted-data migration is required.
+
 ## npm publishing
 
 Review added, changed and removed icons against the last successful snapshot by default. Select **Latest release** to review all changes since publication, including changes made across several syncs, or choose any snapshot from the same project. The preview identifies the actual comparison baseline; choosing a different baseline never modifies a snapshot.

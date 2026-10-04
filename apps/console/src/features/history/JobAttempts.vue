@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Job, JobEvent, Snapshot } from '@iconctl/console-contracts'
-import { computed } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
+import { computed, ref } from 'vue'
+import { recordedRunUrl } from './snapshot-origin'
 
 const props = defineProps<{
   job: Job
@@ -34,19 +36,41 @@ const history = computed(() => {
   return [...groups.values()].sort((a, b) => b.attempt - a.attempt)
 })
 const legacyEvents = computed(() => props.job.events?.filter(event => event.attempt === undefined) ?? [])
-function runLink(event: JobEvent) {
-  if (!event.runId || !/^\d+$/.test(event.runId)) {
-    return undefined
+const disclosure = ref<HTMLDetailsElement>()
+const attempts = new Map<number, HTMLElement>()
+function rememberAttempt(attempt: number, element: Element | ComponentPublicInstance | null) {
+  if (element instanceof HTMLElement) {
+    attempts.set(attempt, element)
   }
-  const base = `https://github.com/${props.job.project.repository}/actions/runs/${event.runId}`
-  return event.runAttempt && /^\d+$/.test(event.runAttempt) ? `${base}/attempts/${event.runAttempt}` : base
+  else { attempts.delete(attempt) }
 }
+function reveal(attempt: number) {
+  const target = attempts.get(attempt)
+  if (!disclosure.value?.isConnected || !target?.isConnected || !disclosure.value.contains(target)) {
+    return false
+  }
+  disclosure.value.open = true
+  target.scrollIntoView({ block: 'center' })
+  target.focus()
+  return document.activeElement === target
+}
+function runLink(event: JobEvent) {
+  return recordedRunUrl(props.job.project.repository, event.runId, event.runAttempt)
+}
+defineExpose({ reveal })
 </script>
 
 <template>
-  <details class="attempt-history">
+  <details ref="disclosure" class="attempt-history">
     <summary>尝试与快照</summary>
-    <section v-for="group in history" :key="group.attempt" :aria-label="`第 ${group.attempt} 次尝试`">
+    <section
+      v-for="group in history"
+      :id="`job-${job.id}-attempt-${group.attempt}`"
+      :key="group.attempt"
+      :ref="element => rememberAttempt(group.attempt, element)"
+      :aria-label="`第 ${group.attempt} 次尝试`"
+      tabindex="-1"
+    >
       <h4>第 {{ group.attempt }} 次尝试 <span v-if="group.attempt === job.attempt">· 当前</span></h4>
       <p v-if="!group.events.length" class="help">
         此次尝试没有已记录的阶段。
@@ -96,6 +120,11 @@ summary {
 section {
   margin: 14px 0;
   border-top: 1px solid var(--line);
+}
+
+section:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
 }
 
 h4 {

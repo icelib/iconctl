@@ -9,12 +9,17 @@ import type {
   SnapshotPreview,
   Source,
 } from '@iconctl/console-contracts'
+import type { ComponentPublicInstance } from 'vue'
+import type { SnapshotOriginTarget } from './features/history/snapshot-origin'
 import type { NavigationIntent } from './features/projects/draft-navigation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, downloadSnapshotSvg, initializeSession, restoreBackup, upload } from './api'
 import { downloadBlob } from './browser-download'
+import { createHistoryReveal, historyJobAvailable } from './features/history/history-reveal'
 import JobAttempts from './features/history/JobAttempts.vue'
+import { snapshotOrigin } from './features/history/snapshot-origin'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
+import SnapshotOrigin from './features/history/SnapshotOrigin.vue'
 import { upsertSubmittedJob } from './features/history/submitted-job'
 import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
 import { createTaskSubmission } from './features/history/task-submission'
@@ -174,6 +179,38 @@ function clearTaskFilters() {
   Object.assign(taskFilters, emptyTaskFilters())
 }
 watch(selectedId, clearTaskFilters, { flush: 'sync' })
+const attemptViews = new Map<string, InstanceType<typeof JobAttempts>>()
+function rememberHistory(jobId: string, instance: Element | ComponentPublicInstance | null) {
+  if (instance) {
+    attemptViews.set(jobId, instance as InstanceType<typeof JobAttempts>)
+  }
+  else { attemptViews.delete(jobId) }
+}
+const historyReveal = createHistoryReveal({
+  request: requestNavigation,
+  available: job => historyJobAvailable(job, data.value),
+  select(job) {
+    selectedId.value = job.projectId
+    clearTaskFilters()
+    view.value = 'history'
+  },
+  current: job => view.value === 'history' && selectedId.value === job.projectId
+    && jobs.value.some(item => item.id === job.id),
+  rendered: nextTick,
+  focus(job, attempt) {
+    if (attempt !== undefined) {
+      return attemptViews.get(job.id)?.reveal(attempt) ?? false
+    }
+    const row = document.getElementById(`job-${job.id}`)
+    if (!row) {
+      return false
+    }
+    row.scrollIntoView({ block: 'center' })
+    row.focus()
+    return document.activeElement === row
+  },
+})
+watch([selectedId, view, taskFilters], historyReveal.invalidate, { flush: 'sync', deep: true })
 const submission = createTaskSubmission({ record: recordSubmittedJob, reveal: revealJob })
 const submissionState = submission.state
 watch([selectedId, view, taskFilters], submission.invalidate, { flush: 'sync', deep: true })
@@ -182,24 +219,8 @@ const releases = computed(() =>
     release => !selectedId.value || release.projectId === selectedId.value,
   ),
 )
-async function revealJob(job: Job, automatic = false) {
-  const result = await requestNavigation({
-    label: `任务 ${job.id}`,
-    async run() {
-      selectedId.value = job.projectId
-      clearTaskFilters()
-      view.value = 'history'
-      await nextTick()
-      const row = disposed ? null : document.getElementById(`job-${job.id}`)
-      if (!row) {
-        return false
-      }
-      row.scrollIntoView({ block: 'center' })
-      row.focus()
-      return document.activeElement === row
-    },
-  }, automatic)
-  return result === 'completed'
+async function revealJob(job: Job, automatic = false, attempt?: number) {
+  return await historyReveal.reveal(job, automatic, attempt)
 }
 function recordSubmittedJob(job: Job) {
   // The mutation response is authoritative, including a retry's new attempt.
@@ -221,6 +242,9 @@ const review = createSnapshotReview((id, compareTo, signal) => api<SnapshotPrevi
 ))
 const reviewState = review.state
 const preview = computed(() => reviewState.value.committed?.preview)
+const origin = computed(() => preview.value ? snapshotOrigin(preview.value.snapshot, data.value.jobs) : undefined)
+const originLocatable = computed(() => origin.value?.available
+  && historyJobAvailable({ id: origin.value.target.jobId, projectId: origin.value.target.projectId }, data.value))
 const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
 const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
 const svgDownload = createSnapshotDownload(downloadSnapshotSvg, downloadBlob)
@@ -546,6 +570,18 @@ async function openSnapshot(id: string, compareTo = '') {
     },
   })
 }
+async function locateSnapshotOrigin(target: SnapshotOriginTarget) {
+  const current = origin.value
+  if (disposed || view.value !== 'preview' || !current?.available || !originLocatable.value
+    || current.target.snapshotId !== target.snapshotId || current.target.jobId !== target.jobId
+    || current.target.projectId !== target.projectId || current.target.attempt !== target.attempt) {
+    return
+  }
+  const job = data.value.jobs.find(item => item.id === target.jobId && item.projectId === target.projectId)
+  if (job) {
+    await revealJob(job, false, target.attempt)
+  }
+}
 function selectSnapshot(event: Event, comparison = false) {
   const element = event.target as HTMLSelectElement
   const value = element.value
@@ -645,6 +681,8 @@ onMounted(retryWorkspace)
 onUnmounted(() => {
   disposed = true
   workspace.dispose()
+  historyReveal.dispose()
+  attemptViews.clear()
   svgDownload.dispose()
   uploads.dispose()
   draftNavigation.dispose()
@@ -1286,6 +1324,7 @@ onUnmounted(() => {
           <p class="help" aria-label="快照尝试">
             第 {{ preview.snapshot.attempt ?? 1 }} 次尝试 · {{ date(preview.snapshot.createdAt) }}
           </p>
+          <SnapshotOrigin v-if="origin" :origin="origin" :locatable="!!originLocatable" :busy="busy" :refreshing="workspaceState.pending" @locate="locateSnapshotOrigin" @refresh="retryWorkspace" />
           <SnapshotDiagnostics :issues="preview.content.issues" :failed="preview.content.failed" />
           <div class="icon-grid">
             <article v-for="name in iconNames" :key="name" class="icon-tile">
@@ -1491,7 +1530,7 @@ onUnmounted(() => {
                   }}<small v-if="job.error" class="error-text">{{
                     job.error
                   }}</small>
-                  <JobAttempts :job="job" :snapshots="data.snapshots" :busy="busy" :labels="labels" :date="date" @snapshot="openSnapshot" />
+                  <JobAttempts :ref="instance => rememberHistory(job.id, instance)" :job="job" :snapshots="data.snapshots" :busy="busy" :labels="labels" :date="date" @snapshot="openSnapshot" />
                 </td>
                 <td>
                   <a
