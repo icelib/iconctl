@@ -15,6 +15,41 @@
   dir: packages/core
   intents:
     - neat-grapes-behave
+"@iconctl/core@0.3.0":
+  dir: packages/core
+  intents:
+    - brave-carrots-cry
+    - bright-sprites-verify
+    - cool-crabs-beg
+    - curly-snails-relate
+    - fast-trains-tie
+    - fresh-dogs-relate
+    - honest-rice-pretend
+    - itchy-camels-switch
+    - itchy-flowers-matter
+    - markdown-diffs-review
+    - mean-hairs-greet
+    - polite-icons-kick
+    - quick-tigers-heal
+    - quiet-owls-read
+    - quiet-taxis-type
+    - real-teeth-invent
+    - sharp-plums-whisper
+    - shiny-boxes-learn
+    - shiny-dragons-dig
+    - slow-tigers-tan
+    - small-waves-glow
+    - sour-lemons-shake
+    - strong-pumas-mix
+    - thick-stars-stand
+    - tidy-cows-shine
+    - wise-waves-clean
+    - young-frogs-clap
+"@iconctl/website@0.0.1":
+  dir: apps/website
+  intents:
+    - brave-carrots-cry
+    - markdown-diffs-review
 iconctl@0.0.1:
   dir: apps/cli
   intents:
@@ -30,3 +65,34 @@ iconctl@0.2.0:
   dir: apps/cli
   intents:
     - neat-grapes-behave
+iconctl@0.3.0:
+  dir: apps/cli
+  intents:
+    - brave-carrots-cry
+    - bright-sprites-verify
+    - cool-crabs-beg
+    - curly-snails-relate
+    - fast-trains-tie
+    - fluffy-eggs-press
+    - fresh-dogs-relate
+    - honest-rice-pretend
+    - itchy-camels-switch
+    - itchy-flowers-matter
+    - markdown-diffs-review
+    - mean-hairs-greet
+    - polite-icons-kick
+    - quick-tigers-heal
+    - quiet-taxis-type
+    - real-teeth-invent
+    - shiny-boxes-learn
+    - slow-tigers-tan
+    - small-waves-glow
+    - sour-lemons-shake
+    - strong-pumas-mix
+    - tall-teeth-tease
+    - thick-stars-stand
+    - tidy-cows-shine
+    - tiny-pigs-repair
+    - weak-deers-live
+    - wise-waves-clean
+    - young-frogs-clap
