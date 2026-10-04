@@ -75,7 +75,7 @@ it.each([
 })
 
 it('retains sorted issue diagnostics and runtime structure validation', async () => {
-  await expect(renderSvgSprite({ prefix: 'brand', icons: {}, aliases: { z: { parent: 'absent' }, a: { parent: 'missing' } } })).rejects.toThrow('Invalid SVG sprite icon set:\n- a: Icon or alias "missing" was not found.\n- z: Icon or alias "absent" was not found.')
+  await expect(renderSvgSprite({ prefix: 'brand', icons: {}, aliases: { z: { parent: 'absent' }, a: { parent: 'missing' } } })).rejects.toThrow('Invalid SVG sprite icon set:\n- a: Icon or alias "missing" was not found. Alias path: "a" -> "missing".\n- z: Icon or alias "absent" was not found. Alias path: "z" -> "absent".')
   for (const value of [null, [], {}, { prefix: 'brand', icons: {}, width: 0 }]) {
     await expect(renderSvgSprite(value as IconifyJSON)).rejects.toThrow(IconctlError)
   }

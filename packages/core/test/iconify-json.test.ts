@@ -40,6 +40,60 @@ it('reports bad entries and dependent aliases while retaining valid entries', ()
   expect(result.issues.map(issue => issue.name)).toEqual(['bad', 'cycle', 'dependent', 'dimensions', 'missing', 'other', 'requested', 'rotation'])
 })
 
+it('reports the complete ordered alias path for missing and malformed parents', () => {
+  const resolver = createIconifyJsonResolver({
+    prefix: 'vendor',
+    icons: { bad: { body: 42 } },
+    aliases: {
+      first: { parent: 'second' },
+      second: { parent: 'missing' },
+      dependent: { parent: 'first' },
+      malformed: { parent: 42 },
+      outer: { parent: 'malformed' },
+    },
+  })
+
+  expect(resolver.resolve('first')).toEqual({ issue: {
+    name: 'first',
+    message: expect.stringContaining('Alias path: "first" -> "second" -> "missing".'),
+  } })
+  expect(resolver.resolve('dependent')).toEqual({ issue: {
+    name: 'dependent',
+    message: expect.stringContaining('Alias path: "dependent" -> "first" -> "second" -> "missing".'),
+  } })
+  expect(resolver.resolve('outer')).toEqual({ issue: {
+    name: 'outer',
+    message: expect.stringContaining('Alias path: "outer" -> "malformed".'),
+  } })
+  expect(resolver.resolve('missing')).toEqual({ issue: { name: 'missing', message: expect.not.stringContaining('Alias path:') } })
+  expect(resolver.resolve('bad')).toEqual({ issue: { name: 'bad', message: expect.not.stringContaining('Alias path:') } })
+})
+
+it('reports deterministic closed cycle paths without reusing a cached starting point', () => {
+  const resolver = createIconifyJsonResolver({
+    prefix: 'vendor',
+    icons: { good: { body } },
+    aliases: {
+      first: { parent: 'second' },
+      second: { parent: 'first' },
+      tail: { parent: 'first' },
+    },
+  })
+
+  expect(resolver.resolve('first')).toEqual({ issue: {
+    name: 'first',
+    message: expect.stringContaining('Alias path: "first" -> "second" -> "first".'),
+  } })
+  expect(resolver.resolve('second')).toEqual({ issue: {
+    name: 'second',
+    message: expect.stringContaining('Alias path: "second" -> "first" -> "second".'),
+  } })
+  expect(resolver.resolve('tail')).toEqual({ issue: {
+    name: 'tail',
+    message: expect.stringContaining('Alias path: "tail" -> "first" -> "second" -> "first".'),
+  } })
+})
+
 it('selects exact original names, including aliases, and diagnoses absent selections', () => {
   const value = { prefix: 'vendor', icons: { good: { body }, bad: null }, aliases: { alias: { parent: 'good' } } }
   const result = normalizeIconifyJson(value, { include: ['alias', 'alias', 'absent'] })

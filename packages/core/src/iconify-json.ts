@@ -17,7 +17,17 @@ export interface NormalizedIconifyIcon {
 }
 
 type RawIcon = IconifyIcon & { hidden?: boolean }
-type RawResult = { icon: RawIcon } | { message: string }
+interface RawFailure {
+  message: string
+  failedName: string
+  path?: string[]
+  cycle?: boolean
+}
+type RawResult = { icon: RawIcon } | { failure: RawFailure }
+interface RawResolution {
+  result: RawResult
+  failurePath?: string[]
+}
 export type IconifyJsonResolution = { icon: NormalizedIconifyIcon } | { issue: IconifyJsonIssue }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -78,20 +88,42 @@ export function createIconifyJsonResolver(value: unknown) {
   const cache = new Map<string, RawResult>()
   const normalized = new Map<string, IconifyJsonResolution>()
 
-  const raw = (name: string): RawResult => {
+  const formatFailure = (failure: RawFailure, path: string[]) => {
+    if (path.length < 2) {
+      return failure.message
+    }
+    return `${failure.message} Alias path: ${path.map(name => JSON.stringify(name)).join(' -> ')}.`
+  }
+
+  const raw = (name: string): RawResolution => {
     const chain: { name: string, props: Omit<RawIcon, 'body'> }[] = []
     const visiting = new Set<string>()
+    const path: string[] = []
     let current = name
     let result: RawResult
+    let failurePath: string[] | undefined
     // Iteration avoids recursive stack overflow for long vendor alias chains.
     while (true) {
+      if (visiting.has(current)) {
+        path.push(current)
+        result = { failure: { message: `Alias cycle includes "${current}".`, failedName: current, cycle: true } }
+        failurePath = path
+        break
+      }
+      path.push(current)
       const cached = cache.get(current)
       if (cached) {
         result = cached
-        break
-      }
-      if (visiting.has(current)) {
-        result = { message: `Alias cycle includes "${current}".` }
+        if ('failure' in cached) {
+          failurePath = [...path]
+          const cachedPath = cached.failure.path ?? [cached.failure.failedName]
+          if (failurePath.at(-1) === cachedPath[0]) {
+            failurePath.push(...cachedPath.slice(1))
+          }
+          else {
+            failurePath.push(...cachedPath)
+          }
+        }
         break
       }
       visiting.add(current)
@@ -119,19 +151,31 @@ export function createIconifyJsonResolver(value: unknown) {
         current = alias['parent']
       }
       catch (error) {
-        result = { message: (error as Error).message }
+        const failure: RawFailure = { message: (error as Error).message, failedName: current, path: [current] }
+        result = { failure }
+        failurePath = [...path]
         cache.set(current, result)
         break
       }
     }
+    if ('failure' in result) {
+      if (!result.failure.cycle) {
+        for (const item of chain) {
+          const itemIndex = failurePath?.indexOf(item.name)
+          const path = itemIndex === undefined || itemIndex < 0
+            ? [item.name]
+            : failurePath!.slice(itemIndex)
+          cache.set(item.name, { failure: { ...result.failure, path } })
+        }
+      }
+      return failurePath === undefined ? { result } : { result, failurePath }
+    }
     for (let index = chain.length - 1; index >= 0; index--) {
       const item = chain[index]!
-      if ('icon' in result) {
-        result = { icon: mergeIconData(result.icon, item.props) }
-      }
+      result = { icon: mergeIconData(result.icon, item.props) }
       cache.set(item.name, result)
     }
-    return result
+    return { result }
   }
 
   const resolve = (name: string): IconifyJsonResolution => {
@@ -139,10 +183,11 @@ export function createIconifyJsonResolver(value: unknown) {
     if (cached) {
       return cached
     }
-    const result = raw(name)
+    const rawResult = raw(name)
+    const result = rawResult.result
     let resolved: IconifyJsonResolution
-    if ('message' in result) {
-      resolved = { issue: { name, message: result.message } }
+    if ('failure' in result) {
+      resolved = { issue: { name, message: formatFailure(result.failure, rawResult.failurePath ?? [name]) } }
     }
     else {
       const rendered = iconToSVG(result.icon, { width: 'auto', height: 'auto' })
