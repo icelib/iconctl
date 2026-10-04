@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'pat
 import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 import { createIconifyJsonResolver } from './iconify-json'
+import { decodeUtf8 } from './json-input'
 import { OutputTransaction } from './output-transaction'
 import { generateSvgSprite } from './sprite'
 
@@ -151,7 +152,7 @@ export function generateIconNameTypes(prefix: string, names: string[]): string {
 
 export async function readPreviousIconJson(file: string): Promise<IconifyJSON | undefined> {
   try {
-    return JSON.parse(await readFile(file, 'utf8')) as IconifyJSON
+    return JSON.parse(decodeUtf8(await readFile(file))) as IconifyJSON
   }
   catch {
     return undefined

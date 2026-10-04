@@ -1,4 +1,5 @@
 import type { compareIconSets } from '@iconctl/core'
+import { isUtf8 } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { IconctlError } from '@iconctl/core'
@@ -15,7 +16,11 @@ export function localIconPath(value: unknown, option: string): string {
 export async function readIcons(file: string): Promise<IconifyJSON> {
   try {
     // Core consumers perform complete structure and alias validation.
-    return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, '')) as IconifyJSON
+    const bytes = await readFile(file)
+    if (!isUtf8(bytes)) {
+      throw new Error('Invalid UTF-8 input')
+    }
+    return JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')) as IconifyJSON
   }
   catch (error) {
     throw new IconctlError(`Cannot read Iconify JSON: ${file}`, { cause: error })

@@ -6,6 +6,7 @@ import { IconSet } from '@iconify/tools'
 import { resolveValidation } from './config'
 import { IconctlError } from './errors'
 import { normalizeIconifyJson } from './iconify-json'
+import { decodeUtf8 } from './json-input'
 import { processIconSetAsync } from './process'
 import { inspectSvgDirectory } from './sources/directory'
 import { validateIconSetAsync } from './validate'
@@ -108,7 +109,7 @@ export async function check(options: CheckOptions | CheckInputOptions): Promise<
   else {
     let value: unknown
     try {
-      value = JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''))
+      value = JSON.parse(decodeUtf8(await readFile(file)).replace(/^\uFEFF/, ''))
     }
     catch (error) {
       report.issues.push({ file, stage: 'read', message: message(error) })

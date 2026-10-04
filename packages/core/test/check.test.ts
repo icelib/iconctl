@@ -1,4 +1,5 @@
 import type { CheckInputOptions } from '../src'
+import { Buffer } from 'node:buffer'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -126,6 +127,14 @@ describe('check local artifacts', () => {
     expect((await failure({ cwd, input: 'missing.json' })).issues).toEqual([expect.objectContaining({ stage: 'read', file: path.join(cwd, 'missing.json') })])
     await writeFile(path.join(cwd, 'icons.json'), '{')
     expect((await failure({ cwd, input: 'icons.json' })).issues[0]?.stage).toBe('read')
+  })
+
+  it('reports malformed UTF-8 input as a read failure', async () => {
+    const bytes = Buffer.from('{"prefix":"vendor","icons":{"bad":{"body":"<path/>"}}}')
+    bytes[bytes.indexOf('bad') + 2] = 255
+    await writeFile(path.join(cwd, 'icons.json'), bytes)
+    const report = await failure({ cwd, input: 'icons.json' })
+    expect(report).toMatchObject({ source: 'json', count: 0, valid: false, issues: [expect.objectContaining({ stage: 'read', file: path.join(cwd, 'icons.json') })] })
   })
 
   it.each([

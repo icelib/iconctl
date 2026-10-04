@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -89,6 +90,16 @@ describe('local sprite CLI', () => {
     await runCli(['node', 'iconctl', 'sprite', '--input', input, '--output', 'new/reports/sprite.svg', '--dry-run', '--json'])
     expect(JSON.parse(output)).toEqual({ input: { file: input, prefix: 'brand' }, count: 3, outputFiles: [], dryRun: true })
     expect(await readdir(cwd)).toEqual(['icons.json'])
+  })
+
+  it('rejects malformed UTF-8 before replacing an existing sprite', async () => {
+    const bytes = Buffer.from('{"prefix":"brand","icons":{"bad":{"body":"<path/>"}}}')
+    bytes[bytes.indexOf('bad') + 2] = 255
+    await writeFile(input, bytes)
+    const report = join(cwd, 'icons.svg')
+    await writeFile(report, 'previous sprite')
+    await expect(runCli(['node', 'iconctl', 'sprite', '--input', input, '--json'])).rejects.toThrow('Cannot read Iconify JSON')
+    expect(await readFile(report, 'utf8')).toBe('previous sprite')
   })
 
   it.each([

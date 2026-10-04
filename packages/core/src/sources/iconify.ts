@@ -5,6 +5,7 @@ import { blankIconSet, cleanupSVG, SVG } from '@iconify/tools'
 import { checkpoint, settleWithAbort } from '../abort'
 import { IconctlError } from '../errors'
 import { createIconifyJsonResolver } from '../iconify-json'
+import { decodeUtf8 } from '../json-input'
 import { shouldSkipName } from '../naming'
 
 export async function loadIconifySource(
@@ -12,10 +13,10 @@ export async function loadIconifySource(
   options: { cwd: string, prefix: string, skipPrefix: string[], signal?: AbortSignal },
 ): Promise<LoadedSource> {
   const file = resolve(options.cwd, source.file)
-  const content = await settleWithAbort(() => readFile(file, { encoding: 'utf8', ...(options.signal ? { signal: options.signal } : {}) }), options.signal)
+  const bytes = await settleWithAbort(() => readFile(file, { ...(options.signal ? { signal: options.signal } : {}) }), options.signal)
   let value: unknown
   try {
-    value = JSON.parse(content.replace(/^\uFEFF/, ''))
+    value = JSON.parse(decodeUtf8(bytes).replace(/^\uFEFF/, ''))
   }
   catch {
     throw new IconctlError(`Cannot parse Iconify JSON: ${file}`)

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -169,6 +170,24 @@ it('adopts only matching legacy SVGs without a manifest', async () => {
   await writeFile(path.join(cwd, 'svg/edited.svg'), 'user edit')
   await sync({ cwd, config, iconSet: icons('new') })
   expect((await readdir(path.join(cwd, 'svg'))).sort()).toEqual(['.iconctl-manifest.json', 'edited.svg', 'new.svg'])
+})
+
+it.each([true, false])('does not trust a previous collection with malformed UTF-8 for SVG ownership, manifest=%s', async (hasManifest) => {
+  const { cwd, config } = await fixture()
+  await sync({ cwd, config, iconSet: icons('old') })
+  if (!hasManifest) {
+    await rm(path.join(cwd, 'svg/.iconctl-manifest.json'))
+  }
+  const previous = JSON.parse(await readFile(path.join(cwd, 'icons.json'), 'utf8')) as Record<string, unknown>
+  previous['metadata'] = { label: 'safe' }
+  const bytes = Buffer.from(JSON.stringify(previous))
+  const marker = bytes.indexOf(Buffer.from('safe'))
+  expect(marker).toBeGreaterThanOrEqual(0)
+  bytes[marker] = 255
+  await writeFile(path.join(cwd, 'icons.json'), bytes)
+  await sync({ cwd, config, iconSet: icons('new') })
+  expect(await readFile(path.join(cwd, 'svg/old.svg'), 'utf8')).toContain('<svg')
+  expect(await readFile(path.join(cwd, 'svg/new.svg'), 'utf8')).toContain('<svg')
 })
 
 it('rejects a malformed manifest without deleting any file', async () => {

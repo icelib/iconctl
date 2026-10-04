@@ -59,6 +59,8 @@ Add optional `output.sprite: 'icons.svg'` to export one SVG symbol collection al
 
 Local Iconify JSON can be mixed with SVG or remote sources: `{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`. Aliases, rotations and inherited dimensions are resolved before the usual processing. See [Iconify JSON sources](apps/website/sources.md#local-iconify-json).
 
+Local Iconify collection files are read as UTF-8. One leading UTF-8 BOM is accepted; malformed UTF-8 is rejected instead of being replaced. Valid Unicode, including non-ASCII names and a literal replacement character, is preserved. This applies to local Iconify collection inputs only.
+
 To check a standalone collection, run `iconctl check --input ./icons.json --width 24 --height 24 --json`. This does not load configuration, contact sources or write files. Dimensions are optional; `--name` overrides the naming regex. Failure reports include import, SVG processing and validation issues and exit with status 1. See [artifact checks](apps/website/quick-start.md#check-existing-artifacts).
 
 Review two exported collections with `iconctl diff before.json after.json --html diff.html`. It resolves aliases, inherited dimensions and transforms, reports prefix changes, and needs no configuration or credentials. Add `--check --json` for CI; `--check` exits 1 when icons or their prefix differ. See [offline comparison](apps/website/quick-start.md#offline-comparison) for the report, dry-run and API.

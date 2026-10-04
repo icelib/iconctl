@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,6 +119,18 @@ describe('local types CLI', () => {
     await expect(runCli(['node', 'iconctl', 'types', '--input', 'missing.json', '--output', 'new/types.d.ts', '--json'])).rejects.toThrow('Cannot read Iconify JSON')
     expect(JSON.parse(output)).toMatchObject({ success: false, command: 'types', error: { phase: 'execution' } })
     expect(await readdir(cwd)).toEqual(['icons.json'])
+  })
+
+  it('rejects malformed UTF-8 without replacing the existing declaration', async () => {
+    const bytes = Buffer.from('{"prefix":"brand","icons":{"bad":{"body":"<path/>"}}}')
+    bytes[bytes.indexOf('bad') + 2] = 255
+    await writeFile(input, bytes)
+    const report = join(cwd, 'icons.d.ts')
+    await writeFile(report, 'previous types')
+    await expect(runCli(['node', 'iconctl', 'types', '--input', input, '--json'])).rejects.toThrow('Cannot read Iconify JSON')
+    expect(process.exitCode).toBe(1)
+    expect(JSON.parse(output)).toMatchObject({ success: false, command: 'types', error: { phase: 'execution' } })
+    expect(await readFile(report, 'utf8')).toBe('previous types')
   })
 
   it.each([false, true])('protects the source from the output path, dryRun=%s', async (dryRun) => {

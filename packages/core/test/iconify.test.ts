@@ -1,4 +1,5 @@
 import type { IconctlConfig } from '../src'
+import { Buffer } from 'node:buffer'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +32,13 @@ it('accepts a UTF-8 BOM in a vendor collection file', async () => {
   await writeFile(join(cwd, 'vendor.json'), `\uFEFF${JSON.stringify(vendor)}`)
   const result = await sync({ cwd, config: configuration(), dryRun: true })
   expect(Object.keys(result.json.icons)).toEqual(['home'])
+})
+
+it('rejects malformed UTF-8 before resolving an Iconify source', async () => {
+  const bytes = Buffer.from('{"prefix":"vendor","icons":{"bad":{"body":"<path/>"}}}')
+  bytes[bytes.indexOf('bad') + 2] = 255
+  await writeFile(join(cwd, 'vendor.json'), bytes)
+  await expect(sync({ cwd, config: configuration(), continueOnError: true })).rejects.toThrow(`Cannot parse Iconify JSON: ${join(cwd, 'vendor.json')}`)
 })
 
 it('mixes prefixed aliases and SVG sources through the normal processing pipeline', async () => {

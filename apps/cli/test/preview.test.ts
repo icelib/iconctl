@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -85,6 +86,16 @@ describe('local preview CLI', () => {
     await runCli(['node', 'iconctl', 'preview', '--input', input, '--output', 'new/reports/preview.html', '--dry-run', '--json'])
     expect(JSON.parse(output)).toEqual({ input: { file: input, prefix: 'brand' }, count: 3, outputFiles: [], dryRun: true })
     expect(await readdir(cwd)).toEqual(['icons.json'])
+  })
+
+  it('rejects malformed UTF-8 before replacing an existing report', async () => {
+    const bytes = Buffer.from('{"prefix":"brand","icons":{"bad":{"body":"<path/>"}}}')
+    bytes[bytes.indexOf('bad') + 2] = 255
+    await writeFile(input, bytes)
+    const report = join(cwd, 'preview.html')
+    await writeFile(report, 'previous report')
+    await expect(runCli(['node', 'iconctl', 'preview', '--input', input, '--json'])).rejects.toThrow('Cannot read Iconify JSON')
+    expect(await readFile(report, 'utf8')).toBe('previous report')
   })
 
   it.each([

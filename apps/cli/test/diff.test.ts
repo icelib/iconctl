@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -79,6 +80,16 @@ describe('offline diff CLI', () => {
     await runCli(['node', 'iconctl', 'diff', before, after, '--html', join(cwd, 'reports', 'diff.html'), '--dry-run', '--json'])
     expect(JSON.parse(output)).toMatchObject({ dryRun: true, outputFiles: [] })
     expect(await readdir(cwd)).toEqual(['after.json', 'before.json'])
+  })
+
+  it('rejects malformed UTF-8 in either comparison input before writing a report', async () => {
+    const bytes = Buffer.from('{"prefix":"brand","icons":{"bad":{"body":"<path/>"}}}')
+    bytes[bytes.indexOf('bad') + 2] = 255
+    await writeFile(before, bytes)
+    const report = join(cwd, 'diff.html')
+    await writeFile(report, 'previous report')
+    await expect(runCli(['node', 'iconctl', 'diff', before, after, '--html', report, '--json'])).rejects.toThrow('Cannot read Iconify JSON')
+    expect(await readFile(report, 'utf8')).toBe('previous report')
   })
 
   it.each(['{', 'null', '{"prefix":"brand","icons":{},"aliases":{"broken":{"parent":"missing"}}}'])('rejects invalid input before replacing a report: %s', async (invalid) => {
