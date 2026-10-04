@@ -204,6 +204,8 @@ test('distinguishes an empty successful scan from an unavailable report and supp
   await plugin.ui.getByLabel('Search preflight', { exact: true }).fill('empty scan filter')
   await plugin.ui.getByRole('button', { name: 'Clear filters', exact: true }).focus()
   await page.keyboard.press('Tab')
+  await expect(plugin.ui.getByRole('combobox', { name: 'Copy JSON content', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
   await expect(button).toBeFocused()
   await page.keyboard.press('Enter')
   await expect.poll(() => plugin.requests().length).toBe(1)
