@@ -8,6 +8,9 @@ For a local engineering handoff, use [Export SVG ZIP](/console#export-a-raw-svg-
 
 Use the plugin’s **Issue type** filter to review naming, canvas size or duplicate-name problems together. It combines with search and Problems only while reports, SVG handoffs and sync eligibility continue using the complete current-page scan. See [plugin review controls](/console#figma-plugin).
 
+
+Use [Copy visible names JSON](/console#copy-visible-local-names) to share the filtered local preflight names as a deduplicated JSON array. Server-hook names remain provisional; manual selection is available when clipboard access is blocked.
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.

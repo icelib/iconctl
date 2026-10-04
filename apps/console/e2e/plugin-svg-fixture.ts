@@ -68,7 +68,7 @@ export const settings = { format: 'SVG_STRING', contentsOnly: true, useAbsoluteB
 export interface BrowserResources { created: string[], revoked: string[], active: string[], clicks: string[] }
 
 /** Actual shipped code/UI, with adapters only at Figma and network boundaries. */
-export async function mountSvg(page: Page, info: TestInfo, options: { restoredTask?: boolean, pendingContext?: boolean } = {}) {
+export async function mountSvg(page: Page, info: TestInfo, options: { restoredTask?: boolean, pendingContext?: boolean, clipboardDocument?: { url: string, deny: boolean } } = {}) {
   const first = designPage('page:svg')
   const second = designPage('page:other')
   const nodes = new Map<string, DesignNode>()
@@ -270,11 +270,20 @@ export async function mountSvg(page: Page, info: TestInfo, options: { restoredTa
       await dialog.dismiss()
     })
     page.on('download', download => downloads.push(download.suggestedFilename()))
+    const frameDocument = '<!doctype html><link rel="icon" href="data:,"><iframe title="Figma plugin" allow="clipboard-write; clipboard-read" style="width:420px;height:560px"></iframe>'
     await page.route(/^https?:/, (route) => {
+      if (options.clipboardDocument && route.request().url() === options.clipboardDocument.url && route.request().isNavigationRequest()) {
+        return route.fulfill({ contentType: 'text/html', headers: { 'Permissions-Policy': options.clipboardDocument.deny ? 'clipboard-write=(), clipboard-read=()' : 'clipboard-write=(self), clipboard-read=(self)' }, body: frameDocument })
+      }
       errors.push(`Unexpected browser request: ${route.request().url()}`)
       return route.abort()
     })
-    await page.setContent('<iframe title="Figma plugin" style="width:420px;height:560px"></iframe>')
+    if (options.clipboardDocument) {
+      await page.goto(options.clipboardDocument.url)
+    }
+    else {
+      await page.setContent('<iframe title="Figma plugin" style="width:420px;height:560px"></iframe>')
+    }
     active = true
     const instrumentation = `<script>window.svgResources={created:[],revoked:[],active:[],clicks:[]};const c=URL.createObjectURL.bind(URL),r=URL.revokeObjectURL.bind(URL),a=HTMLAnchorElement.prototype.click;URL.createObjectURL=function(b){const u=c(b);svgResources.created.push(u);svgResources.active.push(u);return u};URL.revokeObjectURL=function(u){svgResources.revoked.push(u);svgResources.active=svgResources.active.filter(x=>x!==u);return r(u)};HTMLAnchorElement.prototype.click=function(){svgResources.clicks.push(this.download);return a.call(this)}</script>`
     const html = (await readFile('../../packages/figma-plugin/dist/ui.html', 'utf8')).replace('<head>', `<head>${instrumentation}`)

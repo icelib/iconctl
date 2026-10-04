@@ -205,6 +205,18 @@ Archives support snapshot documents up to 8 MiB, at most 5000 SVGs, 1 MiB per SV
 
 Download progress and errors stay in the snapshot review. An error can be retried by clicking the download button again. Changing the snapshot or comparison, switching projects or leaving the review cancels a pending download, so a late response cannot start a download for a different review. “Download started” means the browser received the download; it does not confirm that you saved the file.
 
+### Copy visible local names
+
+Choose **Copy visible names JSON** to copy the current search × Problems only × Issue type view from the latest accepted preflight. Drafts are excluded. **Clear filters** restores the whole non-draft page. The action does not rescan; when Live preflight is off, choose **Rescan** after editing. A stale scan or pending project rules must be refreshed before copying.
+
+The JSON array contains the existing local `iconName` strings, unchanged, deduplicated and sorted by character order, with a final newline. The visible component and unique name counts show how many duplicate entries were merged. Naming, canvas-size and duplicate errors still allow review copying. A missing or empty name blocks the whole list; an empty view never replaces the clipboard with `[]`. Limits are 5000 visible components and 1 MiB of UTF-8 JSON, with no truncation.
+
+These are local preflight names. Custom naming hooks produce **provisional** names here; use the console snapshot for confirmed names. No prefix, extension or source configuration is added. Iconify `include` matches the original input JSON keys before `namePrefix`, so verify those keys first; Figma uses `pages`/`ids` and directory sources have no name `include` option.
+
+Automatic clipboard access depends on the Figma browser environment. If unavailable or denied, the plugin shows the exact JSON in a readonly field: choose **Select JSON**, then press Cmd/Ctrl+C. Failure does not move keyboard focus or retry automatically. Filtering, a new scan or invalidation clears that field and copy feedback. Only one native write can remain pending; a started write may still complete with its captured list after a view change or closing the plugin. Wait for it to finish before explicitly copying the new view.
+
+Copying leaves Locate, problem navigation, task tracking and report/SVG exports running. Reports and SVG handoffs retain their complete-page scope and eligibility, including hidden errors. No host message, network request, task or storage write is added by copying. Rebuild the plugin to use the action; no server or report-schema changes are required.
+
 ## Export a raw SVG handoff
 
 Choose **Export SVG ZIP** to deliver every non-draft component on the current page. The plugin first runs a fresh preflight with the loaded rules; search, Problems only, Issue type and selection do not limit the export. Every icon must pass and every native export must succeed. Errors identify the affected node and keep the download empty; fix the issue and export again. Paired projects use their confirmed rules, while GitHub and unpaired mode use their existing defaults. Refresh unavailable project rules before retrying. Custom server naming hooks require a console sync: download the confirmed snapshot from the console instead.

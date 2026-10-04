@@ -97,6 +97,11 @@
       #navigation-status,
       #report-status,
       #rules-status,
+      #copy-names-scope,
+      #copy-names-summary,
+      #copy-names-help,
+      #copy-names-warning,
+      #copy-names-status,
       #svg-handoff-help,
       #svg-handoff-status {
         margin: 4px 0;
@@ -105,11 +110,13 @@
       #navigation-status.err,
       #report-status.err,
       #rules-status.err,
+      #copy-names-status.err,
       #svg-handoff-status.err {
         color: #c00;
       }
       #navigation-status.ok,
       #report-status.ok,
+      #copy-names-status.ok,
       #rules-status.ok {
         color: #1b7f37;
       }
@@ -145,6 +152,16 @@
       #issue-type {
         min-width: 0;
         max-width: 100%;
+      }
+      #copy-names-json {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        height: 112px;
+        resize: vertical;
+        overflow: auto;
+        white-space: pre;
       }
       #applied-rules {
         margin: 8px 0;
@@ -247,6 +264,25 @@
     <p id="problem-position" aria-live="polite" aria-atomic="true">Rescan to navigate problems.</p>
     <ul id="list"></ul>
     <p id="navigation-status" role="status" aria-label="Navigation status" aria-live="polite"></p>
+    <button
+      id="copy-visible-names"
+      type="button"
+      disabled
+      aria-describedby="copy-names-scope copy-names-help copy-names-warning"
+    >
+      Copy visible names JSON
+    </button>
+    <p id="copy-names-scope">Local preflight names · Current filtered view · Not a sync result</p>
+    <p id="copy-names-summary" aria-live="polite"></p>
+    <p id="copy-names-help">Rescan with current rules before copying local names.</p>
+    <p id="copy-names-warning" hidden>
+      These names are provisional. Custom naming runs on the server; use the console snapshot for confirmed names.
+    </p>
+    <p id="copy-names-status" aria-label="Names copy status" aria-live="polite" aria-atomic="true"></p>
+    <div id="copy-names-fallback" hidden>
+      <label>Visible local names JSON<textarea id="copy-names-json" readonly spellcheck="false"></textarea></label>
+      <button id="select-names-json" type="button" disabled>Select JSON</button>
+    </div>
     <button id="export-report" class="secondary" type="button" disabled>Export JSON report</button>
     <button id="export-html-report" class="secondary" type="button" disabled>Export HTML report</button>
     <p id="report-status" aria-live="polite" aria-atomic="true">Rescan to prepare a complete report.</p>

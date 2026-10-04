@@ -10,6 +10,9 @@ Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [ic
 
 插件新增 **Issue type**，可按命名、画布尺寸或重复名称集中审阅，并与搜索、Problems only 叠加。报告、SVG 交接与提交资格仍使用完整当前页扫描，详见[插件审阅控件](/zh/console#figma-插件)。
 
+
+可用 [Copy visible names JSON](/zh/console#复制当前视图的本地名称) 将筛选后的本地预检名称复制为去重 JSON 数组。服务端 hook 名称仍是临时结果；剪贴板不可用时可手动选择复制。
+
 ## 文件
 
 图标单独放在 Library 文件里，不要画在业务稿中。

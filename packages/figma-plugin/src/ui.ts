@@ -3,6 +3,7 @@ import type { IssueType } from './preflight-view'
 import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
 import type { HandoffFile } from './svg-handoff-format'
+import { CopyNamesUI } from './copy-names-ui'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
 import { issueType, PreflightView } from './preflight-view'
@@ -94,6 +95,9 @@ let rulesPending: number | undefined
 let uiActive = true
 let liveRequest = 0
 let handoffRules: AppliedRules | undefined
+function visibleItems() {
+  return preflightView.visible({ search: searchInput.value, problemsOnly: problemsInput.checked, issueType: selectedIssueType })
+}
 const reportUrls = new Map<string, number | undefined>()
 const handoffUI = new SvgHandoffUI({
   current: () => ({ active: uiActive, current: currentPreflight, scanId, items, rules: handoffRules }),
@@ -102,6 +106,18 @@ const handoffUI = new SvgHandoffUI({
   cancel: document.querySelector<HTMLButtonElement>('#cancel-svg-handoff')!,
   help: document.querySelector<HTMLElement>('#svg-handoff-help')!,
   status: document.querySelector<HTMLElement>('#svg-handoff-status')!,
+})
+const copyNamesUI = new CopyNamesUI({
+  current: () => ({ active: uiActive, current: currentPreflight, scanId, items: visibleItems(), serverNaming: handoffRules?.rules.namingMode === 'server' }),
+  clipboard: () => navigator.clipboard,
+  button: document.querySelector<HTMLButtonElement>('#copy-visible-names')!,
+  summary: document.querySelector<HTMLElement>('#copy-names-summary')!,
+  help: document.querySelector<HTMLElement>('#copy-names-help')!,
+  warning: document.querySelector<HTMLElement>('#copy-names-warning')!,
+  status: document.querySelector<HTMLElement>('#copy-names-status')!,
+  fallback: document.querySelector<HTMLElement>('#copy-names-fallback')!,
+  text: document.querySelector<HTMLTextAreaElement>('#copy-names-json')!,
+  select: document.querySelector<HTMLButtonElement>('#select-names-json')!,
 })
 function updateRules() {
   rulesBtn.hidden = modeInput.value !== 'console'
@@ -222,6 +238,7 @@ function updateSubmit() {
     ? consoleBusy || !consoleConnected
     : githubBusy)
   handoffUI.update()
+  copyNamesUI.update()
 }
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
@@ -249,9 +266,6 @@ function escapeHtml(value: string) {
     '"': '&quot;',
     '\'': '&#39;',
   })[char] || char)
-}
-function visibleItems() {
-  return preflightView.visible({ search: searchInput.value, problemsOnly: problemsInput.checked, issueType: selectedIssueType })
 }
 function updateProblemNavigation() {
   const problems = visibleItems().filter(item => item.issues.length > 0)
@@ -323,6 +337,7 @@ function stepProblem(direction: 1 | -1) {
 previousProblem.addEventListener('click', () => stepProblem(-1))
 nextProblem.addEventListener('click', () => stepProblem(1))
 window.addEventListener('pagehide', () => {
+  copyNamesUI.dispose()
   handoffUI.dispose()
   setLive(false)
   uiActive = false
@@ -373,6 +388,7 @@ function render() {
   updateSubmit()
 }
 function changeView() {
+  copyNamesUI.change()
   clearNavigation()
   navigationStatus.textContent = ''
   navigationStatus.className = ''
@@ -416,6 +432,7 @@ for (const scope of ['settings', 'preferences'] as const) {
 }
 function invalidatePreflight(text: string, error = false) {
   currentPreflight = false
+  copyNamesUI.change()
   clearNavigation()
   rulesValidity.textContent = 'Scan out of date. Rescan or refresh project rules before using these results.'
   updateSubmit()
@@ -586,6 +603,7 @@ window.onmessage = (event: MessageEvent<{
     handoffRules = message.appliedRules
     renderRules(message.appliedRules)
     currentPreflight = true
+    copyNamesUI.change()
     reportPending = undefined
     reportRequest++
     reportAvailable = message.reportAvailable === true && scanId !== undefined

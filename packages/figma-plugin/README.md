@@ -49,6 +49,18 @@ The selected issue type lasts for this session and survives Rescan and Live pref
 
 JSON preflight reports keep `schemaVersion: 1` and the existing `issues` strings. An optional per-item `diagnostics` array adds only `code` and `message`, using `name-rule`, `canvas-size` and `duplicate-name` for current checks. Each entry corresponds to the issue at the same index; unknown codes remain readable. Missing or inconsistent metadata is omitted from reports and appears as Other in the plugin. Existing issues remain the authority for submission checks, and consumers can continue reading reports without diagnostics. HTML reports retain their existing issue text and complete captured scan.
 
+## Copy visible local names
+
+Choose **Copy visible names JSON** to copy the current search × Problems only × Issue type view from the latest accepted preflight. Drafts are excluded. **Clear filters** restores the whole non-draft page. The action does not rescan; when Live preflight is off, choose **Rescan** after editing. A stale scan or pending project rules must be refreshed before copying.
+
+The JSON array contains the existing local `iconName` strings, unchanged, deduplicated and sorted by character order, with a final newline. The visible component and unique name counts show how many duplicate entries were merged. Naming, canvas-size and duplicate errors still allow review copying. A missing or empty name blocks the whole list; an empty view never replaces the clipboard with `[]`. Limits are 5000 visible components and 1 MiB of UTF-8 JSON, with no truncation.
+
+These are local preflight names. Custom naming hooks produce **provisional** names here; use the console snapshot for confirmed names. No prefix, extension or source configuration is added. Iconify `include` matches the original input JSON keys before `namePrefix`, so verify those keys first; Figma uses `pages`/`ids` and directory sources have no name `include` option.
+
+Automatic clipboard access depends on the Figma browser environment. If unavailable or denied, the plugin shows the exact JSON in a readonly field: choose **Select JSON**, then press Cmd/Ctrl+C. Failure does not move keyboard focus or retry automatically. Filtering, a new scan or invalidation clears that field and copy feedback. Only one native write can remain pending; a started write may still complete with its captured list after a view change or closing the plugin. Wait for it to finish before explicitly copying the new view.
+
+Copying leaves Locate, problem navigation, task tracking and report/SVG exports running. Reports and SVG handoffs retain their complete-page scope and eligibility, including hidden errors. No host message, network request, task or storage write is added by copying. Rebuild the plugin to use the action; no server or report-schema changes are required.
+
 ## Complete page report
 
 With default naming, two components on the current page that produce the same icon name (for example, `Arrow Left` and `arrow_left`) both receive a **Duplicate icon name** error. This includes component-set variants and blocks new submissions until you rename and rescan. Use **Problems only**, search, **Locate** and the complete JSON report to review every conflicting component. Skipped drafts do not participate. Custom server naming remains provisional and is not blocked based on local name collisions. The check covers only the current page; server validation is still required across the configured sync scope. Existing tasks continue to be tracked even when the current page has errors.
