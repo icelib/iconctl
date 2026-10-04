@@ -132,6 +132,9 @@ async function collect(options: InitCommandOptions, interactive: boolean, contex
   if (url !== undefined && type !== 'iconfont' && type !== 'iconify') {
     throw new IconctlError('--url is only supported with --source iconfont or iconify.')
   }
+  if (url !== undefined && input !== undefined) {
+    throw new IconctlError('--input and --url cannot be combined for a source.')
+  }
   if (prefix === undefined) {
     prefix = await ask('Iconify prefix', { type: 'text', placeholder: 'brand', default: 'brand' }) || 'brand'
   }
@@ -247,8 +250,8 @@ export async function runInit(options: InitCommandOptions, context: CommandConte
   if (options.source !== undefined) {
     sourceType(options.source)
   }
-  if (options.url !== undefined && options.source !== undefined && options.source !== 'iconfont') {
-    throw new IconctlError('--url is only supported with --source iconfont.')
+  if (options.url !== undefined && options.source !== undefined && options.source !== 'iconfont' && options.source !== 'iconify') {
+    throw new IconctlError('--url is only supported with --source iconfont or iconify.')
   }
   if (options.input !== undefined && options.url !== undefined) {
     throw new IconctlError('Use --input or --url, not both.')

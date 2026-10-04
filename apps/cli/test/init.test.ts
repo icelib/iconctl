@@ -94,6 +94,19 @@ describe('safe init', () => {
     expect(report().sourceType).toBe('iconfont')
   })
 
+  it('generates a remote Iconify URL source', async () => {
+    const url = 'https://cdn.example.invalid/icons.json?set=brand'
+    await init('--source', 'iconify', '--url', url, '--prefix', 'brand', '--json')
+    expect((await generated()).sources[0]).toMatchObject({ type: 'iconify', url, namePrefix: '' })
+    expect(report().sourceType).toBe('iconify')
+  })
+
+  it('rejects Iconify --input and --url together', async () => {
+    await expect(init('--source', 'iconify', '--input', './vendor.json', '--url', 'https://cdn.example.invalid/icons.json', '--prefix', 'brand', '--json')).rejects.toThrow()
+    expect(report()).toMatchObject({ success: false, command: 'init', error: { phase: 'arguments' } })
+    expect(await readdir(cwd)).toEqual([])
+  })
+
   it.each(sources)('preserves valid %s wizard answers', async (type, input) => {
     tty(true)
     const answers = [type, 'brand', 'icons.json', ...(type === 'iconfont' ? ['', input] : [input])]
