@@ -416,3 +416,17 @@ Regression checks distinguish native source execution from bundled development a
 ```sh
 ICONCTL_NATIVE_NODE=/absolute/path/to/node pnpm exec vitest run --project iconctl apps/cli/test/native-cli.test.ts
 ```
+
+### Workspace build caches
+
+The Website and Console use package-local Turbo inputs that include tracked pages, themes, public assets, HTML entry points and build scripts. The Plugin build includes its inline-UI script, and CLI typechecking includes the native `dev` entry. Website tasks also track the icons package's JSON and changelog directly, because these files are imported without an icons build step. Upstream task hashes carry those changes into the Console build.
+
+These inputs extend the repoctl-managed defaults. Keep repository-specific inputs in each package's `turbo.json`; generated `dist`, VitePress cache, Wrangler state and generated Worker declarations stay excluded. Unchanged inputs can reuse successful tasks, while edits to the files those tasks read invalidate the cache.
+
+The normal `pnpm exec repo check --full` gate includes a regression that asks Turbo to calculate hashes from an isolated fixture using the real package graph and configuration. It checks representative input changes, downstream invalidation and stable hashes for generated files. Run it directly with:
+
+```sh
+pnpm exec vitest run --project iconctl apps/cli/test/build-cache.test.ts
+```
+
+For a one-off rebuild while investigating cache behavior, use `pnpm exec turbo run build --force`. This bypasses reuse for that run; permanent input corrections belong in package-local configuration.

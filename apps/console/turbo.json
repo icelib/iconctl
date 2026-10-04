@@ -2,9 +2,11 @@
   "extends": ["//"],
   "tasks": {
     "build": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_DEFAULT$"],
       "outputs": ["dist/**", "worker-configuration.d.ts"]
     },
     "typecheck": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_DEFAULT$"],
       "outputs": ["worker-configuration.d.ts"]
     }
   }

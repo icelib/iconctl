@@ -416,3 +416,17 @@ CLI 源码修改会立即生效；修改 core 源码后需要重新构建 `@icon
 ```sh
 ICONCTL_NATIVE_NODE=/absolute/path/to/node pnpm exec vitest run --project iconctl apps/cli/test/native-cli.test.ts
 ```
+
+### Workspace 构建缓存
+
+Website 和 Console 的包级 Turbo 输入覆盖受版本控制的页面、主题、公开资源、HTML 入口及构建脚本。Plugin 构建包含内联 UI 脚本，CLI 类型检查包含原生 `dev` 入口。Website 任务还直接追踪 icons 包的 JSON 和 changelog，因为这两个文件被直接导入，icons 包没有构建步骤。上游任务的 hash 会把这些变化传递到 Console 构建。
+
+这些输入在 repoctl 受管默认配置上扩展。仓库专用输入应放在各包的 `turbo.json`；生成的 `dist`、VitePress 缓存、Wrangler 状态和 Worker 类型声明继续排除。输入未变化时可以复用成功任务，任务实际读取的文件发生变化时会使缓存失效。
+
+常规 `pnpm exec repo check --full` 包含缓存回归：它在隔离 fixture 中使用真实包依赖图和配置，让 Turbo 计算 hash，检查代表输入变化、下游失效，以及生成文件不改变 hash。可单独运行：
+
+```sh
+pnpm exec vitest run --project iconctl apps/cli/test/build-cache.test.ts
+```
+
+排查缓存行为时，可用 `pnpm exec turbo run build --force` 做一次重新构建。它只绕过当次缓存复用；永久输入修复仍应落在包级配置中。
