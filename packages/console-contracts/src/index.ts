@@ -4,6 +4,16 @@ export const OWNER_ID = '15621541'
 export const WORKFLOW = 'iconctl-console.yml'
 export const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+export const uploadKind = z.enum(['svg-zip', 'iconify-json'])
+export type UploadKind = z.infer<typeof uploadKind>
+export interface Upload {
+  id: string
+  digest: string
+  bytes: number
+  /** Missing on existing SVG ZIP uploads. */
+  kind?: UploadKind
+}
+export { validateIconifyUpload } from './iconify-upload'
 export const slug = z
   .string()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
@@ -66,11 +76,13 @@ export const sourceSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('iconify'),
-      file: safePath,
+      file: safePath.optional(),
+      upload: identifier.optional(),
       include: z.array(z.string().min(1)).optional(),
       namePrefix: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .refine(source => (source.file !== undefined) !== (source.upload !== undefined), 'Expected exactly one Iconify file or upload'),
   z.object({ type: z.literal('directory'), ...localSource }).strict(),
   z.object({ type: z.literal('jsdesign'), ...localSource }).strict(),
 ])

@@ -12,6 +12,7 @@ import {
   safePath,
   snapshotCompareTo,
   snapshotInput,
+  uploadKind,
 } from '@iconctl/console-contracts'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
@@ -408,7 +409,7 @@ app.get('/api/runner/:id/uploads/:uploadId', async (c) => {
   }
   return new Response(body.body, {
     headers: {
-      'Content-Type': 'application/zip',
+      'Content-Type': upload.kind === 'iconify-json' ? 'application/json' : 'application/zip',
       'X-Content-SHA256': upload.digest,
     },
   })
@@ -663,13 +664,10 @@ app.get('/api/releases/:id/package.tgz', async (c) => {
     },
   })
 })
-app.post('/api/uploads', async c =>
-  c.json(
-    await account(c.env).saveUpload(
-      await limitedBody(c.req.raw, MAX_UPLOAD_BYTES),
-    ),
-    201,
-  ))
+app.post('/api/uploads', async (c) => {
+  const kind = uploadKind.parse(c.req.query('kind') ?? 'svg-zip')
+  return c.json(await account(c.env).saveUpload(await limitedBody(c.req.raw, MAX_UPLOAD_BYTES), kind), 201)
+})
 app.post('/api/pairings/approve', async (c) => {
   const input = z
     .object({

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { projectInput } from '@iconctl/console-contracts'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { sha256 } from '../src/files'
 import { classifyFailure, synchronize } from '../src/index'
 
 const exec = promisify(execFile)
@@ -139,4 +140,96 @@ it.each<Source>([
   expect(classifyFailure(failure)).toBe('validation')
   expect(snapshot!.failed).toHaveLength(1)
   expect(snapshot!.issues).toHaveLength(1)
+})
+
+function uploadedCollection(value: unknown = collection) {
+  const bytes = new TextEncoder().encode(`\uFEFF${JSON.stringify(value)}`)
+  const upload = crypto.randomUUID()
+  job.project.sources = [{ type: 'iconify', upload }]
+  client.request = vi.fn(async (path) => {
+    expect(path).toBe(`uploads/${upload}`)
+    return new Response(bytes, { headers: { 'Content-Type': 'application/json', 'X-Content-SHA256': sha256(bytes) } })
+  })
+  return bytes
+}
+
+it('imports a JSON upload absent from the pinned repository with aliases, original names and normal outputs', async () => {
+  // The only repository file deliberately contains an unrelated collection.
+  job.sourceCommit = await saveCommit('{"prefix":"repo","icons":{}}')
+  const bytes = uploadedCollection()
+  const source = job.project.sources[0]!
+  if (source.type !== 'iconify') {
+    throw new Error('Fixture source type')
+  }
+  source.include = ['rotated']
+  source.namePrefix = 'upload-'
+  await synchronize(job, client, repository, work)
+  expect(Object.keys(snapshot!.json.icons)).toEqual(['upload-rotated'])
+  expect(snapshot!.json.icons['upload-rotated']!.body).toContain('currentColor')
+  expect(snapshot!.files['svg/upload-rotated.svg']).toBeDefined()
+  expect(new Uint8Array(await readFile(join(work, 'iconify-0.json')))).toEqual(bytes)
+  expect(snapshot!.sources).toEqual([{ type: 'iconify', notModified: false }])
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it.each(['check', 'dry-run'] as const)('accepts an uploaded explicit empty selection during %s', async (operation) => {
+  uploadedCollection()
+  job.operation = operation
+  Object.assign(job.project.sources[0]!, { include: [] })
+  await synchronize(job, client, repository, work)
+  expect(snapshot!.json.icons).toEqual({})
+  expect(snapshot!.files).toEqual({})
+})
+
+it('leaves unselected invalid aliases to core and snapshots selected alias failures', async () => {
+  uploadedCollection({ ...collection, aliases: { bad: { parent: 'absent' } } })
+  Object.assign(job.project.sources[0]!, { include: ['home'] })
+  await synchronize(job, client, repository, work)
+  expect(Object.keys(snapshot!.json.icons)).toEqual(['home'])
+  expect(snapshot!.issues).toEqual([])
+  await rm(work, { recursive: true })
+  await mkdir(work)
+  snapshot = undefined
+  Object.assign(job.project.sources[0]!, { include: ['bad'] })
+  const failure = await synchronize(job, client, repository, work).catch(error => error)
+  expect(classifyFailure(failure)).toBe('validation')
+  expect(snapshot!.failed).toEqual(['bad'])
+})
+
+it('preserves mixed repository/upload override order', async () => {
+  const upload = crypto.randomUUID()
+  const body = JSON.stringify({ prefix: '../hostile-prefix', width: 32, icons: { home: { body: '<path d="M0 0h2v2H0z"/>' } } })
+  client.request = async () => new Response(body, { headers: { 'Content-Type': 'application/json', 'X-Content-SHA256': sha256(body), 'Content-Disposition': 'attachment; filename="../../escape.json"' } })
+  job.project.sources = [{ type: 'iconify', file: 'vendor.json' }, { type: 'iconify', upload }]
+  await synchronize(job, client, repository, work)
+  expect(snapshot!.json.icons['home']!.width ?? snapshot!.json.width).toBe(32)
+  expect(await readFile(join(work, 'iconify-1.json'), 'utf8')).toBe(body)
+  expect(snapshot!.sources).toHaveLength(2)
+})
+
+it.each([
+  ['HTTP 404 unavailable', 'configuration'],
+  ['HTTP 401 authorization', 'authorization'],
+  ['HTTP 403 forbidden', 'permissions'],
+] as const)('retains request failure classification: %s', async (message, category) => {
+  uploadedCollection()
+  client.request = async () => {
+    throw new Error(message)
+  }
+  const failure = await synchronize(job, client, repository, work).catch(error => error)
+  expect(classifyFailure(failure)).toBe(category)
+  expect(snapshot).toBeUndefined()
+  await expect(readFile(join(work, 'iconify-0.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('materializes an upload before advanced configuration executes and keeps its task-bound source', async () => {
+  const bytes = uploadedCollection()
+  const marker = join(work, 'advanced-read.json')
+  await writeFile(join(repository, 'advanced.mjs'), `import { readFileSync, writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, readFileSync(${JSON.stringify(join(work, 'iconify-0.json'))})); export default { prefix: 'ignored', sources: [{type:'iconify',file:'not-allowed.json'}] };`)
+  job.sourceCommit = await saveCommit('{"prefix":"repo","icons":{}}')
+  job.project.advancedConfig = { path: 'advanced.mjs', commit: job.sourceCommit }
+  await synchronize(job, client, repository, work)
+  expect(new Uint8Array(await readFile(marker))).toEqual(bytes)
+  expect(snapshot!.json.prefix).toBe('brand')
+  expect(Object.keys(snapshot!.json.icons).sort()).toEqual(['home', 'rotated'])
 })

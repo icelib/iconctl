@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { api, initializeSession } from '../../src/api'
+import { api, initializeSession, upload } from '../../src/api'
 import { createWorkspaceRefresh } from '../../src/features/workspace/workspace-refresh'
 
 function deferred<T>() {
@@ -108,4 +108,15 @@ it('renews CSRF before reading state when an expired session is retried after a 
   finally {
     workspace.dispose()
   }
+})
+
+it('uses an explicit JSON upload kind and content type without trusting the file extension or MIME', async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(Response.json({ csrf: 'session' })).mockImplementation(async () => Response.json({ id: 'upload' }))
+  vi.stubGlobal('fetch', fetch)
+  await initializeSession()
+  const file = new File(['{}'], 'misleading.zip', { type: 'application/zip' })
+  expect(await upload(file, undefined, 'iconify-json')).toBe('upload')
+  expect(fetch.mock.calls[1]).toMatchObject(['/api/uploads?kind=iconify-json', { headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'session' }, body: file }])
+  await upload(file)
+  expect(fetch.mock.calls[2]).toMatchObject(['/api/uploads', { headers: { 'Content-Type': 'application/zip' } }])
 })

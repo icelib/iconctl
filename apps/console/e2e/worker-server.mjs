@@ -7,10 +7,12 @@ import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare'
+import { createUploadEnvironment } from './fixtures/iconify-upload-environment.mjs'
 
 async function main() {
   const entrypoint = new Map([
     ['history', './fixtures/history-worker.mjs'],
+    ['iconify-upload', './fixtures/iconify-upload-worker.mjs'],
     ['diagnostics', './fixtures/diagnostics-worker.mjs'],
     ['provenance', './fixtures/provenance-worker.mjs'],
     ['release-comparison', './fixtures/release-comparison-worker.mjs'],
@@ -47,9 +49,10 @@ async function main() {
   process.once('SIGINT', () => void stop())
 
   try {
-    const recoveryOrigin = process.argv[2] === 'review-recovery' ? 'https://review-recovery.test' : undefined
+    const uploadEnvironment = process.argv[2] === 'iconify-upload' ? await createUploadEnvironment(directory) : undefined
+    const recoveryOrigin = process.argv[2] === 'review-recovery' ? 'https://review-recovery.test' : uploadEnvironment ? 'https://iconify-upload.test' : undefined
     let workflowContent
-    if (recoveryOrigin) {
+    if (recoveryOrigin || uploadEnvironment) {
       const workflowBundle = join(directory, 'workflow.mjs')
       await build({
         entryPoints: [fileURLToPath(new URL('../worker/workflow.ts', import.meta.url))],
@@ -59,7 +62,10 @@ async function main() {
         format: 'esm',
       })
       const { runnerWorkflow } = await import(pathToFileURL(workflowBundle).href)
-      workflowContent = Buffer.from(runnerWorkflow(recoveryOrigin, 'fixture/icons', 'a'.repeat(40))).toString('base64')
+      if (uploadEnvironment) {
+        uploadEnvironment.workflow = origin => Buffer.from(runnerWorkflow(origin, 'fixture/icons', 'a'.repeat(40))).toString('base64')
+      }
+      else { workflowContent = Buffer.from(runnerWorkflow(recoveryOrigin, 'fixture/icons', 'a'.repeat(40))).toString('base64') }
     }
     const bundle = join(directory, 'worker.mjs')
     await build({
@@ -85,6 +91,7 @@ async function main() {
       compatibilityFlags: ['nodejs_compat'],
       bindings: {
         APP_ORIGIN: recoveryOrigin ?? 'http://127.0.0.1',
+        ...uploadEnvironment?.bindings,
         GITHUB_APP_ID: 'browser-fixture',
         GITHUB_PRIVATE_KEY: generateKeyPairSync('rsa', { modulusLength: 2048 })
           .privateKey
@@ -101,7 +108,13 @@ async function main() {
         run_worker_first: true,
         routerConfig: { has_user_worker: true },
       },
-      outboundService(request) {
+      async outboundService(request) {
+        if (uploadEnvironment) {
+          const response = await uploadEnvironment.outbound(request)
+          if (response) {
+            return response
+          }
+        }
         const url = new URL(request.url)
         if (url.origin === 'https://api.github.com') {
           if (process.argv[2] === 'release-comparison' && request.method === 'GET') {
@@ -135,6 +148,9 @@ async function main() {
     // Use the same supported options converter as the installed Wrangler.
     runtime = new Miniflare(convertV4MiniflareOptions(options))
     const url = await runtime.ready
+    if (uploadEnvironment) {
+      uploadEnvironment.origin = recoveryOrigin ?? url.origin
+    }
     // Retain the allocated port while configuring the real CSRF origin check.
     await runtime.setOptions(convertV4MiniflareOptions({
       ...options,

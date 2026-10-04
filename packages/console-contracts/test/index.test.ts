@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo, snapshotIssue, sourceSchema } from '../src'
+import { iconDiff, nextVersion, projectInput, safePath, snapshotCompareTo, snapshotIssue, sourceSchema, uploadKind, validateIconifyUpload } from '../src'
 
 describe('console contracts', () => {
   it('keeps bounded structured diagnostics while accepting legacy issues', () => {
@@ -37,6 +37,30 @@ describe('console contracts', () => {
     { dir: 'raw' },
   ])('rejects invalid or out-of-scope Iconify source fields: %j', (fields) => {
     expect(() => sourceSchema.parse({ type: 'iconify', file: 'icons.json', ...fields })).toThrow()
+  })
+  it('accepts exactly one Iconify input and retains upload selections', () => {
+    const upload = crypto.randomUUID()
+    expect(sourceSchema.parse({ type: 'iconify', upload, include: [], namePrefix: ' X_' })).toEqual({ type: 'iconify', upload, include: [], namePrefix: ' X_' })
+    for (const fields of [{}, { file: '' }, { file: 'a.json', upload }, { upload: 'invalid' }]) {
+      expect(() => sourceSchema.parse({ type: 'iconify', ...fields })).toThrow()
+    }
+    expect(uploadKind.parse('iconify-json')).toBe('iconify-json')
+    expect(uploadKind.parse('svg-zip')).toBe('svg-zip')
+    expect(() => uploadKind.parse('json')).toThrow()
+  })
+  it('checks only the upload envelope, preserving BOM, metadata and unresolved icon/alias values', () => {
+    for (const value of [
+      { prefix: '', icons: {} },
+      { prefix: ' Vendor_1', icons: { selected: null }, aliases: { bad: { parent: 'missing' } }, not_found: ['unknown'], info: { name: 'Extra' } },
+    ]) {
+      expect(() => validateIconifyUpload(new TextEncoder().encode(`\uFEFF${JSON.stringify(value)}`))).not.toThrow()
+    }
+  })
+  it.each(['not json', 'null', '[]', '{"icons":{}}', '{"prefix":"x","icons":[]}', '{"prefix":"x","icons":{},"aliases":[]}', '{"prefix":"x","icons":{},"not_found":[1]}'])('rejects invalid upload envelopes: %s', (value) => {
+    expect(() => validateIconifyUpload(new TextEncoder().encode(value))).toThrow(/Iconify JSON upload/)
+  })
+  it('rejects invalid UTF-8 instead of replacing malformed bytes', () => {
+    expect(() => validateIconifyUpload(new Uint8Array([0x7B, 0xFF, 0x7D]))).toThrow(/UTF-8 JSON/)
   })
   it('uses stable semantic versions and starts at 0.1.0', () => {
     expect(nextVersion(undefined, 'major')).toBe('0.1.0')

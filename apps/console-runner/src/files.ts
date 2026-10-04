@@ -8,6 +8,7 @@ import {
   readdir,
   readFile,
   realpath,
+  rm,
   writeFile,
 } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -15,6 +16,7 @@ import {
   MAX_ARTIFACT_BYTES,
   MAX_UPLOAD_BYTES,
   safePath,
+  validateIconifyUpload,
 } from '@iconctl/console-contracts'
 import { unzipSync } from 'fflate'
 
@@ -35,6 +37,10 @@ export function resolveInside(root: string, name: string) {
 
 export class RepositorySourceError extends Error {
   override name = 'RepositorySourceError'
+}
+
+export class UploadStreamError extends Error {
+  override name = 'UploadStreamError'
 }
 
 /** Freeze a bounded repository file before any advanced configuration executes. */
@@ -83,6 +89,74 @@ export async function materializeIconifySource(root: string, name: string, desti
     }
     throw new RepositorySourceError('Cannot read repository Iconify JSON source', { cause: error })
   }
+}
+
+/** Validate raw upload bytes before creating a runner-owned input file. */
+export async function materializeIconifyUpload(response: Response, destination: string) {
+  const invalid = (message: string) => new RepositorySourceError(message)
+  if (response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
+    await response.body?.cancel().catch(() => undefined)
+    throw invalid('Iconify JSON upload has an unexpected content type; upload the file again')
+  }
+  if (Number(response.headers.get('content-length')) > MAX_UPLOAD_BYTES) {
+    await response.body?.cancel().catch(() => undefined)
+    throw invalid('Iconify JSON upload exceeds the 10 MiB size limit')
+  }
+  const reader = response.body?.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  if (reader) {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) {
+          break
+        }
+        // Do not retain or copy an oversized chunk, regardless of Content-Length.
+        if (value.byteLength > MAX_UPLOAD_BYTES - size) {
+          await reader.cancel().catch(() => undefined)
+          throw invalid('Iconify JSON upload exceeds the 10 MiB size limit')
+        }
+        size += value.byteLength
+        chunks.push(value)
+      }
+    }
+    catch (error) {
+      if (error instanceof RepositorySourceError) {
+        throw error
+      }
+      throw new UploadStreamError('Iconify upload stream interrupted', { cause: error })
+    }
+    finally {
+      reader.releaseLock()
+    }
+  }
+  const bytes = Buffer.concat(chunks, size)
+  if (sha256(bytes) !== response.headers.get('X-Content-SHA256')) {
+    throw new Error('Upload digest mismatch')
+  }
+  try {
+    validateIconifyUpload(bytes)
+  }
+  catch (error) {
+    throw invalid((error as Error).message)
+  }
+  const file = await open(destination, 'wx')
+  try {
+    await file.writeFile(bytes)
+    await file.close()
+  }
+  catch (error) {
+    await file.close().catch(() => undefined)
+    try {
+      await rm(destination, { force: true })
+    }
+    catch (cleanup) {
+      throw new AggregateError([error, cleanup], 'Iconify upload write and cleanup failed')
+    }
+    throw error
+  }
+  return destination
 }
 
 export async function validateDirectory(root: string, name: string) {

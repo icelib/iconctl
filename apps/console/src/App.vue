@@ -517,6 +517,7 @@ function selectIconifyNames(source: Extract<Source, { type: 'iconify' }>, event:
 function iconifyNames(event: Event) {
   return (event.target as HTMLTextAreaElement).value.split(/\r?\n/).filter(name => name.length > 0)
 }
+const repositoryFiles = new WeakMap<Source, string>()
 function attachUpload(event: Event, source: Source) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -524,6 +525,9 @@ function attachUpload(event: Event, source: Source) {
   input.value = ''
   if (!file || busy.value || editorState.value.refreshing) {
     return
+  }
+  if (source.type === 'iconify' && source.file !== undefined) {
+    repositoryFiles.set(source, source.file)
   }
   void uploads.start(source, file)
 }
@@ -536,8 +540,11 @@ function removeSource(source: Source) {
 }
 function useRepositorySource(source: Source) {
   uploads.forget(source)
-  if ('dir' in source) {
+  if ('dir' in source || source.type === 'iconify') {
     delete source.upload
+  }
+  if (source.type === 'iconify') {
+    source.file = repositoryFiles.get(source) ?? ''
   }
 }
 async function start(operation: string, projectId = selectedId.value) {
@@ -1065,14 +1072,30 @@ onUnmounted(() => {
               ></label><label>移除名称前缀<input v-model="source.stripPrefix"></label>
             </div>
             <div v-else-if="source.type === 'iconify'" class="form-grid">
-              <label class="full-width">仓库内 JSON 文件路径<input
+              <label v-if="!source.upload" class="full-width">仓库内 JSON 文件路径<input
                 v-model="source.file"
+                :disabled="uploads.get(source)?.phase === 'pending'"
                 required
                 maxlength="240"
                 placeholder="vendor/icons.json"
               ></label>
               <p class="help full-width">
-                从所选 GitHub 仓库读取 Iconify JSON，路径相对于仓库根目录。
+                从所选 GitHub 仓库读取 JSON（路径相对于仓库根目录），或上传本地 Iconify 集合；保存项目后生效。
+              </p>
+              <label class="full-width">上传 Iconify JSON（最多 10 MiB）<input
+                type="file"
+                accept=".json,application/json"
+                :disabled="busy || uploading || editorState.refreshing"
+                @change="attachUpload($event, source)"
+              ></label>
+              <p v-if="source.upload" class="help full-width">
+                已上传 · {{ source.upload }}
+                <button type="button" class="text-button" @click="useRepositorySource(source)">
+                  恢复使用仓库文件
+                </button>
+              </p>
+              <p class="help full-width">
+                上传仅检查 JSON 格式；图标、别名与项目规则将在运行任务时校验。
               </p>
               <label>导入范围<select
                 :value="source.include === undefined ? 'all' : 'selected'"
@@ -1095,7 +1118,7 @@ onUnmounted(() => {
                 @change="source.include = iconifyNames($event)"
               /></label>
               <p v-if="source.include !== undefined" class="help full-width">
-                空行会忽略；名单留空时不导入任何图标。
+                按原始图标或 alias 名称匹配，前缀不参与匹配。空行会忽略；名单留空时不导入任何图标。
               </p>
             </div>
             <div v-else class="form-grid">
@@ -1108,28 +1131,6 @@ onUnmounted(() => {
                 :disabled="busy || uploading || editorState.refreshing"
                 @change="attachUpload($event, source)"
               ></label>
-              <div v-if="uploads.get(source)" class="upload-feedback full-width">
-                <p v-if="uploads.get(source)?.phase === 'failed'" role="alert" aria-label="来源上传失败" class="message error">
-                  {{ uploads.get(source)?.fileName }}：{{ uploads.get(source)?.error }}
-                </p>
-                <p v-else role="status" aria-label="来源上传状态" class="help">
-                  <template v-if="uploads.get(source)?.phase === 'pending'">
-                    正在上传：{{ uploads.get(source)?.fileName }}。完成或取消后可保存项目。
-                  </template>
-                  <template v-else-if="uploads.get(source)?.phase === 'uploaded'">
-                    已上传：{{ uploads.get(source)?.fileName }}；保存项目后生效。
-                  </template>
-                  <template v-else>
-                    已取消上传：{{ uploads.get(source)?.fileName }}。
-                  </template>
-                </p>
-                <button v-if="uploads.get(source)?.phase === 'pending'" type="button" @click="uploads.cancel(source)">
-                  取消上传
-                </button>
-                <button v-if="uploads.get(source)?.phase === 'failed'" type="button" :disabled="busy || uploading || editorState.refreshing" @click="uploads.retry(source)">
-                  重试上传
-                </button>
-              </div>
               <p v-if="source.upload" class="help full-width">
                 已上传 · {{ source.upload }}
                 <button
@@ -1144,6 +1145,28 @@ onUnmounted(() => {
                 即时设计请先导出 SVG。ZIP 根目录使用 <code>svg</code>；只接受
                 SVG 文件，不支持符号链接。
               </p>
+            </div>
+            <div v-if="uploads.get(source)" class="upload-feedback full-width">
+              <p v-if="uploads.get(source)?.phase === 'failed'" role="alert" aria-label="来源上传失败" class="message error">
+                {{ uploads.get(source)?.fileName }}：{{ uploads.get(source)?.error }}
+              </p>
+              <p v-else role="status" aria-label="来源上传状态" class="help">
+                <template v-if="uploads.get(source)?.phase === 'pending'">
+                  正在上传：{{ uploads.get(source)?.fileName }}。完成或取消后可保存项目。
+                </template>
+                <template v-else-if="uploads.get(source)?.phase === 'uploaded'">
+                  已上传：{{ uploads.get(source)?.fileName }}；保存项目后生效。
+                </template>
+                <template v-else>
+                  已取消上传：{{ uploads.get(source)?.fileName }}。
+                </template>
+              </p>
+              <button v-if="uploads.get(source)?.phase === 'pending'" type="button" @click="uploads.cancel(source)">
+                取消上传
+              </button>
+              <button v-if="uploads.get(source)?.phase === 'failed'" type="button" :disabled="busy || uploading || editorState.refreshing" @click="uploads.retry(source)">
+                重试上传
+              </button>
             </div>
           </fieldset>
           <div class="section-heading">

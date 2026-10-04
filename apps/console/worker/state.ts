@@ -14,14 +14,19 @@ import type {
   SnapshotComparison,
   SnapshotContent,
   SnapshotPreview,
+  Upload,
+  UploadKind,
 } from '@iconctl/console-contracts'
 import type { RunnerIdentity } from './github'
 import {
   commit,
   iconDiff,
+  MAX_UPLOAD_BYTES,
   nextVersion,
   OWNER_ID,
   snapshotInput,
+  uploadKind,
+  validateIconifyUpload,
 } from '@iconctl/console-contracts'
 import { requestFigmaToken } from '@iconctl/core/figma/oauth'
 import { DurableObject } from 'cloudflare:workers'
@@ -459,17 +464,35 @@ export class AccountState extends DurableObject<Env> {
           }
         }
         if ('upload' in source && source.upload) {
-          this.required(`upload:${source.upload}`)
+          this.sourceUpload(source.upload, source.type)
         }
       }
       return current
     }
     currentProject()
+    const uploads = input.sources.flatMap(source => 'upload' in source && source.upload
+      ? [{ source, upload: this.sourceUpload(source.upload, source.type) }]
+      : [])
     const info = await repositoryInfo(this.env, input.repository)
+    for (const { upload } of uploads) {
+      if (upload.kind === 'iconify-json') {
+        const object = await this.env.ARTIFACTS.head(`uploads/${upload.id}`).catch(() =>
+          fail(503, 'Cannot verify Iconify JSON upload; try again or upload the file again and save'))
+        if (!object || object.size !== upload.bytes) {
+          fail(400, 'Iconify JSON upload is unavailable; upload the file again and save')
+        }
+      }
+    }
     // Task completion advances snapshot/release pointers without changing the
     // configuration revision. Re-read and validate the full current record at
     // the final synchronous commit boundary, including first-release identity.
     const existing = currentProject()
+    for (const { source, upload } of uploads) {
+      const current = this.sourceUpload(upload.id, source.type)
+      if (current.digest !== upload.digest || current.bytes !== upload.bytes || current.kind !== upload.kind) {
+        fail(409, 'Upload changed while saving; upload the file again and save')
+      }
+    }
     if (
       this.list<Project>('project').some(
         project =>
@@ -1026,25 +1049,47 @@ export class AccountState extends DurableObject<Env> {
     }
   }
 
-  async saveUpload(body: ArrayBuffer) {
+  private sourceUpload(id: string, sourceType: string) {
+    const upload = this.get<Upload>(`upload:${id}`)
+    if (!upload || upload.id !== id || !/^[a-f0-9]{64}$/.test(upload.digest) || !Number.isSafeInteger(upload.bytes) || upload.bytes < 0) {
+      fail(400, 'Upload is unavailable; upload the file again and save')
+    }
+    const kind = uploadKind.safeParse(upload.kind === undefined ? 'svg-zip' : upload.kind)
+    if (!kind.success || kind.data !== (sourceType === 'iconify' ? 'iconify-json' : 'svg-zip')) {
+      fail(400, 'Upload format does not match the source; upload the file again and save')
+    }
+    return { ...upload, kind: kind.data }
+  }
+
+  async saveUpload(body: ArrayBuffer, kind: UploadKind = 'svg-zip') {
+    uploadKind.parse(kind)
+    if (body.byteLength > MAX_UPLOAD_BYTES) {
+      fail(413, 'Upload is too large')
+    }
+    if (kind === 'iconify-json') {
+      try {
+        validateIconifyUpload(new Uint8Array(body))
+      }
+      catch (error) {
+        fail(400, (error as Error).message)
+      }
+    }
     const id = crypto.randomUUID()
     const hash = await digest(body)
     await this.env.ARTIFACTS.put(`uploads/${id}`, body)
-    this.put(`upload:${id}`, { id, digest: hash, bytes: body.byteLength })
+    this.put(`upload:${id}`, { id, digest: hash, bytes: body.byteLength, kind })
     return { id, digest: hash }
   }
 
   uploadAllowed(id: string, identity: RunnerIdentity, uploadId: string) {
     const job = this.runnerJob(id, identity)
-    if (
-      job.operation === 'publish'
-      || !job.project.sources.some(
-        source => 'upload' in source && source.upload === uploadId,
-      )
-    ) {
+    const sources = job.project.sources.filter(source => 'upload' in source && source.upload === uploadId)
+    if (job.operation === 'publish' || !sources.length) {
       fail(403, 'Upload is outside task scope')
     }
-    return this.required<{ digest: string }>(`upload:${uploadId}`)
+    // The immutable job sources determine format as well as object access.
+    const uploads = sources.map(source => this.sourceUpload(uploadId, source.type))
+    return uploads[0]!
   }
 
   async startPairing() {

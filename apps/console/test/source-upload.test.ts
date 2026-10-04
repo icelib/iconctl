@@ -242,3 +242,83 @@ it('settles disposal before the network completes and suppresses late errors and
   expect(await uploads.start(source, file())).toBe('cancelled')
   expect(await uploads.retry(source)).toBe('blocked')
 })
+
+function jsonSetup() {
+  const source: Extract<Source, { type: 'iconify' }> = { type: 'iconify', file: 'repo.json', include: ['alias'], namePrefix: 'x-' }
+  const context: { session: number, sources: Source[] } = { session: 1, sources: [source] }
+  const request = deferred<string>()
+  const upload = vi.fn<(_file: File, _signal: AbortSignal, _kind: string) => Promise<string>>(() => request.promise)
+  const uploads = createSourceUpload({ sources: () => context.sources, session: () => context.session, upload })
+  return { source, context, request, upload, uploads }
+}
+
+it('replaces a repository JSON path only after successful upload and preserves selection edits', async () => {
+  const { source, request, upload, uploads } = jsonSetup()
+  const work = uploads.start(source, file('icons.json'))
+  expect(upload.mock.calls[0]![2]).toBe('iconify-json')
+  expect(source.file).toBe('repo.json')
+  source.include = []
+  source.namePrefix = 'changed-'
+  request.resolve('json-upload')
+  expect(await work).toBe('uploaded')
+  expect(source).toEqual({ type: 'iconify', upload: 'json-upload', include: [], namePrefix: 'changed-' })
+  expect(uploads.get(source)?.phase).toBe('uploaded')
+  expect(uploads.pending.value).toBe(false)
+})
+
+it.each(['file', 'upload'] as const)('does not overwrite a changed JSON %s on success or retry', async (field) => {
+  const { source, request, uploads } = jsonSetup()
+  const work = uploads.start(source, file('icons.json'))
+  source[field] = 'new-input'
+  request.resolve('stale-upload')
+  expect(await work).toBe('cancelled')
+  expect(source[field]).toBe('new-input')
+  expect(await uploads.retry(source)).toBe('blocked')
+})
+
+it('rejects a failed JSON retry after changing the repository path', async () => {
+  const { source, request, upload, uploads } = jsonSetup()
+  const work = uploads.start(source, file('icons.json'))
+  request.reject(new Error('Network unavailable'))
+  expect(await work).toBe('failed')
+  source.file = 'changed.json'
+  expect(await uploads.retry(source)).toBe('blocked')
+  expect(upload).toHaveBeenCalledTimes(1)
+  expect(source).not.toHaveProperty('upload')
+})
+
+it('keeps JSON and ZIP on the same pending lock and preserves an existing JSON upload on failure', async () => {
+  const { source, context, request, upload, uploads } = jsonSetup()
+  delete source.file
+  source.upload = 'previous-json'
+  const zip: Extract<Source, { type: 'directory' }> = { type: 'directory', dir: 'raw' }
+  context.sources.push(zip)
+  const selected = file('replacement.json')
+  const work = uploads.start(source, selected)
+  expect(await uploads.start(zip, file())).toBe('blocked')
+  request.reject(new Error('R2 unavailable'))
+  expect(await work).toBe('failed')
+  expect(source.upload).toBe('previous-json')
+  upload.mockResolvedValueOnce('next-json')
+  expect(await uploads.retry(source)).toBe('uploaded')
+  expect(upload.mock.calls[1]![0]).toBe(selected)
+  expect(upload.mock.calls[1]![2]).toBe('iconify-json')
+  expect(source.upload).toBe('next-json')
+})
+
+it('cancels JSON restore immediately and isolates late results from a subsequent ZIP upload', async () => {
+  const { source, context, request, upload, uploads } = jsonSetup()
+  const work = uploads.start(source, file('icons.json'))
+  uploads.forget(source)
+  source.file = 'restored.json'
+  expect(await work).toBe('cancelled')
+  const zip: Extract<Source, { type: 'directory' }> = { type: 'directory', dir: 'raw' }
+  context.sources.push(zip)
+  upload.mockResolvedValueOnce('zip-upload')
+  expect(await uploads.start(zip, file())).toBe('uploaded')
+  request.resolve('stale-json')
+  await Promise.resolve()
+  expect(source.file).toBe('restored.json')
+  expect(source).not.toHaveProperty('upload')
+  expect(zip.upload).toBe('zip-upload')
+})

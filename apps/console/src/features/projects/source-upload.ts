@@ -1,7 +1,7 @@
-import type { Source } from '@iconctl/console-contracts'
+import type { Source, UploadKind } from '@iconctl/console-contracts'
 import { computed, shallowRef } from 'vue'
 
-type UploadSource = Extract<Source, { type: 'directory' | 'jsdesign' }>
+type UploadSource = Extract<Source, { type: 'directory' | 'jsdesign' | 'iconify' }>
 type UploadResult = 'uploaded' | 'failed' | 'cancelled' | 'blocked'
 interface UploadState {
   fileName: string
@@ -11,6 +11,8 @@ interface UploadState {
 interface UploadEntry {
   source: UploadSource
   session: number
+  kind: UploadKind
+  input: { file?: string, upload?: string }
   state: UploadState
   file?: File
   cancel?: () => void
@@ -20,7 +22,7 @@ interface UploadEntry {
 export function createSourceUpload(options: {
   sources: () => Source[]
   session: () => number
-  upload: (file: File, signal: AbortSignal) => Promise<string>
+  upload: (file: File, signal: AbortSignal, kind: UploadKind) => Promise<string>
 }) {
   let disposed = false
   let nextKey = 0
@@ -38,6 +40,9 @@ export function createSourceUpload(options: {
   function current(entry: UploadEntry) {
     return !disposed && entry.session === options.session()
       && entries.get(entry.source) === entry && options.sources().includes(entry.source)
+      && (entry.kind === 'iconify-json'
+        ? entry.source.type === 'iconify' && entry.source.file === entry.input.file && entry.source.upload === entry.input.upload
+        : entry.source.type === 'directory' || entry.source.type === 'jsdesign')
   }
   function publish(entry: UploadEntry) {
     state.value = new Map(state.value).set(entry.source, entry.state)
@@ -57,16 +62,18 @@ export function createSourceUpload(options: {
     if (disposed || !options.sources().includes(source)) {
       return Promise.resolve('cancelled')
     }
-    if (pending.value || !('dir' in source)) {
+    if (pending.value || (!('dir' in source) && source.type !== 'iconify')) {
       return Promise.resolve('blocked')
     }
     const entry: UploadEntry = {
       source,
       file,
       session: options.session(),
+      kind: source.type === 'iconify' ? 'iconify-json' : 'svg-zip',
+      input: { ...('file' in source ? { file: source.file } : {}), upload: source.upload },
       state: { fileName: file.name, phase: 'pending', error: '' },
     }
-    const directory = source.dir
+    const directory = 'dir' in source ? source.dir : undefined
     const controller = new AbortController()
     entries.set(source, entry)
     publish(entry)
@@ -105,7 +112,7 @@ export function createSourceUpload(options: {
         finish('failed', cause instanceof Error ? cause.message : '上传失败，请重试')
       }
       try {
-        Promise.resolve(options.upload(file, controller.signal)).then((id) => {
+        Promise.resolve(options.upload(file, controller.signal, entry.kind)).then((id) => {
           if (settled) {
             return
           }
@@ -113,9 +120,16 @@ export function createSourceUpload(options: {
             finish('cancelled')
             return
           }
-          source.upload = id
-          if (source.dir === directory) {
-            source.dir = 'svg'
+          if (source.type === 'iconify') {
+            delete source.file
+            source.upload = id
+            entry.input = { upload: id }
+          }
+          else {
+            source.upload = id
+            if (source.dir === directory) {
+              source.dir = 'svg'
+            }
           }
           finish('uploaded')
         }, failed)

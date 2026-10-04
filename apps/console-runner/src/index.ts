@@ -16,9 +16,11 @@ import {
   extractSvgArchive,
   integrity,
   materializeIconifySource,
+  materializeIconifyUpload,
   RepositorySourceError,
   resolveInside,
   sha256,
+  UploadStreamError,
   validateDirectory,
 } from './files'
 
@@ -72,7 +74,24 @@ async function sourcesFor(
       })
     }
     else if (source.type === 'iconify') {
-      const file = await materializeIconifySource(root, source.file, join(work, `iconify-${index}.json`))
+      const destination = join(work, `iconify-${index}.json`)
+      let file: string
+      if (source.upload) {
+        let response: Response
+        try {
+          response = await client.request(`uploads/${source.upload}`)
+        }
+        catch (error) {
+          if (error instanceof Error && /HTTP 404/.test(error.message)) {
+            throw new RepositorySourceError('Iconify JSON upload is unavailable; upload the file again and save')
+          }
+          throw error
+        }
+        file = await materializeIconifyUpload(response, destination)
+      }
+      else {
+        file = await materializeIconifySource(root, source.file!, destination)
+      }
       result.push({
         source,
         config: {
@@ -406,6 +425,9 @@ async function publish(job: Job, client: RunnerApi, work: string) {
   await client.json('release/complete', {})
 }
 export function classifyFailure(error: unknown): string {
+  if (error instanceof UploadStreamError) {
+    return 'runner'
+  }
   const message = error instanceof Error ? error.message : ''
   if (error instanceof RepositorySourceError || /(?:Cannot parse|Invalid) Iconify JSON/i.test(message)) {
     return 'configuration'

@@ -1,3 +1,4 @@
+import type { UploadKind } from '@iconctl/console-contracts'
 import { readApiResponse, readZipResponse } from './api-response'
 
 export { ApiError } from './api-response'
@@ -43,11 +44,11 @@ export async function initializeSession(signal?: AbortSignal) {
   signal?.throwIfAborted()
   csrf = session.csrf
 }
-export async function upload(file: File, signal?: AbortSignal) {
-  const response = await fetch('/api/uploads', {
+export async function upload(file: File, signal?: AbortSignal, kind: UploadKind = 'svg-zip') {
+  const response = await fetch(kind === 'iconify-json' ? '/api/uploads?kind=iconify-json' : '/api/uploads', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/zip', 'X-CSRF-Token': csrf },
+    headers: { 'Content-Type': kind === 'iconify-json' ? 'application/json' : 'application/zip', 'X-CSRF-Token': csrf },
     body: file,
     signal,
   })

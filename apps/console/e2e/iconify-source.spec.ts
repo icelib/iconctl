@@ -78,7 +78,7 @@ test('creates and reloads an Iconify repository source with exact names and a li
   await source.getByLabel('名称前缀（原样添加）').fill(' Vendor__')
   await expect(source.getByLabel('导入范围')).toHaveValue('all')
   await expect(source.getByLabel('图标名称（每行一个）')).toHaveCount(0)
-  await expect(source.locator('input[type="file"]')).toHaveCount(0)
+  await expect(source.getByLabel('上传 Iconify JSON（最多 10 MiB）')).toHaveAttribute('accept', '.json,application/json')
   await expect(source.getByLabel('授权', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '保存项目', exact: true }).click()
   await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')

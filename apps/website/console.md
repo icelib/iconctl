@@ -25,7 +25,7 @@ The owner Durable Object refreshes access tokens on demand within five minutes o
 
 ## Project workflow
 
-Create a project with an installed repository, icon prefix and public npm package name. Add Figma, MasterGo, iconfont HTTPS Symbol URLs, repository SVG directories, repository Iconify JSON files or uploaded SVG ZIP files. Jsdesign uses exported SVG. Multiple sources merge in order; later duplicate names win.
+Create a project with an installed repository, icon prefix and public npm package name. Add Figma, MasterGo, iconfont HTTPS Symbol URLs, repository SVG directories, repository or uploaded Iconify JSON collections, and uploaded SVG ZIP files. Jsdesign uses exported SVG. Multiple sources merge in order; later duplicate names win.
 
 Configure naming, dimensions, color, draft prefixes and optional SVG/types/HTML/changelog outputs. Advanced `iconNameForNode` hooks load from a pinned repository commit and execute only in Actions. They cannot change job-bound sources, credentials or output paths.
 
@@ -39,7 +39,9 @@ If you edit the ZIP subdirectory while uploading, completion keeps your input. R
 
 Dry-run and validation retain check snapshots but do not write icon outputs, update the successful baseline or permit release. Authentication credentials may still renew.
 
-### Repository Iconify JSON
+<a id="repository-iconify-json"></a>
+
+### Repository or uploaded Iconify JSON
 
 Choose **Iconify JSON** and enter a path relative to the repository root, such as `vendor/icons.json`. The runner reads the task's pinned source commit. A source may be configured as:
 
@@ -49,9 +51,23 @@ Choose **Iconify JSON** and enter a path relative to the repository root, such a
 
 The default **All icons** imports icons and aliases. **Selected icons** accepts one exact name per line; blank lines are ignored, and leaving the list empty stores `include: []` and imports no icons. The name prefix is concatenated literally, so `vendor-` gives `vendor-home`, while `vendor` gives `vendorhome`. No case conversion or separator is added. Project draft-prefix filtering, color processing, dimension/name validation and output settings still apply. Aliases, rotations and inherited dimensions use the same core importer as the CLI.
 
-This source uses only repository files and needs no source credentials or upload. Files must be regular files of at most 25 MiB. Absolute paths, traversal, Git metadata, directories and symlinks escaping the repository are rejected; links that resolve to a regular file inside the repository are allowed. The runner copies validated bytes into its task directory before loading advanced configuration. Invalid JSON or collection structure fails as a configuration error; invalid selected icons appear in the validation snapshot and prevent publication.
+Repository inputs need no source credentials. Files must be regular files of at most 25 MiB. Absolute paths, traversal, Git metadata, directories and symlinks escaping the repository are rejected; links that resolve to a regular file inside the repository are allowed. The runner copies validated bytes into its task directory before loading advanced configuration. Invalid JSON or collection structure fails as a configuration error; invalid selected icons appear in the validation snapshot and prevent publication.
 
-After upgrading the console, create and merge an updated runner installation PR in each target repository before selecting this source. The workflow pins its executor commit; older pinned runners do not recognize `type: "iconify"`.
+Instead of a repository path, choose **Upload Iconify JSON (up to 10 MiB)** (「上传 Iconify JSON」). The project still requires an installed GitHub repository, but the collection does not need to be committed there. Save the project after the upload succeeds, then run a task. An uploaded source has exactly one `upload` UUID and no `file`:
+
+```json
+{ "type": "iconify", "upload": "00000000-0000-4000-8000-000000000001", "include": ["rotated-alias"], "namePrefix": "vendor-" }
+```
+
+The 10 MiB limit applies to raw JSON bytes. Upload checks strict UTF-8 (a UTF-8 BOM is accepted), JSON syntax and the collection envelope: a string `prefix`, an `icons` object, and optional `aliases` object and string-array `not_found`. Original bytes and additional metadata remain intact. Individual icons, transforms, aliases and project rules are checked by core during the task, not during upload. Selection matches original icon/alias keys before adding `namePrefix`; an alias may depend on an unselected parent, and unselected invalid entries do not reject an otherwise valid selection.
+
+JSON and ZIP share the editor's single-upload limit. A replacement keeps the current repository path or attachment until success; failure and cancellation retain it. JSON repository paths are disabled while uploading. **Restore repository file** cancels the pending replacement and shows the required path again. Removing a source, changing the editing session or loading remote configuration prevents late callbacks from restoring old uploads. Retry resends the same selected file only in its original source/input context. Canceling does not delete already received server objects; there is no upload expiry or automatic garbage collection.
+
+Saving checks the JSON upload's stored format and R2 object size, then rechecks project revision, active tasks and upload metadata before committing. If an upload is missing or unavailable, upload it again and save; there is no automatic repository-file fallback. Replacing a reference creates a new project revision, while old tasks retain their original UUID and require a new task after configuration changes. The runner downloads only uploads referenced by the frozen task, bounds retained bytes to 10 MiB, checks MIME and SHA-256, and writes a fixed task-local filename before advanced configuration runs. An oversized stream chunk is rejected before it is retained; a stream interruption does not produce a partial input. Publication continues to use the confirmed snapshot rather than rereading source uploads.
+
+API uploads use `POST /api/uploads?kind=iconify-json` with `application/json`; omitted `kind` retains SVG ZIP behavior. New metadata records include `kind`; legacy records without it remain SVG ZIP only, and JSON/ZIP references cannot be interchanged. Invalid input is rejected with 400 and oversized uploads with 413. Include upload objects of both formats in the separate R2 backup alongside management metadata.
+
+After upgrading the console, create and merge an updated runner installation PR in each target repository before selecting this source. The workflow pins its executor commit; JSON uploads require the matching new runner even if an older runner already supports repository `type: "iconify"`.
 
 ### Recover workspace loading
 
