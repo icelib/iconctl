@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   return consumer
@@ -55,6 +55,19 @@ try {
   const consumer = await install('fixed', [coreTarball, cliTarball])
   const typeProbe = `import { watch, IconctlAbortError, defineConfig, resolveConfig, exportOutputs, sync, type IconctlOutputConfig, type SyncResult, type WatchEvent } from '@iconctl/core'
 import { requestFigmaToken } from '@iconctl/core/figma/oauth'
+import { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from '@iconctl/core'
+import { renderPreviewHtml as renderPreview, writePreviewHtml as writePreview, type WritePreviewHtmlOptions as PreviewOptions } from 'iconctl'
+const previewOptions: WritePreviewHtmlOptions = { inputs: ['icons.json'] as const, dryRun: true }
+const facadeOptions: PreviewOptions = previewOptions
+const json = { prefix: 'brand', icons: {} }
+const rendered: string = renderPreviewHtml(json)
+const facadeRendered: string = renderPreview(json)
+const originalWriter: Promise<void> = writePreviewHtml('preview.html', json)
+const writer: Promise<void> = writePreviewHtml('preview.html', json, previewOptions)
+const facadeWriter: Promise<void> = writePreview('preview.html', json, facadeOptions)
+// @ts-expect-error Input protection accepts an array of file paths.
+const invalidPreview: WritePreviewHtmlOptions = { inputs: 'icons.json' }
+void rendered; void facadeRendered; void originalWriter; void writer; void facadeWriter; void invalidPreview
 const event: WatchEvent = { type: 'stopped', reason: 'aborted' }
 const output: IconctlOutputConfig = { sprite: 'sprite.svg' }
 const config = resolveConfig(defineConfig({ prefix: 'brand', sources: [{ type: 'directory', dir: 'raw' }], output }))
@@ -82,6 +95,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
     process.stdout.write(configuration.stdout)
     const sprite = await run(node, [join(consumer, 'sprite-consumer.mjs'), mode], consumer)
     process.stdout.write(sprite.stdout)
+    const preview = await run(node, [join(consumer, 'preview-consumer.mjs'), mode], consumer)
+    process.stdout.write(preview.stdout)
   }
   await check(consumer, 'bin', 'startup')
   const evaluated = await run(node, ['--input-type=module', '--eval', `

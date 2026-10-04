@@ -33,10 +33,12 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl watch` | Continuously sync local SVG folders and reload config |
 | `iconctl check` | Validate configured output or `--input icons.json` |
-| `iconctl preview` | Write an offline gallery with search and name/class copying |
+| `iconctl preview` | Write a searchable offline gallery from config or `--input icons.json` |
 | `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML report |
 
-`preview.html` works offline: search full Iconify names or utility classes, then copy `brand:arrow-left` or `i-brand-arrow-left`. Clipboard restrictions show a selectable manual-copy fallback. All icons remain visible when JavaScript is disabled. Class shortcuts require lowercase letters/digits separated by single hyphens in both prefix and name, and a configured icon utility consumer. `iconctl preview` runs sync to generate the file, so generation can contact your configured sources.
+`preview.html` works offline: search full Iconify names or utility classes, then copy `brand:arrow-left` or `i-brand-arrow-left`. Clipboard restrictions show a selectable manual-copy fallback. All icons remain visible when JavaScript is disabled. Class shortcuts require lowercase letters/digits separated by single hyphens in both prefix and name, and a configured icon utility consumer. Without `--input`, `iconctl preview` runs sync and can contact your configured sources.
+
+To browse an existing collection, run `iconctl preview --input ./icons.json --output ./reports/preview.html`. This uses only local files, executes no config, and preserves source bytes. The default output is `preview.html` in the current directory. Local `--dry-run --json` validates without creating files, directories or caches. See [local preview](apps/website/quick-start.md#preview-a-local-collection).
 
 `sync --json` prints `added`, `removed`, `changed`, `skipped`, `sources`, `fileVersion`, and `outputFiles`. Validation failures exit non-zero and do not write a partial set.
 

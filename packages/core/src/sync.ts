@@ -16,7 +16,7 @@ import { IconctlSyncError } from './errors'
 import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } from './export'
 import { captureOutputProof, matchesOutputProof } from './output-proof'
 import { OutputTransaction } from './output-transaction'
-import { writePreviewHtml } from './preview'
+import { renderPreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
 import { loadSources, mergeLoadedSources } from './sources/load'
 import { validateIconSetAsync } from './validate'
@@ -243,7 +243,10 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       }
       await checkpoint(options.signal)
       if (staged.output.preview) {
-        await writePreviewHtml(staged.output.preview, json)
+        // The outer transaction owns all outputs; only render into its staging path.
+        const html = renderPreviewHtml(json)
+        await mkdir(dirname(staged.output.preview), { recursive: true })
+        await writeFile(staged.output.preview, html, 'utf8')
         files.push(resolve(cwd, config.output.preview!))
       }
       await checkpoint(options.signal)

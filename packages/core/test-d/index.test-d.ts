@@ -1,6 +1,6 @@
-import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SyncIssue, SyncResult } from '..'
+import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SyncIssue, SyncResult, WritePreviewHtmlOptions } from '..'
 import { expectError, expectType } from 'tsd'
-import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, resolveConfig, sync, watch, writeDiffHtml } from '..'
+import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, renderPreviewHtml, resolveConfig, sync, watch, writeDiffHtml, writePreviewHtml } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
 const comparison = compareIconSets(undefined, { prefix: 'brand', icons: { arrow: { body: '<path/>' } } })
@@ -9,6 +9,13 @@ expectType<IconDiff>(diffIconSets(undefined, { prefix: 'brand', icons: {} }))
 expectType<boolean>(comparison.prefixChanged)
 expectType<string>(renderDiffHtml(comparison))
 expectType<Promise<void>>(writeDiffHtml('diff.html', comparison, { inputs: ['icons.json'], dryRun: true }))
+const previewOptions: WritePreviewHtmlOptions = { inputs: ['icons.json'] as const, dryRun: true }
+const previewIcons = { prefix: 'brand', icons: {} }
+expectType<string>(renderPreviewHtml(previewIcons))
+expectType<Promise<void>>(writePreviewHtml('preview.html', previewIcons))
+expectType<Promise<void>>(writePreviewHtml('preview.html', previewIcons, previewOptions))
+expectError(writePreviewHtml('preview.html', previewIcons, { inputs: 'icons.json' }))
+expectError(writePreviewHtml('preview.html', previewIcons, { dryRun: 'true' }))
 expectType<{ prefix: string, sources: [{ type: 'figma', file: string }] }>(defineConfig({
   prefix: 'brand',
   sources: [{ type: 'figma', file: 'AbCdEfGhIjKlMnOpQrStUv' }],

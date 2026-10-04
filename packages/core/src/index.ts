@@ -28,7 +28,7 @@ export { FIGMA_COMMUNITY_FILE_HELP, parseFigmaFileKey } from './file-key'
 export { stripIconPrefix } from './icon-set'
 export { loadConfig, type LoadConfigOptions } from './load-config'
 export { defaultIconNameForNode, shouldSkipName, toIconName } from './naming'
-export { renderPreviewHtml, writePreviewHtml } from './preview'
+export { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from './preview'
 export { processIconSet } from './process'
 export {
   type IconfontJsToSvgOptions,

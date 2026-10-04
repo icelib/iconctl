@@ -1,8 +1,7 @@
 import type { IconifyJSON } from '@iconify/types'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'pathe'
 import { compareIconSets } from './diff'
 import { escapeHtml, htmlDocument, iconImage } from './html'
+import { writeHtmlReport } from './html-output'
 
 const css = `
 :root { font-family: system-ui, sans-serif; color: #172b3a; background: #f4f6f8; }
@@ -120,7 +119,13 @@ export function renderPreviewHtml(json: IconifyJSON): string {
   return htmlDocument(`${json.prefix} icons`, body, css, script)
 }
 
-export async function writePreviewHtml(file: string, json: IconifyJSON) {
-  await mkdir(dirname(file), { recursive: true })
-  await writeFile(file, renderPreviewHtml(json), 'utf8')
+export interface WritePreviewHtmlOptions {
+  /** Protect source files from replacement, including symlink and hard-link aliases. */
+  inputs?: readonly string[]
+  /** Validate the report and destination without creating files or directories. */
+  dryRun?: boolean
+}
+
+export async function writePreviewHtml(file: string, json: IconifyJSON, options: WritePreviewHtmlOptions = {}): Promise<void> {
+  await writeHtmlReport(file, renderPreviewHtml(json), options)
 }

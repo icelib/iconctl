@@ -258,6 +258,46 @@ catch (error) {
 
 已有 `check({ config })` 调用继续可用。API 命名规则也支持 `RegExp`；带 `g`／`y` 的表达式会在每个名称上从索引零开始匹配，不改变调用方的 `lastIndex`。
 
+### 预览本地集合
+
+直接从已有 Iconify JSON 生成支持搜索和复制的 HTML 画廊：
+
+```bash
+pnpm exec iconctl preview --input ./icons.json
+pnpm exec iconctl preview --input ./vendor/icons.json --output ./reports/vendor.html
+pnpm exec iconctl preview --input ./icons.json --output ./reports/preview.html --dry-run --json
+```
+
+本地预览不加载或执行配置、不联系来源、不访问凭据、不更新缓存，只写指定 HTML 和必要的父目录。输入、输出路径均相对当前目录解析；即使输入位于别处，默认目标仍为 `./preview.html`。只接受本地文件路径，拒绝 URL、空白值、重复路径选项和表示 stdin/stdout 的 `-`；真实文件名的前后空格会保留。
+
+`--output` 必须与 `--input` 同用。本地输入不能与 `--config` 或 `--continue` 同用。省略 `--input` 时，预览保持已有配置同步行为，包括 `output.preview`、全部配置产物、来源访问、部分成功结果及 sync JSON 汇总。
+
+本地 `--json` 结果包含绝对文件路径和全部已解析图标、别名的数量，隐藏项也计入：
+
+```json
+{
+  "input": { "file": "/project/icons.json", "prefix": "brand" },
+  "count": 2,
+  "outputFiles": ["/project/preview.html"]
+}
+```
+
+本地 `--dry-run` 会解析、渲染集合，并检查目标及输入冲突；报告增加 `dryRun: true`，返回 `outputFiles: []`，不创建文件、目录、暂存区或缓存。JSON、尺寸、缺失或循环别名等错误会使整次操作失败，并保留已有 HTML。失败使用[通用 JSON 错误结构](#json-失败报告)，其中 `command: "preview"`；路径参数错误处于 `arguments` 阶段，读取、集合解析和输出错误处于 `execution` 阶段。
+
+预览接受 UTF-8 BOM，保留自定义名称及 SVG body，并为显示解析继承几何信息和别名变换。它不优化 SVG，不执行名称或画布规则校验；需要 SVG 处理与校验时使用 `check --input`。HTML 继续采用独立 SVG 图片、固定内容安全策略，禁用 JavaScript 后仍展示完整画廊。
+
+`iconctl` 和 `@iconctl/core` 均导出渲染与写入 API：
+
+```ts
+import { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from 'iconctl'
+
+const html = renderPreviewHtml(iconsJson)
+const options: WritePreviewHtmlOptions = { inputs: ['icons.json'] }
+await writePreviewHtml('reports/preview.html', iconsJson, options)
+```
+
+原有双参数 writer 继续可用。传入 `inputs` 可保护来源文件，包括硬链接、目录符号链接和输入符号链接别名；CLI 会自动传入输入。输出叶子节点不能是符号链接（包括悬空链接）或目录。writer 在暂存前完成渲染，支持 `dryRun: true`，并使用与 `writeDiffHtml` 相同的事务替换报告。同一目标请串行写入。单独渲染只返回字符串，不写文件。
+
 ### 离线比较
 
 直接比较两份本地 Iconify JSON，不加载配置、凭据或远程来源：

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -138,6 +138,15 @@ describe('built CLI process boundary', () => {
     expect(report).not.toHaveProperty('error')
   })
 
+  it.each([undefined, 'reports/configured.html'])('preserves config-backed preview defaults and sync JSON: %s', async (preview) => {
+    await writeFile(join(cwd, 'iconctl.config.mjs'), `export default ${JSON.stringify({ prefix: 'brand', sources: [{ type: 'directory', dir: './source' }], output: { json: 'icons.json', ...(preview ? { preview } : {}) } })}`)
+    const result = await run('preview', '--config', 'iconctl.config.mjs', '--json')
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({ prefix: 'brand', complete: true, deletionsReliable: true, notModified: false, sources: [{ type: 'directory', notModified: false }], added: ['good'], removed: [], changed: [], skipped: [], issues: [], outputFiles: [join(cwd, 'icons.json'), join(cwd, preview ?? 'preview.html')] })
+    expect(await readFile(join(cwd, preview ?? 'preview.html'), 'utf8')).toContain('brand:good')
+  })
+
   it('preserves check fields and adds the same diagnostics in its fatal envelope', async () => {
     await writeFile(join(cwd, 'icons.json'), JSON.stringify({ prefix: 'brand', icons: { good: { body: '<path d="M0 0h16v16z"/>' } } }))
     const result = await run('check', '--input', 'icons.json', '--width', '24', '--json')
@@ -147,6 +156,71 @@ describe('built CLI process boundary', () => {
     expect(report).toMatchObject({ prefix: 'brand', count: 1, source: 'json', valid: false, success: false, command: 'check', issues: [{ name: 'good', stage: 'validation' }], error: { phase: 'execution' } })
     expect(report.error.issues).toEqual(report.issues)
   })
+  describe('local preview with the shipped and development entry points', () => {
+    const icons = { prefix: 'brand', icons: { arrow: { body: '<path d="M0 0h8v8H0z"/>', hidden: true } }, aliases: { rotated: { parent: 'arrow', rotate: 1 } } }
+    beforeEach(async () => {
+      await writeFile(join(cwd, 'icons.json'), `\uFEFF${JSON.stringify(icons)}`)
+      await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("preview must not execute project configuration")')
+    })
+
+    it.each(['packaged', 'development'])('writes a local gallery through the %s entry', async (entry) => {
+      const result = await runEntry(entry === 'packaged' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['preview', '--input', 'icons.json', '--output', 'reports/local.html', '--json'])
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 2, outputFiles: [join(cwd, 'reports/local.html')] })
+      const html = await readFile(join(cwd, 'reports/local.html'), 'utf8')
+      expect(html).toContain('brand:rotated')
+      expect(html).toContain('Search icons')
+      expect(html.match(/<figure class="icon"/g)).toHaveLength(2)
+      expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(`\uFEFF${JSON.stringify(icons)}`)
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json', 'reports', 'source'])
+    })
+
+    it('creates no directories or cache in dry-run', async () => {
+      const result = await run('preview', '--input', 'icons.json', '--output', 'new/reports/preview.html', '--dry-run', '--json')
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 2, outputFiles: [], dryRun: true })
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json', 'source'])
+    })
+
+    it.each([
+      ['--input'],
+      ['--input', 'icons.json', '--output'],
+      ['--input', 'icons.json', '--unknown'],
+      ['--input', 'icons.json', '--config', 'config.mjs'],
+      ['--input', 'icons.json', '--continue'],
+      ['--output', 'preview.html'],
+      ['--input', 'https://example.invalid/icons.json'],
+      ['--input', 'icons.json', '--input', 'again.json'],
+    ])('emits exactly one JSON for parser or semantic argument errors: %j', async (...args) => {
+      const result = await run('preview', ...args, '--json')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { phase: 'arguments' } })
+      expect(result.stdout).not.toContain('preview must not execute')
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json', 'source'])
+    })
+
+    it('preserves a report when the local collection cannot be resolved', async () => {
+      await writeFile(join(cwd, 'icons.json'), JSON.stringify({ ...icons, aliases: { bad: { parent: 'missing' } } }))
+      await writeFile(join(cwd, 'preview.html'), 'previous report')
+      const result = await run('preview', '--input', 'icons.json', '--json')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { name: 'IconctlError', phase: 'execution' } })
+      expect(await readFile(join(cwd, 'preview.html'), 'utf8')).toBe('previous report')
+    })
+
+    it('validates input/output conflicts during dry-run without changing source bytes', async () => {
+      const result = await run('preview', '--input', 'icons.json', '--output', 'icons.json', '--dry-run', '--json')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { phase: 'execution', message: expect.stringMatching(/conflicts with input/) } })
+      expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(`\uFEFF${JSON.stringify(icons)}`)
+    })
+  })
+
   describe('offline diff with the common one-shot error boundary', () => {
     const icons = { prefix: 'brand', icons: { arrow: { body: '<path d="M0 0h24v24H0z"/>' } }, width: 24, height: 24 }
 

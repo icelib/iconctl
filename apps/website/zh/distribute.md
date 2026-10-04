@@ -17,7 +17,7 @@ output: {
 
 直接打开生成的 `preview.html` 即可离线浏览。搜索按完整 Iconify 名称和可用工具类做不区分大小写的字面量匹配；清空搜索后恢复全部图标和别名。复制按钮分别提供 `brand:arrow-left` 和 `i-brand-arrow-left`。后者遵循下方配置的图标工具约定，仅当前缀和名称均由小写字母、数字和分隔它们的单个连字符组成时提供；其他名称仍会展示，并可复制完整 Iconify 名称。
 
-浏览器拒绝剪贴板访问，或本地文件没有剪贴板 API 时，画廊会显示可选择的文本供手动复制。禁用 JavaScript 后，全部图标和名称仍然可见。生成的文件无需服务器或网络；`iconctl preview` 命令本身会运行 sync，生成时可能访问配置的来源。
+浏览器拒绝剪贴板访问，或本地文件没有剪贴板 API 时，画廊会显示可选择的文本供手动复制。禁用 JavaScript 后，全部图标和名称仍然可见。生成的文件无需服务器或网络。运行 `iconctl preview --input ./icons.json --output ./preview.html` 可完全从本地文件生成，不执行配置或更新缓存。不带 `--input` 的 `iconctl preview` 会运行 sync，生成时可能访问配置的来源。
 
 完整示例：[`examples/app-json`](https://github.com/icelib/iconctl/tree/main/examples/app-json)。本站[演示画廊](/zh/demo)也是这种。
 
@@ -122,7 +122,7 @@ concurrency:
 | `iconctl init` | 写 `iconctl.config.ts` |
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
 | `iconctl check` | 校验已有 SVG/JSON |
-| `iconctl preview` | 生成可离线搜索的 `preview.html` 画廊 |
+| `iconctl preview` | 从配置或 `--input icons.json` 生成可离线搜索的画廊 |
 
 库 API：
 

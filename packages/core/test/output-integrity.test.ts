@@ -5,10 +5,11 @@ import process from 'node:process'
 import { IconSet } from '@iconify/tools'
 import { resolveConfig, sync } from '../src'
 import { OutputTransaction } from '../src/output-transaction'
+import { renderPreviewHtml } from '../src/preview'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, rename: vi.fn(actual.rename), rm: vi.fn(actual.rm) }
+  return { ...actual, rename: vi.fn(actual.rename), rm: vi.fn(actual.rm), writeFile: vi.fn(actual.writeFile) }
 })
 
 const roots: string[] = []
@@ -44,6 +45,7 @@ async function tree(root: string): Promise<Record<string, string>> {
 afterEach(async () => {
   vi.mocked(rename).mockRestore()
   vi.mocked(rm).mockRestore()
+  vi.mocked(writeFile).mockRestore()
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -119,6 +121,33 @@ it('supports nested SVG outputs and a primary JSON shared with the JSON package'
   await sync({ cwd, config, iconSet: icons('new') })
   expect(await readFile(path.join(cwd, 'svg/types.ts'), 'utf8')).toContain('\'new\'')
   expect(JSON.parse(await readFile(path.join(cwd, 'pkg/icons.json'), 'utf8')).icons).toHaveProperty('new')
+})
+
+it('stages a nested package preview with the single outer transaction', async () => {
+  const { cwd, config } = await fixture()
+  config.output.preview = 'pkg/docs/preview.html'
+  const create = vi.spyOn(OutputTransaction, 'create')
+  const result = await sync({ cwd, config, iconSet: icons('new') })
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(await readFile(path.join(cwd, config.output.preview), 'utf8')).toBe(renderPreviewHtml(result.json))
+  expect((await readdir(cwd)).some(name => name.startsWith('.iconctl-stage-'))).toBe(false)
+})
+
+it('preserves every output when writing a nested staged preview fails', async () => {
+  const { cwd, config } = await fixture()
+  config.output.preview = 'pkg/docs/preview.html'
+  await sync({ cwd, config, iconSet: icons('old') })
+  const before = await tree(cwd)
+  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).writeFile
+  vi.mocked(writeFile).mockImplementation(async (file, data, options) => {
+    if (String(file).includes('/.iconctl-stage-') && String(file).endsWith('/docs/preview.html')) {
+      throw new Error('injected preview staging failure')
+    }
+    await original(file, data, options)
+  })
+  await expect(sync({ cwd, config, iconSet: icons('new') })).rejects.toThrow('injected preview staging failure')
+  expect(await tree(cwd)).toEqual(before)
+  expect((await readdir(cwd)).some(name => name.startsWith('.iconctl-stage-'))).toBe(false)
 })
 
 it('removes deleted and renamed managed SVGs while preserving other files', async () => {

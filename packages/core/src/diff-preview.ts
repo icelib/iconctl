@@ -1,9 +1,6 @@
 import type { IconComparisonEntry, IconSetComparison } from './diff'
-import { lstat, realpath, stat, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { IconctlError } from './errors'
 import { escapeHtml, htmlDocument, iconImage } from './html'
-import { canonicalTarget, OutputTransaction } from './output-transaction'
+import { writeHtmlReport } from './html-output'
 
 const css = `
 :root { font-family: system-ui, sans-serif; color: #172b3a; background: #f4f6f8; }
@@ -69,36 +66,5 @@ export interface WriteDiffHtmlOptions {
 }
 
 export async function writeDiffHtml(file: string, comparison: IconSetComparison, options: WriteDiffHtmlOptions = {}): Promise<void> {
-  const target = await canonicalTarget(resolve(file))
-  let outputStat
-  try {
-    outputStat = await lstat(target.path, { bigint: true })
-    if (!outputStat.isFile() || outputStat.isSymbolicLink()) {
-      throw new IconctlError(`Report target must be a regular file: ${file}`)
-    }
-  }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error
-    }
-  }
-  for (const input of options.inputs ?? []) {
-    const source = await realpath(input)
-    const inputStat = await stat(source, { bigint: true })
-    if (source === target.path || (outputStat && outputStat.dev === inputStat.dev && outputStat.ino === inputStat.ino)) {
-      throw new IconctlError(`Report output conflicts with input: ${input}`)
-    }
-  }
-  const contents = renderDiffHtml(comparison)
-  if (options.dryRun) {
-    return
-  }
-  const transaction = await OutputTransaction.create([{ path: target.path }])
-  try {
-    await writeFile(transaction.path(target.path), contents, 'utf8')
-    await transaction.commit()
-  }
-  finally {
-    await transaction.dispose()
-  }
+  await writeHtmlReport(file, renderDiffHtml(comparison), options)
 }

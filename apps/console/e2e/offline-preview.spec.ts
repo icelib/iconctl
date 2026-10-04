@@ -1,8 +1,11 @@
 import type { Page, TestInfo } from '@playwright/test'
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import process from 'node:process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import { renderPreviewHtml } from '@iconctl/core'
 import { test as base, expect } from '@playwright/test'
 
@@ -130,6 +133,68 @@ async function settleCopy(page: Page, index: number, success: boolean) {
     await Promise.resolve()
   }, { index, success })
 }
+
+test('opens a real built CLI local-input report without executing config or changing source, with offline search and copy', async ({ previewPage: page }, testInfo) => {
+  await mkdir(testInfo.outputPath('local-input'), { recursive: true })
+  const directory = await realpath(testInfo.outputPath('local-input'))
+  const input = join(directory, 'icons.json')
+  const config = join(directory, 'iconctl.config.mjs')
+  const html = join(directory, 'preview.html')
+  const inputBytes = `\uFEFF${JSON.stringify(collection)}`
+  const configBytes = 'import { writeFileSync } from "node:fs"; writeFileSync("config-executed", "unexpected"); throw new Error("Local preview must not execute config")'
+  await writeFile(input, inputBytes)
+  await writeFile(config, configBytes)
+  const cli = fileURLToPath(new URL('../../cli/bin/index.js', import.meta.url))
+  const result = await promisify(execFile)(process.execPath, [cli, 'preview', '--input', 'icons.json', '--json'], {
+    cwd: directory,
+    env: { ...process.env, FORCE_COLOR: undefined, NO_COLOR: '1' },
+    timeout: 10_000,
+  })
+  // Parsing the whole stdout also rejects a second result or stray log lines.
+  const summary = JSON.parse(result.stdout) as unknown
+  expect(summary).toEqual({ input: { file: input, prefix: 'brand' }, count: 7, outputFiles: [html] })
+  expect(result.stderr).toBe('')
+  expect(await readdir(directory)).toEqual(['iconctl.config.mjs', 'icons.json', 'preview.html'])
+  expect(await readFile(input, 'utf8')).toBe(inputBytes)
+  expect(await readFile(config, 'utf8')).toBe(configBytes)
+  await page.goto(pathToFileURL(html).href)
+  await expect(page.getByRole('heading', { name: 'brand icons' })).toBeVisible()
+  await expect(page.getByRole('status').first()).toHaveText('7 of 7 icons')
+  await expect(page.locator('figure:visible')).toHaveCount(7)
+  await loadedImages(page)
+  const search = page.getByRole('searchbox', { name: 'Search icons' })
+  await search.fill('I-BRAND-ROTATED')
+  await expect(page.getByRole('status').first()).toHaveText('1 of 7 icons')
+  await expect(page.locator('figure:visible').getByRole('img')).toHaveAttribute('alt', 'brand:rotated')
+  await page.getByRole('button', { name: 'Copy Iconify name: brand:rotated', exact: true }).click()
+  await expect(page.getByRole('status').nth(1)).toHaveText('Copied brand:rotated')
+  await page.getByRole('button', { name: 'Copy CSS class: i-brand-rotated', exact: true }).click()
+  expect(await page.evaluate(() => (window as unknown as PreviewWindow).clipboardFixture.writes)).toEqual(['brand:rotated', 'i-brand-rotated'])
+  await copyMode(page, 'missing')
+  await search.fill('two words')
+  await page.getByRole('button', { name: 'Copy Iconify name: brand:two words', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Manual copy' })).toBeVisible()
+  await expect(page.getByLabel('Value to copy', { exact: true })).toBeFocused()
+  await expect(page.getByLabel('Value to copy', { exact: true })).toHaveText('brand:two words')
+  await expect(page.locator('figure:visible').getByText('CSS class unavailable for this name.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss manual copy', exact: true }).click()
+  await search.fill('')
+  await expect(page.locator('svg, object, iframe, [data-injected]')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as PreviewWindow).previewExecution)).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('local-input-preview.png'), fullPage: true })
+  expect(await readFile(input, 'utf8')).toBe(inputBytes)
+  expect(await readFile(config, 'utf8')).toBe(configBytes)
+  expect(await readdir(directory)).toEqual(['iconctl.config.mjs', 'icons.json', 'preview.html'])
+  await writeFile(testInfo.outputPath('local-input-evidence.json'), JSON.stringify({
+    cli,
+    summary,
+    stderr: result.stderr,
+    inputUnchanged: true,
+    configUnchangedAndNotExecuted: true,
+    sourceSha256: createHash('sha256').update(inputBytes).digest('hex'),
+    htmlSha256: createHash('sha256').update(await readFile(html)).digest('hex'),
+  }, null, 2))
+})
 
 test('searches independent literal names and classes in a real offline document while isolating SVGs and preserving aliases', async ({ previewPage: page }, testInfo) => {
   const url = await writePreview(testInfo)

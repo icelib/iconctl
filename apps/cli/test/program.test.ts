@@ -89,14 +89,14 @@ describe('sync failure reporting', () => {
     expect(success).not.toHaveBeenCalled()
   })
 
-  it('preserves the JSON skipped and issues fields for continued failures', async () => {
+  it.each(['sync', 'preview'])('preserves the JSON skipped and issues fields for continued %s failures', async (command) => {
     let output = ''
     vi.spyOn(process.stdout, 'write').mockImplementation((text) => {
       output += String(text)
       return true
     })
     const warning = vi.spyOn(consola, 'warn').mockImplementation(() => {})
-    await runCli(['node', 'iconctl', 'sync', '--config', configFile, '--continue', '--json'])
+    await runCli(['node', 'iconctl', command, '--config', configFile, '--continue', '--json'])
     expect(process.exitCode).toBe(0)
     expect(JSON.parse(output)).toMatchObject({
       skipped: ['bad'],

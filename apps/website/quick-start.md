@@ -258,6 +258,46 @@ catch (error) {
 
 Existing `check({ config })` callers remain supported. API name rules also accept `RegExp`; global and sticky expressions start at index zero for every name without changing the caller's `lastIndex`.
 
+### Preview a local collection
+
+Generate a searchable, copyable HTML gallery directly from an existing Iconify JSON file:
+
+```bash
+pnpm exec iconctl preview --input ./icons.json
+pnpm exec iconctl preview --input ./vendor/icons.json --output ./reports/vendor.html
+pnpm exec iconctl preview --input ./icons.json --output ./reports/preview.html --dry-run --json
+```
+
+Local preview does not load or execute configuration, contact sources, access credentials or update caches. It writes only the requested HTML and any required parent directories. Input and output paths are relative to the current directory; the default output is `./preview.html`, even when the input is elsewhere. Paths must be local files: URLs, blank values, repeated path options and `-` for stdin/stdout are rejected. Real filenames with leading or trailing spaces are preserved.
+
+`--output` requires `--input`. Local input cannot be combined with `--config` or `--continue`. Without `--input`, preview keeps the existing config-backed sync behavior, including `output.preview`, all configured outputs, source access, partial results and the sync JSON summary.
+
+The local `--json` result contains absolute file paths and a count of all resolved icons and aliases, including hidden entries:
+
+```json
+{
+  "input": { "file": "/project/icons.json", "prefix": "brand" },
+  "count": 2,
+  "outputFiles": ["/project/preview.html"]
+}
+```
+
+Local `--dry-run` parses and renders the collection and checks the destination and input conflicts. It adds `dryRun: true` and returns `outputFiles: []`, without creating files, directories, staging areas or caches. Invalid JSON, dimensions, missing or cyclic aliases fail the whole operation and preserve existing HTML. Failures use the [common JSON error envelope](#json-failures) with `command: "preview"`; path options fail in `arguments`, while reading, collection resolution and output failures use `execution`.
+
+Preview accepts a UTF-8 BOM and preserves custom names and SVG bodies while resolving inherited geometry and alias transforms for display. It does not optimize SVGs or enforce naming and canvas rules. Use `check --input` for SVG processing and validation. The HTML retains isolated SVG images, a fixed Content Security Policy and a complete static gallery when JavaScript is disabled.
+
+Both `iconctl` and `@iconctl/core` export the render and write APIs:
+
+```ts
+import { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from 'iconctl'
+
+const html = renderPreviewHtml(iconsJson)
+const options: WritePreviewHtmlOptions = { inputs: ['icons.json'] }
+await writePreviewHtml('reports/preview.html', iconsJson, options)
+```
+
+The original two-argument writer remains supported. Pass `inputs` to protect source files, including hard links and directory or input symlink aliases; the CLI supplies its input automatically. Output leaf symlinks (including dangling links) and directories are rejected. The writer renders before staging, supports `dryRun: true`, and replaces the report through the same transaction used by `writeDiffHtml`. Serialize writes to the same destination. Rendering alone returns a string without writing files.
+
 ### Offline comparison
 
 Compare two local Iconify JSON files without loading configuration, credentials or remote sources:

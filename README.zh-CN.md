@@ -33,10 +33,12 @@ pnpm exec iconctl sync
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
 | `iconctl watch` | 持续同步本地 SVG 目录，自动重载配置 |
 | `iconctl check` | 校验配置产物或 `--input icons.json` |
-| `iconctl preview` | 生成可离线搜索、复制名称和类名的画廊 |
+| `iconctl preview` | 从配置或 `--input icons.json` 生成可离线搜索的画廊 |
 | `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
 
-`preview.html` 可离线搜索完整 Iconify 名称或工具类，并复制 `brand:arrow-left` 或 `i-brand-arrow-left`。剪贴板受限时会提供可选择的文本供手动复制；禁用 JavaScript 后仍展示全部图标。类名快捷复制要求前缀和名称均由小写字母、数字和分隔它们的单个连字符组成，且使用方已配置图标工具。`iconctl preview` 会通过 sync 生成文件，生成过程可能访问配置的来源。
+`preview.html` 可离线搜索完整 Iconify 名称或工具类，并复制 `brand:arrow-left` 或 `i-brand-arrow-left`。剪贴板受限时会提供可选择的文本供手动复制；禁用 JavaScript 后仍展示全部图标。类名快捷复制要求前缀和名称均由小写字母、数字和分隔它们的单个连字符组成，且使用方已配置图标工具。不带 `--input` 的 `iconctl preview` 会运行 sync，生成时可能访问配置的来源。
+
+浏览已有集合可运行 `iconctl preview --input ./icons.json --output ./reports/preview.html`。此模式只使用本地文件，不执行配置，保留来源文件内容；默认输出到当前目录的 `preview.html`。本地模式的 `--dry-run --json` 只验证，不创建文件、目录或缓存。详见[本地预览](apps/website/zh/quick-start.md#预览本地集合)。
 
 `sync --json` 输出 `added`、`removed`、`changed`、`skipped`、`sources`、`fileVersion`、`outputFiles`。校验失败默认非 0 退出，并且不写半成品。
 

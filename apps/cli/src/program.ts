@@ -1,5 +1,6 @@
 import type { CheckCommandOptions } from './check'
 import type { CommandContext } from './failure'
+import type { PreviewCommandOptions } from './preview'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -13,6 +14,7 @@ import { runCheck } from './check'
 import { runDiff } from './diff'
 import { reportCliError } from './failure'
 import { runFigmaAuth } from './figma-auth'
+import { runLocalPreview } from './preview'
 import { syncSummary } from './sync-summary'
 import { runWatch } from './watch'
 
@@ -143,8 +145,13 @@ export async function runCli(argv: string[] = process.argv) {
     .action(action((options: CheckCommandOptions) => runCheck(options, context)))
 
   cli
-    .command('preview', 'Generate a static HTML gallery from the current config')
-    .action(action(async (options: GlobalOptions) => {
+    .command('preview', 'Generate an offline HTML gallery from config or a local Iconify JSON file')
+    .option('--input <file>', 'Preview local JSON without config, sources or credentials; dry-run writes no files or caches')
+    .option('--output <file>', 'HTML destination with --input (default: preview.html in the current directory)')
+    .action(action(async (options: PreviewCommandOptions) => {
+      if (await runLocalPreview(options, context)) {
+        return
+      }
       const config = await loadOptions(options, context)
       if (!config.output.preview) {
         config.output.preview = 'preview.html'

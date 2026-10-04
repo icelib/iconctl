@@ -11,9 +11,11 @@ export {
   loadConfig,
   parseFigmaFileKey,
   renderDiffHtml,
+  renderPreviewHtml,
   resolveConfig,
   sync,
   writeDiffHtml,
+  writePreviewHtml,
 } from '@iconctl/core'
 export type {
   CheckInputOptions,
@@ -31,4 +33,5 @@ export type {
   SyncOptions,
   SyncResult,
   WriteDiffHtmlOptions,
+  WritePreviewHtmlOptions,
 } from '@iconctl/core'

@@ -1,25 +1,13 @@
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { compareIconSets, IconctlError, writeDiffHtml } from '@iconctl/core'
-
-type IconifyJSON = Parameters<typeof compareIconSets>[1]
+import { compareIconSets, writeDiffHtml } from '@iconctl/core'
+import { readIcons } from './read-icons'
 
 interface DiffOptions {
   html?: string
   json?: boolean
   check?: boolean
   dryRun?: boolean
-}
-
-async function readIcons(file: string): Promise<IconifyJSON> {
-  try {
-    // compareIconSets performs complete structure and alias validation.
-    return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, '')) as IconifyJSON
-  }
-  catch (error) {
-    throw new IconctlError(`Cannot read Iconify JSON: ${file}`, { cause: error })
-  }
 }
 
 export async function runDiff(beforeFile: string, afterFile: string, options: DiffOptions) {
