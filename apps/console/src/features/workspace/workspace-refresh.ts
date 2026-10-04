@@ -30,7 +30,7 @@ export function createWorkspaceRefresh<T>(options: WorkspaceOptions<T>) {
   let epoch = 0
   let failures = 0
   let timer: ReturnType<typeof setTimeout> | undefined
-  let active: { promise: Promise<void>, controller?: AbortController, selectDefault: boolean } | undefined
+  let active: { promise: Promise<T>, controller?: AbortController, selectDefault: boolean } | undefined
 
   function clearTimer() {
     clearTimeout(timer)
@@ -85,7 +85,7 @@ export function createWorkspaceRefresh<T>(options: WorkspaceOptions<T>) {
       signal.removeEventListener('abort', rejectAbort)
     }
   }
-  function refresh(selectDefault = true): Promise<void> {
+  function refresh(selectDefault = true): Promise<T> {
     if (disposed) {
       return Promise.reject(new DOMException('Workspace disposed', 'AbortError'))
     }
@@ -103,9 +103,9 @@ export function createWorkspaceRefresh<T>(options: WorkspaceOptions<T>) {
     clearTimer()
     authenticationFailed = false
     state.value = { ...state.value, pending: true }
-    const flight = { promise: Promise.resolve(), controller: undefined as AbortController | undefined, selectDefault }
+    const flight = { promise: Promise.resolve() as Promise<T>, controller: undefined as AbortController | undefined, selectDefault }
     active = flight
-    flight.promise = Promise.resolve().then(async () => {
+    flight.promise = Promise.resolve().then(async (): Promise<T> => {
       try {
         for (;;) {
           if (disposed) {
@@ -133,7 +133,7 @@ export function createWorkspaceRefresh<T>(options: WorkspaceOptions<T>) {
           options.commit(value, flight.selectDefault)
           failures = 0
           state.value = { ready: true, pending: true, error: '', lastUpdated: Date.now() }
-          return
+          return value
         }
       }
       catch (cause) {

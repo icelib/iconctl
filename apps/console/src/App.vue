@@ -26,6 +26,7 @@ import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/h
 import { createTaskSubmission } from './features/history/task-submission'
 import { createDraftNavigation } from './features/projects/draft-navigation'
 import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
+import ProjectReconciliation from './features/projects/ProjectReconciliation.vue'
 import { createSourceUpload } from './features/projects/source-upload'
 import { createComparisonReportDownload } from './features/review/comparison-report-download'
 import ComparisonReportDownloads from './features/review/ComparisonReportDownloads.vue'
@@ -77,6 +78,7 @@ const linkedJobError = ref('')
 const linkedJobLocated = ref(false)
 let locatingLinkedJob = false
 const selectedId = ref('')
+let uploadsPending = () => false
 function blank(): ProjectInput {
   return {
     name: '',
@@ -102,15 +104,18 @@ const editor = createProjectEditor({
     }
   },
   async refresh() {
-    await refresh(false)
-    return data.value.projects
+    const state = await refresh(false)
+    return state?.projects ?? []
   },
+  reconcileBlocked: () => uploadsPending(),
 })
 const draft = editor.draft
 const editorState = editor.state
 const editorDirty = editor.dirty
+const reconciliationStale = editor.reconciliationStale
 const uploads = createSourceUpload({ sources: () => draft.sources ?? [], session: () => editor.session.value, upload })
 const uploading = uploads.pending
+uploadsPending = () => uploading.value
 watch(editor.session, uploads.invalidate, { flush: 'sync' })
 watch(() => draft.sources?.slice() ?? [], uploads.prune, { flush: 'sync' })
 const editing = computed(() => editorState.value.project)
@@ -373,10 +378,12 @@ async function locateLinkedJob(automatic = false) {
   }
 }
 function applyWorkspace(state: ConsoleState, selectDefault: boolean) {
+  const projects = [...state.projects]
   for (const project of data.value.projects) {
-    state.projects = upsertSavedProject(state.projects, project)
+    const next = upsertSavedProject(projects, project)
+    projects.splice(0, projects.length, ...next)
   }
-  data.value = state
+  data.value = { ...state, projects }
   editor.observe(state.projects)
   // Navigation has its own draft/focus lifetime and must not hold the next
   // network refresh or an editor's explicit read waiting for a decision.
@@ -390,8 +397,8 @@ async function selectWorkspace(selectDefault: boolean) {
     selectedId.value = data.value.projects[0].id
   }
 }
-async function refresh(selectDefault = true) {
-  await workspace.refresh(selectDefault)
+async function refresh(selectDefault = true): Promise<ConsoleState | undefined> {
+  return await workspace.refresh(selectDefault)
 }
 async function refreshAfterMutation() {
   workspace.invalidate()
@@ -947,10 +954,21 @@ onUnmounted(() => {
           <div v-if="editorState.serverChanged || editorState.conflict" role="status" aria-label="服务器配置已更新" class="message notice">
             {{ editorState.serverChanged ? '服务器已有更新的配置。' : '配置已变化、项目身份受限或有任务运行，请核对后恢复。' }}
             载入最新配置将替换当前草稿；不会自动再次保存。
+            <button type="button" :disabled="busy || uploading || editorState.refreshing || !!editorState.reconciliation" @click="editor.reconcile()">
+              核对并保留草稿
+            </button>
             <button type="button" :disabled="busy || editorState.refreshing" @click="editor.reload()">
               载入最新配置
             </button>
           </div>
+          <ProjectReconciliation
+            v-if="editorState.reconciliation"
+            :state="editorState.reconciliation"
+            :stale="Boolean(reconciliationStale)"
+            :disabled="busy || uploading || editorState.refreshing"
+            @apply="editor.applyReconciliation"
+            @cancel="editor.cancelReconciliation"
+          />
           <div v-if="editorState.refreshError" role="alert" aria-label="工作空间刷新失败" class="message error">
             {{ editorState.saved ? '项目已保存，工作空间状态暂未刷新。' : '工作空间状态暂未刷新，当前草稿已保留。' }}
             {{ editorState.refreshError }}
@@ -1252,7 +1270,7 @@ onUnmounted(() => {
             </div>
           </details>
           <div class="form-footer">
-            <button class="primary" type="submit" :disabled="busy || uploading || editorState.refreshing || editorState.serverChanged || editorState.conflict">
+            <button class="primary" type="submit" :disabled="busy || uploading || editorState.refreshing || !!editorState.reconciliation || editorState.serverChanged || editorState.conflict">
               {{ busy ? "保存中…" : "保存项目" }}
             </button>
           </div>

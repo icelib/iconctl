@@ -250,3 +250,94 @@ it('preserves newer revisions and task pointers when recording saved projects', 
   expect(upsertSavedProject([project()], project('A', 2))[0]?.revision).toBe(2)
   expect(upsertSavedProject([current], project('B'))).toHaveLength(2)
 })
+
+it.each(['missing', 'older', 'superseded', 'invalid'] as const)('does not replace a draft from a fresh %s project read with a cached project', async (kind) => {
+  const { editor, refresh } = setup()
+  editor.open(project('A', 2))
+  editor.draft.prefix = 'keep-local'
+  editor.observe([{ ...project('A', 3), prefix: 'known-server' }])
+  refresh.mockResolvedValue(kind === 'missing' ? [] : [{ ...project('A', kind === 'older' ? 1 : kind === 'invalid' ? Number.NaN : 2), prefix: 'returned-server' }])
+  const before = projectDraft(editor.draft)
+  await editor.reload()
+  expect(editor.draft).toEqual(before)
+  expect(editor.state.value.project?.revision).toBe(2)
+  expect(editor.state.value.serverChanged).toBe(true)
+  expect(editor.state.value.refreshError).not.toBe('')
+})
+
+it('prepares atomic conflicts, applies explicit choices in memory, and leaves the normal save boundary intact', async () => {
+  const { editor, refresh, committed, save } = setup()
+  editor.open(project())
+  editor.draft.prefix = 'local'
+  refresh.mockResolvedValue([{ ...project('A', 2), prefix: 'server', packageName: '@test/server' }])
+  await editor.reconcile()
+  const reconciliation = editor.state.value.reconciliation!
+  expect(reconciliation.pending).toBe(false)
+  expect(reconciliation.fields.find(field => field.key === 'prefix')).toMatchObject({ conflict: true })
+  expect(editor.applyReconciliation({ prefix: 'local' })).toBe(true)
+  expect(editor.state.value.project).toMatchObject({ revision: 2, prefix: 'server' })
+  expect(editor.draft.prefix).toBe('local')
+  expect(editor.draft.packageName).toBe('@test/server')
+  expect(editor.dirty.value).toBe(true)
+  expect(committed).not.toHaveBeenCalled()
+  expect(save).not.toHaveBeenCalled()
+})
+
+it('invalidates an open reconciliation when the draft changes and does not apply stale choices', async () => {
+  const { editor, refresh } = setup()
+  editor.open(project())
+  editor.draft.prefix = 'local'
+  refresh.mockResolvedValue([{ ...project('A', 2), prefix: 'server' }])
+  await editor.reconcile()
+  editor.draft.prefix = 'edited-after-read'
+  expect(editor.reconciliationStale.value).toBe(true)
+  expect(editor.applyReconciliation({ prefix: 'local' })).toBe(false)
+  expect(editor.draft.prefix).toBe('edited-after-read')
+})
+
+it('rejects applying a reconciliation after a newer server revision is observed', async () => {
+  const { editor, refresh } = setup()
+  editor.open(project())
+  editor.draft.prefix = 'local'
+  refresh.mockResolvedValue([{ ...project('A', 2), prefix: 'server' }])
+  await editor.reconcile()
+  editor.observe([{ ...project('A', 3), prefix: 'new-server' }])
+  expect(editor.applyReconciliation({ prefix: 'local' })).toBe(false)
+  expect(editor.draft.prefix).toBe('local')
+  expect(editor.state.value.reconciliation).toBeDefined()
+})
+
+it('keeps a failed reconciliation dismissible so the read can be retried', async () => {
+  const { editor, refresh } = setup()
+  editor.open(project())
+  refresh.mockRejectedValueOnce(new Error('offline'))
+  await editor.reconcile()
+  expect(editor.state.value.reconciliation?.error).toBe('offline')
+  editor.cancelReconciliation()
+  expect(editor.state.value.reconciliation).toBeUndefined()
+  refresh.mockResolvedValue([{ ...project('A', 2), prefix: 'server' }])
+  await editor.reconcile()
+  expect(editor.state.value.reconciliation?.serverRevision).toBe(2)
+})
+
+it('does not start reconciliation while an upload or save owns the physical mutation lock', async () => {
+  let blocked = true
+  const { editor, refresh } = setup()
+  editor.open(project())
+  const original = refresh.mock.calls.length
+  const guarded = createProjectEditor({
+    blank: () => projectDraft(project('new')),
+    save: async () => project('A', 2),
+    committed: vi.fn(),
+    refresh,
+    reconcileBlocked: () => blocked,
+  })
+  guarded.open(project())
+  await guarded.reconcile()
+  expect(refresh).toHaveBeenCalledTimes(original)
+  blocked = false
+  await guarded.reconcile()
+  expect(refresh).toHaveBeenCalledTimes(original + 1)
+  blocked = true
+  expect(guarded.applyReconciliation({ prefix: 'local' })).toBe(false)
+})

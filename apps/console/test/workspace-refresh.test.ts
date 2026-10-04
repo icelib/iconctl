@@ -54,6 +54,12 @@ it('retries failed session setup before reading state and enables the normal cad
   expect(read).toHaveBeenCalledTimes(2)
 })
 
+it('returns the accepted fresh workspace value to explicit callers', async () => {
+  const { workspace, commit } = fixture()
+  await expect(workspace.refresh()).resolves.toBe('initial')
+  expect(commit).toHaveBeenCalledWith('initial', true)
+})
+
 it('coalesces bootstrap retries and retries only state once the session succeeded', async () => {
   const { workspace, initialize, read } = fixture()
   read.mockRejectedValueOnce(new Error('State unavailable'))
