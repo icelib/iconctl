@@ -275,17 +275,18 @@ test('reports the real Worker size limit locally and permits selecting and downl
   await clickDownload(page, info, 'small-after-limit.zip')
 })
 
-test('explains snapshots without SVG artifacts and preserves their individual JSON download', async ({ page, context, localWorker }, info) => {
+test('explains snapshots without SVG artifacts and preserves their original JSON artifact bytes', async ({ page, context, request, localWorker }, info) => {
   await openReview(page, context, localWorker)
   await page.getByLabel('选择快照', { exact: true }).selectOption(localWorker.fixture.empty.id)
   await expect(page.getByText('当前快照没有 SVG 产物。', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /下载全部 SVG/ })).toHaveCount(0)
-  const pending = page.waitForEvent('download')
-  await page.getByRole('link', { name: 'icons.json ↓', exact: true }).click()
-  const download = await pending
-  expect(download.suggestedFilename()).toBe('icons.json')
-  await download.saveAs(info.outputPath('empty-icons.json'))
-  expect(await readFile(info.outputPath('empty-icons.json'), 'utf8')).toBe('{}')
+  await expect(page.getByRole('link', { name: 'icons.json ↓', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '下载完整 Iconify JSON', exact: true })).toBeEnabled()
+  const artifact = await request.get(`${localWorker.origin}/api/snapshots/${localWorker.fixture.empty.id}/files/icons.json`, { headers: { cookie: `__Host-iconctl-session=${localWorker.fixture.session.token}` } })
+  expect(artifact.status()).toBe(200)
+  expect(artifact.headers()['content-disposition']).toContain('icons.json')
+  expect(await artifact.text()).toBe('{}')
+  await writeFile(info.outputPath('original-icons.json'), await artifact.body())
 })
 
 for (const navigation of ['snapshot', 'comparison', 'project', 'view'] as const) {

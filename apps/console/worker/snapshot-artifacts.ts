@@ -12,8 +12,8 @@ async function boundedText(object: SnapshotObject, maximum: number, signal?: Abo
     signal.throwIfAborted()
   }
   if (object.size > maximum) {
-    await object.body.cancel()
-    fail(413, 'Snapshot exceeds the SVG archive document limit')
+    void object.body.cancel().catch(() => {})
+    fail(413, 'Snapshot exceeds the document limit')
   }
   const bytes = new Uint8Array(object.size)
   const reader = object.body.getReader()
@@ -33,8 +33,8 @@ async function boundedText(object: SnapshotObject, maximum: number, signal?: Abo
         break
       }
       if (length + value.byteLength > bytes.byteLength) {
-        await reader.cancel()
-        fail(413, 'Snapshot exceeds the SVG archive document limit')
+        void reader.cancel().catch(() => {})
+        fail(413, 'Snapshot exceeds the document limit')
       }
       bytes.set(value, length)
       length += value.byteLength
@@ -63,5 +63,10 @@ export async function readSnapshotArtifact(bucket: SnapshotBucket, snapshot: Sna
   }
   // Preserve the existing stored-document contract. Each artifact consumer
   // validates its own output representation after checking the document digest.
-  return JSON.parse(text) as SnapshotContent
+  try {
+    return JSON.parse(text) as SnapshotContent
+  }
+  catch {
+    fail(409, 'Snapshot document is invalid JSON')
+  }
 }

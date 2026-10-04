@@ -25,8 +25,8 @@ export class FixtureAccountState extends AccountState {
       'svg/empty.svg': '',
     }
     const documents = {}
-    const snapshot = async (owner, files, index, baseline, icons = { kept: { body: '<circle cx="12" cy="12" r="8"/>' }, added: { body: '<path d="M4 12h16"/>' } }) => {
-      const content = { json: { prefix: owner.prefix, width: 24, height: 24, icons }, files, issues: [], failed: [], sources: [{ type: 'directory', notModified: false }] }
+    const snapshot = async (owner, files, index, baseline, icons = { kept: { body: '<circle cx="12" cy="12" r="8"/>' }, added: { body: '<path d="M4 12h16"/>', width: 32, height: 16, customIcon: { title: '中文🙂 & <value>' } } }) => {
+      const content = { json: { prefix: owner.prefix, width: 24, height: 24, icons, info: { name: 'Processed collection 中文🙂' }, customCollection: { value: '<metadata>&"', ordered: ['z', 'a'] } }, files, issues: [], failed: [], sources: [{ type: 'directory', notModified: false }] }
       const document = JSON.stringify(content)
       const metadata = { id: crypto.randomUUID(), projectId: owner.id, jobId: crypto.randomUUID(), attempt: 1, createdAt: now - (8 - index) * 1000, digest: await digest(document), iconCount: Object.keys(icons).length, issues: 0, ...(baseline ? { baselineId: baseline.id } : {}) }
       documents[metadata.id] = document
@@ -41,6 +41,7 @@ export class FixtureAccountState extends AccountState {
     const empty = await snapshot(primary, { 'icons.json': btoa('{}') }, 3, alternate)
     const large = await snapshot(primary, { 'svg/large.svg': btoa('x'.repeat(1024 * 1024 + 1)) }, 4, empty)
     const otherSnapshot = await snapshot(other, { 'svg/other.svg': btoa('<svg>other</svg>') }, 5)
+    const noFiles = await snapshot(primary, {}, 6, current, {})
     const release = { id: crypto.randomUUID(), projectId: primary.id, jobId: baseline.jobId, snapshotId: baseline.id, version: '1.0.0', packageName: primary.packageName, integrity: 'sha512-fixture', commit: 'b'.repeat(40), createdAt: now - 7000, url: 'https://github.com/fixture/icons/releases/tag/1.0.0' }
     primary.snapshotId = current.id
     primary.releaseId = release.id
@@ -49,7 +50,7 @@ export class FixtureAccountState extends AccountState {
     this.record(`project:${other.id}`, other)
     this.record(`release:${release.id}`, release)
     this.record('fixture:svg-documents', documents)
-    return { project: primary, otherProject: other, baseline, current, alternate, empty, large, otherSnapshot, expectedFiles, session: await this.newSession(OWNER_ID) }
+    return { project: primary, otherProject: other, baseline, current, alternate, empty, large, noFiles, otherSnapshot, expectedFiles, session: await this.newSession(OWNER_ID) }
   }
 
   async changeSvgArtifact({ snapshotId, action }) {

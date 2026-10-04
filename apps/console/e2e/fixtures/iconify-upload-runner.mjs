@@ -24,7 +24,7 @@ if (tree.some(path => path.endsWith('.json')) || tree.length !== 1 || tree[0] !=
 let outcome
 try {
   await mkdir(input.work, { recursive: true })
-  const job = await client.json('claim', { operation: 'sync' })
+  const job = await client.json('claim', { operation: input.job.operation })
   await synchronize(job, client, input.repository, input.work)
   outcome = { succeeded: true }
 }

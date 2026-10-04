@@ -1,6 +1,12 @@
 import type { Snapshot } from '@iconctl/console-contracts'
 import { shallowRef } from 'vue'
 
+interface DownloadFormat {
+  prefix: string
+  extension: string
+  label: string
+}
+
 type Result = 'downloaded' | 'failed' | 'cancelled' | 'blocked'
 
 interface DownloadLink {
@@ -36,6 +42,7 @@ export function saveBlobDownload(blob: Blob, filename: string, target: DownloadT
 export function createSnapshotDownload(
   download: (id: string, signal: AbortSignal) => Promise<Blob>,
   save: (blob: Blob, filename: string) => void,
+  format: DownloadFormat = { prefix: 'iconctl-svg', extension: 'zip', label: 'SVG' },
 ) {
   const state = shallowRef({ pending: false, error: '', message: '' })
   let disposed = false
@@ -54,11 +61,11 @@ export function createSnapshotDownload(
       return Promise.resolve('blocked')
     }
     const id = snapshot.id
-    const filename = `iconctl-svg-${id}-${snapshot.digest.slice(0, 12)}.zip`
+    const filename = `${format.prefix}-${id}-${snapshot.digest.slice(0, 12)}.${format.extension}`
     return new Promise((settle) => {
       const request = { controller: new AbortController(), settle }
       active = request
-      state.value = { pending: true, error: '', message: '正在准备 SVG 下载…' }
+      state.value = { pending: true, error: '', message: `正在准备 ${format.label} 下载…` }
       void (async () => {
         try {
           const blob = await download(id, request.controller.signal)
@@ -71,7 +78,7 @@ export function createSnapshotDownload(
         }
         catch (cause) {
           if (active === request) {
-            state.value = { pending: false, error: cause instanceof Error ? cause.message : 'SVG 下载失败，请重试', message: '' }
+            state.value = { pending: false, error: cause instanceof Error ? cause.message : `${format.label} 下载失败，请重试`, message: '' }
             settle('failed')
           }
         }

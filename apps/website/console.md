@@ -233,6 +233,16 @@ Archives support snapshot documents up to 8 MiB, at most 5000 SVGs, 1 MiB per SV
 
 Download progress and errors stay in the snapshot review. An error can be retried by clicking the download button again. Changing the snapshot or comparison, switching projects or leaving the review cancels a pending download, so a late response cannot start a download for a different review. “Download started” means the browser received the download; it does not confirm that you saved the file.
 
+### Download the complete snapshot collection
+
+Choose **Download complete Iconify JSON** (「下载完整 Iconify JSON」) in the artifacts section to save the current reviewed snapshot's complete `content.json` collection, including check/dry-run snapshots with no generated files, empty collections and historical failed attempts. Search, diff filters, diagnostic filters and the comparison baseline never narrow this collection or select the baseline's icons. Existing diagnostics stay visible; a failed snapshot can contain only the icons available at that attempt, so downloading it does not mean validation passed.
+
+The JSON contains the collection's stored fields and metadata without reprocessing SVGs, renaming icons or adding snapshot/issues fields. It is the task's processed collection, not the source upload or original design bytes. JSON whitespace can change during serialization; the result may differ from the generated `files/icons.json`. Existing `/api/snapshots/:id/files/icons.json` links still return their original bytes; the UI replaces that duplicate entry with the complete collection action. JSON/HTML comparison reports remain separate review documents, and SVG ZIPs still require stored SVG files.
+
+`GET /api/snapshots/:id/icons.json` requires an owner session and a snapshot UUID. It verifies the stored document's digest and a **25 MiB document limit**, then downloads `iconctl-icons-<snapshot UUID>-<document digest first 12 characters>.json`. The name identifies the snapshot document; its digest is not the exported file's SHA-256. Missing metadata or storage returns 404, invalid UUID 400, invalid/mismatched digest or malformed collection 409, and an oversized document 413. The response is JSON with private no-store caching and a sandbox CSP. Downloading creates no task or snapshot and changes no project or release state.
+
+JSON and SVG downloads have independent progress. Comparison loading disables the actions; switching snapshots, comparison baselines or projects, or leaving the review cancels the old download. Retry a failed download explicitly. A download already handed to the browser cannot be recalled; “Download started” does not confirm a saved local file. A valid exported collection can be used with local `iconctl preview --input`, `iconctl diff` or `iconctl sprite --input`; each command still applies its own validation and supported format limits.
+
 ### Select visible components
 
 Choose **Select visible components** to replace the Figma canvas selection with the current search × Problems only × Issue type list. Drafts are excluded. “Visible” means the plugin’s filtered list, not the viewport or a layer’s visibility setting. The action keeps canvas zoom and center unchanged; use Locate or Previous/Next problem to focus an individual component. It never edits, renames, moves, unlocks or unhides nodes.

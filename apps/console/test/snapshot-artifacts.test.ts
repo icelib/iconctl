@@ -82,3 +82,32 @@ it('skips parsing when cancellation arrives while the digest is pending', async 
   await rejected
   expect(body.locked).toBe(false)
 })
+
+it.each(['pending', 'rejected'] as const)('preserves the size error without awaiting a %s source cancellation', async (cancellation) => {
+  for (const declared of [2048, 1]) {
+    const cancel = vi.fn(() => cancellation === 'pending' ? new Promise<void>(() => {}) : Promise.reject(new Error('Source cancelled')))
+    const body = new ReadableStream<Uint8Array>({
+      pull(stream) { stream.enqueue(new Uint8Array(2)) },
+      cancel,
+    }, { highWaterMark: 0 })
+    const hashing = vi.spyOn(crypto.subtle, 'digest')
+    await expect(readSnapshotArtifact({ get: async () => ({ ...object(body), size: declared }) }, snapshot, 1024)).rejects.toThrow('ICONCTL_ERROR:413:Snapshot exceeds the document limit')
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(body.locked).toBe(false)
+    expect(hashing).not.toHaveBeenCalled()
+  }
+})
+
+it('rejects a truncated document before parsing and releases a failed stream lock', async () => {
+  const truncated = new ReadableStream<Uint8Array>({ start(stream) {
+    stream.enqueue(new TextEncoder().encode('{"json":'))
+    stream.close()
+  } })
+  await expect(readSnapshotArtifact({ get: async () => object(truncated) }, snapshot, 1024)).rejects.toThrow('Snapshot digest mismatch')
+  expect(truncated.locked).toBe(false)
+  const failed = new ReadableStream<Uint8Array>({
+    pull(stream) { stream.error(new Error('R2 stream failed')) },
+  })
+  await expect(readSnapshotArtifact({ get: async () => object(failed) }, snapshot, 1024)).rejects.toThrow('R2 stream failed')
+  expect(failed.locked).toBe(false)
+})

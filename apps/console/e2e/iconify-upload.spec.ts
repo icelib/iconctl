@@ -3,7 +3,7 @@ import type { Page, TestInfo } from '@playwright/test'
 import { Buffer } from 'node:buffer'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -68,12 +68,13 @@ async function saveProject(page: Page) {
   await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('项目配置已保存')
   return await response.json() as Project
 }
-async function run(page: Page, origin: string, fixture: UploadFixture, info: TestInfo) {
+async function run(page: Page, origin: string, fixture: UploadFixture, info: TestInfo, operation: 'sync' | 'check' | 'dry-run' = 'sync') {
   const next = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/jobs') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: '同步图标', exact: true }).click()
+  await page.getByRole('button', { name: { 'sync': '同步图标', 'check': '仅校验', 'dry-run': 'Dry run' }[operation], exact: true }).click()
   const response = await next
   expect(response.status()).toBe(202)
   const job = await response.json() as Job
+  expect(job.operation).toBe(operation)
   expect(job.sourceCommit).toBe(fixture.sourceCommit)
   const signed = await page.request.post(`${origin}/__fixtures/iconify-upload/runner`, { data: { jobId: job.id } })
   expect(signed.ok()).toBe(true)
@@ -101,6 +102,84 @@ async function run(page: Page, origin: string, fixture: UploadFixture, info: Tes
   }
   finally { await rm(directory, { recursive: true, force: true }) }
 }
+
+async function downloadCollection(page: Page, info: TestInfo, preview: SnapshotPreview, name: string) {
+  const response = page.waitForResponse(`**/api/snapshots/${preview.snapshot.id}/icons.json`)
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下载完整 Iconify JSON', exact: true }).click()
+  const file = await pending
+  expect(await file.failure()).toBeNull()
+  const http = await response
+  expect(http.status()).toBe(200)
+  expect(http.headers()).toMatchObject({ 'content-type': 'application/json; charset=utf-8', 'content-security-policy': 'sandbox; default-src \'none\'' })
+  expect(file.suggestedFilename()).toBe(`iconctl-icons-${preview.snapshot.id}-${preview.snapshot.digest.slice(0, 12)}.json`)
+  const path = info.outputPath(name)
+  await file.saveAs(path)
+  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(preview.content.json)
+  await writeFile(info.outputPath(`${name}.http.json`), JSON.stringify({ status: http.status(), headers: http.headers(), filename: file.suggestedFilename() }, null, 2))
+  return path
+}
+
+for (const operation of ['check', 'dry-run'] as const) {
+  test(`downloads a complete no-files snapshot from the real ${operation} runner and reads it with the current CLI`, async ({ page, localWorker }, info) => {
+    await open(page, localWorker.origin)
+    await upload(page)
+    await source(page).getByLabel('导入范围').selectOption('selected')
+    await source(page).getByLabel('图标名称（每行一个）').fill('home\nreflected')
+    await saveProject(page)
+    const { completed, preview, outcome } = await run(page, localWorker.origin, localWorker.fixture, info, operation)
+    expect(completed.status).toBe('succeeded')
+    expect(outcome.succeeded).toBe(true)
+    expect(preview.content.files).toEqual({})
+    expect(Object.keys(preview.content.json.icons)).toEqual(['home', 'reflected'])
+    await expect(page.getByRole('link', { name: 'icons.json ↓', exact: true })).toHaveCount(0)
+    await page.getByLabel('搜索图标', { exact: true }).fill('nothing-visible')
+    await expect(page.getByText('没有符合条件的图标。', { exact: true })).toBeVisible()
+    const path = await downloadCollection(page, info, preview, `${operation}-collection.json`)
+    if (operation === 'check') {
+      const cli = fileURLToPath(new URL('../../cli/dist/cli.mjs', import.meta.url))
+      const commands = [
+        ['preview', '--input', path, '--output', info.outputPath('downloaded-preview.html'), '--json'],
+        ['diff', path, path, '--json'],
+        ['sprite', '--input', path, '--output', info.outputPath('downloaded-sprite.svg'), '--json'],
+      ]
+      const results = []
+      for (const args of commands) {
+        const result = await promisify(execFile)(process.execPath, [cli, ...args], { timeout: 20_000 })
+        results.push({ args, stdout: result.stdout, stderr: result.stderr })
+      }
+      expect(await readFile(info.outputPath('downloaded-preview.html'), 'utf8')).toContain('home')
+      expect(await readFile(info.outputPath('downloaded-sprite.svg'), 'utf8')).toContain('<symbol')
+      await writeFile(info.outputPath('downloaded-cli-interop.json'), JSON.stringify(results, null, 2))
+    }
+  })
+}
+
+test('downloads an actual failed check snapshot after retry makes it historical without hiding its diagnostics', async ({ page, localWorker }, info) => {
+  await open(page, localWorker.origin)
+  await upload(page)
+  await source(page).getByLabel('导入范围').selectOption('selected')
+  await source(page).getByLabel('图标名称（每行一个）').fill('home\nbroken')
+  await saveProject(page)
+  const { completed, preview, outcome } = await run(page, localWorker.origin, localWorker.fixture, info, 'check')
+  expect(outcome.succeeded).toBe(false)
+  expect(completed.status).toBe('failed')
+  expect(preview.content.files).toEqual({})
+  expect(preview.content.failed).toEqual(['broken'])
+  expect(Object.keys(preview.content.json.icons)).toEqual(['home'])
+  await page.getByRole('button', { name: '任务与版本', exact: true }).click()
+  const retried = page.waitForResponse(`**/api/jobs/${completed.id}/retry`)
+  await page.locator(`#job-${completed.id}`).getByRole('button', { name: '重试', exact: true }).click()
+  expect((await retried).status()).toBe(202)
+  await page.getByRole('button', { name: '预览与差异', exact: true }).click()
+  await page.getByLabel('选择快照', { exact: true }).selectOption(preview.snapshot.id)
+  await expect(page.getByLabel('快照诊断', { exact: true })).toContainText('broken')
+  await expect(page.getByRole('button', { name: '查看发布确认', exact: true })).toBeDisabled()
+  await expect(page.getByText('此快照包含问题，集合可能不完整；下载不代表校验通过。', { exact: true })).toBeVisible()
+  await downloadCollection(page, info, preview, 'failed-historical-check.json')
+  await expect(page.getByLabel('快照诊断', { exact: true })).toContainText('broken')
+  await expect(page.getByRole('button', { name: '查看发布确认', exact: true })).toBeDisabled()
+})
 
 test('uploads original JSON bytes, saves a frozen revision and renders a real runner alias snapshot absent from Git', async ({ page, localWorker }, info) => {
   await open(page, localWorker.origin)

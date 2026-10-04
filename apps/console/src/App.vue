@@ -13,7 +13,7 @@ import type { ComponentPublicInstance } from 'vue'
 import type { SnapshotOriginTarget } from './features/history/snapshot-origin'
 import type { NavigationIntent } from './features/projects/draft-navigation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { api, downloadSnapshotSvg, initializeSession, restoreBackup, upload } from './api'
+import { api, downloadSnapshotJson, downloadSnapshotSvg, initializeSession, restoreBackup, upload } from './api'
 import { downloadBlob } from './browser-download'
 import { createDiagnosticCopy } from './features/history/diagnostic-copy'
 import { createHistoryReveal, historyJobAvailable } from './features/history/history-reveal'
@@ -252,6 +252,8 @@ const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
 const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
 const svgDownload = createSnapshotDownload(downloadSnapshotSvg, downloadBlob)
 const svgDownloadState = svgDownload.state
+const jsonDownload = createSnapshotDownload(downloadSnapshotJson, downloadBlob, { prefix: 'iconctl-icons', extension: 'json', label: 'Iconify JSON' })
+const jsonDownloadState = jsonDownload.state
 const reportDownload = createComparisonReportDownload({
   current: () => preview.value,
   blocked: () => view.value !== 'preview' || !!reviewState.value.pending,
@@ -293,6 +295,7 @@ watch(
 )
 watch(selectedId, () => {
   diagnosticCopy.invalidate()
+  jsonDownload.invalidate()
   svgDownload.invalidate()
   reportDownload.invalidate()
   review.invalidate(true)
@@ -300,6 +303,7 @@ watch(selectedId, () => {
 }, { flush: 'sync' })
 watch(view, () => {
   diagnosticCopy.invalidate()
+  jsonDownload.invalidate()
   svgDownload.invalidate()
   reportDownload.invalidate()
   review.invalidate()
@@ -588,6 +592,7 @@ async function openSnapshot(id: string, compareTo = '') {
       }
       view.value = 'preview'
       publication.close()
+      jsonDownload.invalidate()
       svgDownload.invalidate()
       reportDownload.invalidate()
       diagnosticCopy.invalidate()
@@ -713,6 +718,7 @@ onUnmounted(() => {
   workspace.dispose()
   historyReveal.dispose()
   attemptViews.clear()
+  jsonDownload.dispose()
   svgDownload.dispose()
   reportDownload.dispose()
   diagnosticCopy.dispose()
@@ -1404,6 +1410,22 @@ onUnmounted(() => {
           <div class="artifact-list">
             <h3>下载产物</h3>
             <button
+              :disabled="!!reviewState.pending || jsonDownloadState.pending"
+              @click="!reviewState.pending && jsonDownload.start(preview.snapshot)"
+            >
+              下载完整 Iconify JSON
+            </button>
+            <p class="help">
+              当前快照的全部图标，不受搜索或比较筛选影响；检查和 dry-run 快照也可下载。
+              <span v-if="preview.content.issues.length || preview.content.failed.length">此快照包含问题，集合可能不完整；下载不代表校验通过。</span>
+            </p>
+            <p v-if="jsonDownloadState.message" role="status" aria-label="Iconify JSON 下载状态" class="help">
+              {{ jsonDownloadState.message }}
+            </p>
+            <p v-if="jsonDownloadState.error" role="alert" aria-label="Iconify JSON 下载失败" class="message error">
+              {{ jsonDownloadState.error }}。可再次点击下载重试。
+            </p>
+            <button
               v-if="svgFiles.length"
               :disabled="!!reviewState.pending || svgDownloadState.pending"
               @click="!reviewState.pending && svgDownload.start(preview.snapshot)"
@@ -1421,7 +1443,7 @@ onUnmounted(() => {
             </p>
             <a
               v-for="name in Object.keys(preview.content.files).filter(
-                (name) => !name.startsWith('svg/'),
+                (name) => name !== 'icons.json' && !name.startsWith('svg/'),
               )"
               :key="name"
               :href="`/api/snapshots/${snapshotId}/files/${name}`"

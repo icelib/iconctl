@@ -1,5 +1,5 @@
 import type { UploadKind } from '@iconctl/console-contracts'
-import { readApiResponse, readZipResponse } from './api-response'
+import { readApiResponse, readIconJsonResponse, readZipResponse } from './api-response'
 
 export { ApiError } from './api-response'
 
@@ -64,6 +64,15 @@ export async function downloadSnapshotSvg(id: string, signal: AbortSignal): Prom
     location.assign('/login')
   }
   return await readZipResponse(response, signal)
+}
+
+export async function downloadSnapshotJson(id: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(`/api/snapshots/${id}/icons.json`, { credentials: 'same-origin', signal })
+  signal.throwIfAborted()
+  if (response.status === 401) {
+    location.assign('/login')
+  }
+  return await readIconJsonResponse(response, signal)
 }
 
 export async function restoreBackup(file: File) {

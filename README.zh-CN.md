@@ -134,3 +134,5 @@ MIT
 公开文档旁的 `/app` 提供仅所有者可用的 Vue/Hono 图标工作台。参阅[GitHub App、OAuth、插件与部署指南](apps/website/zh/console.md)。
 
 控制台项目可以从任务固定的仓库提交或最多 10 MiB 的本地上传导入 Iconify JSON，按原始名称选择图标／别名，并原样添加名称前缀。上传在保存项目后生效，每个任务固定其引用。参阅[仓库或上传的 Iconify JSON](apps/website/zh/console.md#仓库-iconify-json)。
+
+控制台还可[下载完整快照集合](apps/website/zh/console.md#下载完整快照集合)，包括没有生成文件的 check/dry-run 结果与历史失败 attempt。导出保留已存处理后集合，诊断继续在审核页显示。

@@ -3,6 +3,7 @@ import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { RunnerIdentity } from './github'
 import {
+  iconJsonSchema,
   identifier,
   MAX_ARTIFACT_BYTES,
   MAX_UPLOAD_BYTES,
@@ -623,6 +624,26 @@ app.get('/api/snapshots/:id/files/*', async (c) => {
     headers: {
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${name.split('/').pop()}"`,
+      'Content-Security-Policy': 'sandbox; default-src \'none\'',
+    },
+  })
+})
+app.get('/api/snapshots/:id/icons.json', async (c) => {
+  const id = identifier.parse(c.req.param('id'))
+  const snapshot = await account(c.env).snapshot(id)
+  if (!/^[a-f0-9]{64}$/.test(snapshot.digest)) {
+    fail(409, 'Snapshot digest is invalid')
+  }
+  const content = await readSnapshotArtifact(c.env.ARTIFACTS, snapshot, MAX_ARTIFACT_BYTES, c.req.raw.signal)
+  if (!iconJsonSchema.safeParse(content?.json).success) {
+    fail(409, 'Snapshot icon collection is invalid')
+  }
+  c.req.raw.signal.throwIfAborted()
+  // Validate without using the parsed copy: retain all stored collection fields.
+  return new Response(JSON.stringify(content.json), {
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="iconctl-icons-${id}-${snapshot.digest.slice(0, 12)}.json"`,
       'Content-Security-Policy': 'sandbox; default-src \'none\'',
     },
   })

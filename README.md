@@ -134,3 +134,5 @@ OAuth workflows must serialize jobs sharing an authorization with a fixed concur
 The owner-only Vue/Hono console lives at `/app` alongside the public documentation. See [setup, GitHub App, OAuth and deployment](apps/website/console.md).
 
 Console projects can import an Iconify JSON file from each task's pinned repository commit or a local upload of up to 10 MiB, select original icon/alias names and add a literal name prefix. Uploads take effect after saving the project and remain fixed to each task. See [repository or uploaded Iconify JSON](apps/website/console.md#repository-iconify-json).
+
+Console snapshots also offer [complete Iconify JSON downloads](apps/website/console.md#download-the-complete-snapshot-collection), including check/dry-run results without generated files and historical failed attempts. The export preserves the stored processed collection; diagnostics remain in the review.

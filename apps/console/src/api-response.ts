@@ -1,3 +1,5 @@
+import { iconJsonSchema } from '@iconctl/console-contracts'
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -40,5 +42,31 @@ export async function readZipResponse(response: Response, signal: AbortSignal): 
   }
   const blob = await response.blob()
   signal.throwIfAborted()
+  return blob
+}
+
+/** Keep stored JSON bytes after rejecting error envelopes and malformed collections. */
+export async function readIconJsonResponse(response: Response, signal: AbortSignal): Promise<Blob> {
+  signal.throwIfAborted()
+  if (!response.ok) {
+    await readApiResponse(response)
+  }
+  if (response.headers.get('Content-Type')?.split(';')[0]?.trim() !== 'application/json') {
+    throw new ApiError('服务器响应格式无效，请重试', response.status)
+  }
+  const blob = await response.blob()
+  signal.throwIfAborted()
+  let collection: unknown
+  try {
+    collection = JSON.parse(await blob.text())
+  }
+  catch {
+    signal.throwIfAborted()
+    throw new ApiError('服务器响应格式无效，请重试', response.status)
+  }
+  signal.throwIfAborted()
+  if (!iconJsonSchema.safeParse(collection).success) {
+    throw new ApiError('服务器图标集合无效，请重试', response.status)
+  }
   return blob
 }

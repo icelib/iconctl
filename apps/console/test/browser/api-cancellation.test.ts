@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { api, initializeSession, upload } from '../../src/api'
+import { api, downloadSnapshotJson, initializeSession, upload } from '../../src/api'
 import { createWorkspaceRefresh } from '../../src/features/workspace/workspace-refresh'
 
 function deferred<T>() {
@@ -119,4 +119,56 @@ it('uses an explicit JSON upload kind and content type without trusting the file
   expect(fetch.mock.calls[1]).toMatchObject(['/api/uploads?kind=iconify-json', { headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'session' }, body: file }])
   await upload(file)
   expect(fetch.mock.calls[2]).toMatchObject(['/api/uploads', { headers: { 'Content-Type': 'application/zip' } }])
+})
+
+it('does not redirect a cancelled collection download when a late 401 arrives', async () => {
+  const response = deferred<Response>()
+  const assign = vi.fn()
+  vi.stubGlobal('location', { assign })
+  const fetch = vi.fn(() => response.promise)
+  vi.stubGlobal('fetch', fetch)
+  const controller = new AbortController()
+  const work = downloadSnapshotJson('snapshot', controller.signal)
+  controller.abort()
+  response.resolve(new Response('Expired', { status: 401 }))
+  await expect(work).rejects.toMatchObject({ name: 'AbortError' })
+  expect(assign).not.toHaveBeenCalled()
+  expect(fetch).toHaveBeenCalledWith('/api/snapshots/snapshot/icons.json', { credentials: 'same-origin', signal: controller.signal })
+})
+
+it('redirects a current collection download 401 and preserves its HTTP error', async () => {
+  const assign = vi.fn()
+  vi.stubGlobal('location', { assign })
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('Expired', { status: 401 })))
+  await expect(downloadSnapshotJson('snapshot', new AbortController().signal)).rejects.toMatchObject({ status: 401 })
+  expect(assign).toHaveBeenCalledExactlyOnceWith('/login')
+})
+
+it('never returns a collection Blob whose body finishes after cancellation', async () => {
+  const response = Response.json({ prefix: 'test', icons: {} })
+  const reading = deferred<Blob>()
+  const blob = vi.spyOn(response, 'blob').mockReturnValue(reading.promise)
+  vi.stubGlobal('fetch', vi.fn(async () => response))
+  const controller = new AbortController()
+  const work = downloadSnapshotJson('snapshot', controller.signal)
+  await vi.waitFor(() => expect(blob).toHaveBeenCalled())
+  controller.abort()
+  reading.resolve(new Blob(['{"prefix":"test","icons":{}}']))
+  await expect(work).rejects.toMatchObject({ name: 'AbortError' })
+})
+
+it.each([
+  ['text/html', '<html>Error</html>'],
+  ['application/json', '{broken'],
+  ['application/json', '{"error":"Server error"}'],
+  ['application/json', '{"prefix":"test","icons":{"broken":{"body":1}}}'],
+])('rejects an invalid successful collection response: %s %s', async (mime, body) => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { headers: { 'Content-Type': mime! } })))
+  await expect(downloadSnapshotJson('snapshot', new AbortController().signal)).rejects.toMatchObject({ name: 'ApiError', status: 200 })
+})
+
+it('retains all response bytes for a valid empty collection with metadata', async () => {
+  const bytes = ' {"prefix":"test", "icons":{}, "metadata":{"kept":true}} \n'
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, { headers: { 'Content-Type': 'application/json; charset=utf-8' } })))
+  expect(await (await downloadSnapshotJson('snapshot', new AbortController().signal)).text()).toBe(bytes)
 })
