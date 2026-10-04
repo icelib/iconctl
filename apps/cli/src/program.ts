@@ -3,6 +3,7 @@ import type { CommandContext } from './failure.ts'
 import type { InitCommandOptions } from './init.ts'
 import type { PreviewCommandOptions } from './preview.ts'
 import type { SpriteCommandOptions } from './sprite.ts'
+import type { TypesCommandOptions } from './types.ts'
 import process from 'node:process'
 import {
   loadConfig,
@@ -19,6 +20,7 @@ import { runInit } from './init.ts'
 import { runLocalPreview } from './preview.ts'
 import { runSprite } from './sprite.ts'
 import { syncSummary } from './sync-summary.ts'
+import { runTypes } from './types.ts'
 import { runWatch } from './watch.ts'
 
 interface GlobalOptions {
@@ -150,6 +152,12 @@ export async function runCli(argv: string[] = process.argv) {
     .option('--input <file>', 'Required local JSON collection; dry-run writes no files or caches')
     .option('--output <file>', 'SVG destination (default: icons.svg in the current directory)')
     .action(action((options: SpriteCommandOptions) => runSprite(options, context)))
+
+  cli
+    .command('types', 'Generate icon name types from local Iconify JSON without config or credentials')
+    .option('--input <file>', 'Required local JSON collection; dry-run writes no files or caches')
+    .option('--output <file>', 'TypeScript destination (default: icons.d.ts in the current directory)')
+    .action(action((options: TypesCommandOptions) => runTypes(options, context)))
 
   cli
     .command('init', 'Create a new TypeScript config without overwriting existing files')

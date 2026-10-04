@@ -1,6 +1,6 @@
-import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SvgSpriteSummary, SyncIssue, SyncResult, WritePreviewHtmlOptions, WriteSvgSpriteOptions } from '..'
+import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconNameTypesSummary, IconSetComparison, SvgSpriteSummary, SyncIssue, SyncResult, WriteIconNameTypesOptions, WritePreviewHtmlOptions, WriteSvgSpriteOptions } from '..'
 import { expectError, expectType } from 'tsd'
-import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, renderPreviewHtml, renderSvgSprite, resolveConfig, sync, watch, writeDiffHtml, writePreviewHtml, writeSvgSprite } from '..'
+import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, renderIconNameTypes, renderPreviewHtml, renderSvgSprite, resolveConfig, sync, watch, writeDiffHtml, writeIconNameTypes, writePreviewHtml, writeSvgSprite } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
 const comparison = compareIconSets(undefined, { prefix: 'brand', icons: { arrow: { body: '<path/>' } } })
@@ -66,3 +66,11 @@ expectType<Promise<SvgSpriteSummary>>(writeSvgSprite('icons.svg', previewIcons, 
 expectError(writeSvgSprite('icons.svg', previewIcons, { inputs: 'icons.json' }))
 expectError(writeSvgSprite('icons.svg', previewIcons, { dryRun: 'true' }))
 expectError(renderSvgSprite({ icons: {} }))
+
+const typesOptions: WriteIconNameTypesOptions = { inputs: ['icons.json'] as const, dryRun: true }
+expectType<string>(renderIconNameTypes(previewIcons))
+expectType<Promise<IconNameTypesSummary>>(writeIconNameTypes('icons.d.ts', previewIcons))
+expectType<Promise<IconNameTypesSummary>>(writeIconNameTypes('icons.ts', previewIcons, typesOptions))
+expectError(writeIconNameTypes('icons.ts', previewIcons, { inputs: 'icons.json' }))
+expectError(writeIconNameTypes('icons.ts', previewIcons, { dryRun: 'true' }))
+expectError(renderIconNameTypes({ icons: {} }))

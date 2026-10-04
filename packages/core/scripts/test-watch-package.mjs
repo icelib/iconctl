@@ -55,6 +55,20 @@ try {
   const cliTarball = await pack(cli, join(fixture, 'cli-package'))
   const consumer = await install('fixed', [coreTarball, cliTarball])
   const typeProbe = `import { watch, IconctlAbortError, defineConfig, resolveConfig, exportOutputs, sync, type IconctlOutputConfig, type SyncResult, type WatchEvent } from '@iconctl/core'
+import { renderIconNameTypes, writeIconNameTypes, type IconNameTypesSummary, type WriteIconNameTypesOptions } from '@iconctl/core'
+import { renderIconNameTypes as renderTypes, writeIconNameTypes as writeTypes, type IconNameTypesSummary as TypesSummary, type WriteIconNameTypesOptions as TypesOptions } from 'iconctl'
+const typesOptions: WriteIconNameTypesOptions = { inputs: ['icons.json'] as const, dryRun: true }
+const facadeTypesOptions: TypesOptions = typesOptions
+const typesJson = { prefix: 'brand', icons: {} }
+const typesSource: string = renderIconNameTypes(typesJson)
+const facadeTypesSource: string = renderTypes(typesJson)
+const typesWritten: Promise<IconNameTypesSummary> = writeIconNameTypes('icons.d.ts', typesJson, typesOptions)
+const facadeTypesWritten: Promise<TypesSummary> = writeTypes('icons.ts', typesJson, facadeTypesOptions)
+// @ts-expect-error Type output input protection requires file paths in an array.
+const invalidTypes: WriteIconNameTypesOptions = { inputs: 'icons.json' }
+// @ts-expect-error Type output dry-run must be boolean.
+const invalidFacadeTypes: TypesOptions = { dryRun: 'true' }
+void typesSource; void facadeTypesSource; void typesWritten; void facadeTypesWritten; void invalidTypes; void invalidFacadeTypes
 import { requestFigmaToken } from '@iconctl/core/figma/oauth'
 import { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from '@iconctl/core'
 import { renderPreviewHtml as renderPreview, writePreviewHtml as writePreview, type WritePreviewHtmlOptions as PreviewOptions } from 'iconctl'

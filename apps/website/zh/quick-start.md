@@ -417,6 +417,37 @@ const summary: SvgSpriteSummary = await writeSvgSprite('assets/icons.svg', icons
 
 `renderSvgSprite` 返回字节稳定、以换行结尾的 SVG，不写文件。`writeSvgSprite` 只准备一次集合，再校验并发布这些字节。库调用者通过 `inputs` 传入需要保护的源文件，CLI 会自动传入输入路径。不需要保护源文件时，可以直接使用两个参数的 writer 调用。
 
+### 从本地 JSON 生成类型
+
+已下载的快照或第三方集合可直接生成名称类型，无需配置来源：
+
+```sh
+iconctl types --input ./collection.json
+iconctl types --input ./collection.json --output ./src/icon-names.ts --json
+iconctl types --input ./collection.json --output ./new/icons.d.ts --dry-run --json
+```
+
+`--input` 必填，默认输出到当前目录的 `icons.d.ts`。`.d.ts` 提供类型检查所需的声明；应用需要在运行时导入 `ICONIFY_PREFIX` 时，使用 `.ts`。两种文件都导出原始前缀字面量和 `IconName` 联合类型。名称按确定顺序排列，包含 hidden 图标和已解析别名，保留原始字符并进行 TypeScript 字面量转义。空集合生成 `IconName = never`。
+
+命令只读取本地 JSON，接受 UTF-8 BOM，只写指定类型文件；不执行配置、不加载来源、不访问凭据、不更新缓存。路径沿用本地命令规则：相对当前目录，保留真实文件名的前后空格；拒绝 URL、`-`、空白或重复路径选项、`--config` 和 `--continue`。来源选择、重命名、颜色处理和监听继续通过配置使用。
+
+整个集合都必须通过结构、尺寸和别名解析检查；缺失／循环别名或无法解析的 `not_found` 项会使整次操作失败。类型生成不渲染或清洗 SVG XML，也不对名称施加 sprite ID 限制，输入字节保持不变。对于已经处理的 sync 结果，`renderIconNameTypes(result.json)` 与同次 sync 的 `output.types` 相同；未经处理的第三方原输入可能在配置来源处理后产生不同名称。
+
+成功 JSON 为 `{ input: { file, prefix }, count, outputFiles }`，路径为绝对路径，count 计入全部已解析名称。`--dry-run` 仍校验集合和目标，返回 `outputFiles: []` 与 `dryRun: true`，不创建文件、父目录、staging 目录或缓存。失败使用公共 JSON 结构，`command` 为 `"types"`：选项错误使用 `arguments`，读取、集合与写入错误使用 `execution`。已有普通文件可替换，但不能通过直接路径、符号链接或硬链接别名覆盖输入；输出末级符号链接和目录也会被拒绝。校验和 staging 写入失败保留原文件，提交回滚与清理沿用[共享输出事务](#同步完整性与取消)。
+
+两个公开包均提供同步 renderer 和异步 writer：
+
+```ts
+import { renderIconNameTypes, writeIconNameTypes, type IconNameTypesSummary, type WriteIconNameTypesOptions } from 'iconctl'
+
+const source: string = renderIconNameTypes(iconsJson)
+const options: WriteIconNameTypesOptions = { inputs: ['collection.json'], dryRun: true }
+const summary: IconNameTypesSummary = await writeIconNameTypes('icons.d.ts', iconsJson, options)
+// summary: { prefix, count }
+```
+
+库调用者通过 `inputs` 保护源文件，CLI 自动传入输入路径。`@iconctl/core` 现有的底层 `generateIconNameTypes(prefix, names)` 继续用于调用方提供的名称列表。
+
 ## 5. 使用 JSON
 
 在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体。

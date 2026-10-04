@@ -17,6 +17,8 @@ output: {
 
 `output.types` exports the literal `ICONIFY_PREFIX` and an `IconName` union, including resolved aliases. Use a `.ts` path when your app imports the prefix at runtime. A `.d.ts` path provides declarations for type checking only; it does not create a JavaScript module. Empty collections produce `IconName = never`.
 
+For an existing collection, `iconctl types --input ./icons.json` generates these types directly. See [local type generation](./quick-start#generate-types-from-local-json).
+
 Open the generated `preview.html` directly to browse offline. Search matches full Iconify names and available utility classes as case-insensitive, literal text; clearing the search restores every icon, including aliases. Copy buttons provide `brand:arrow-left` and `i-brand-arrow-left`. The latter follows the configured icon utility convention below and is offered only when both prefix and name contain lowercase letters/digits separated by single hyphens. Other names remain visible and copyable as full Iconify names.
 
 When the browser denies clipboard access or does not provide it for a local file, the gallery shows selectable text for manual copying. Without JavaScript, all icons and names remain visible. The generated file needs no server or network. Generate it entirely from local files with `iconctl preview --input ./icons.json --output ./preview.html`; this does not execute configuration or update caches. Without `--input`, `iconctl preview` runs sync and can contact configured sources while generating it.

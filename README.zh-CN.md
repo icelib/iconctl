@@ -35,6 +35,7 @@ pnpm exec iconctl sync
 | `iconctl check` | 校验配置产物或 `--input icons.json` |
 | `iconctl preview` | 从配置或 `--input icons.json` 生成可离线搜索的画廊 |
 | `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
+| `iconctl types` | 从本地 Iconify JSON 生成名称类型 |
 
 在脚本中显式指定来源、位置和前缀：
 
@@ -61,6 +62,8 @@ pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-
 独立校验一个集合可运行 `iconctl check --input ./icons.json --width 24 --height 24 --json`，不加载配置、不请求来源、不写文件。尺寸规则可省略，`--name` 可覆盖命名正则。失败报告汇总导入、SVG 处理及校验问题，并以状态码 1 退出。详见[校验已有产物](apps/website/zh/quick-start.md#校验已有产物)。
 
 运行 `iconctl diff before.json after.json --html diff.html` 可审核两份导出集合，比较时解析别名、继承尺寸和变换，并单独报告前缀变化，无需配置或凭据。CI 可加 `--check --json`；图标或前缀存在变化时 `--check` 以 1 退出。报告、dry-run 和 API 详见[离线比较](apps/website/zh/quick-start.md#离线比较)。
+
+已有集合可运行 `iconctl types --input ./icons.json` 生成类型。默认 `icons.d.ts` 用于类型检查；需要在运行时导出前缀时，使用 `--output ./icon-names.ts`。无需配置或凭据，详见[本地类型生成](apps/website/zh/quick-start.md#从本地-json-生成类型)。
 
 ## 配置
 

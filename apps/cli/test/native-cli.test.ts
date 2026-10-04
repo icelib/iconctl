@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { renderSvgSprite } from '@iconctl/core'
+import { renderIconNameTypes, renderSvgSprite } from '@iconctl/core'
 import { build } from 'tsdown'
 import spriteFixture from '../../../packages/core/test/fixtures/standalone-sprite.json'
 
@@ -99,6 +99,7 @@ describe('native TypeScript CLI process boundary', () => {
     expect(result.stdout).toContain(`iconctl/${version}`)
     expect(result.stdout).toContain('preview')
     expect(result.stdout).toContain('sprite')
+    expect(result.stdout).toContain('types')
     expect(result.stdout).toContain('init')
   })
 
@@ -153,6 +154,23 @@ describe('native TypeScript CLI process boundary', () => {
     expect(JSON.parse(failure.stdout)).toMatchObject({ success: false, command: 'sprite', error: { phase: 'execution' } })
     expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(JSON.stringify(spriteFixture))
     expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json', 'icons.svg'])
+  })
+
+  it('generates types through raw native source with dry-run and input protection', async () => {
+    await writeFile(join(cwd, 'icons.json'), JSON.stringify(spriteFixture))
+    const dry = await run(['types', '--input', 'icons.json', '--output', 'new/icons.d.ts', '--dry-run', '--json'])
+    expect(dry).toMatchObject({ code: 0, stderr: '' })
+    expect(JSON.parse(dry.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 8, outputFiles: [], dryRun: true })
+    expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json'])
+    const result = await run(['types', '--input', 'icons.json', '--json'])
+    expect(result).toMatchObject({ code: 0, stderr: '' })
+    expect(JSON.parse(result.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 8, outputFiles: [join(cwd, 'icons.d.ts')] })
+    expect(await readFile(join(cwd, 'icons.d.ts'), 'utf8')).toBe(renderIconNameTypes(spriteFixture))
+    const failure = await run(['types', '--input', 'icons.json', '--output', 'icons.json', '--json'])
+    expect(failure).toMatchObject({ code: 1, stderr: '' })
+    expect(JSON.parse(failure.stdout)).toMatchObject({ success: false, command: 'types', error: { phase: 'execution' } })
+    expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(JSON.stringify(spriteFixture))
+    expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.d.ts', 'icons.json'])
   })
 
   it('prints a human configuration failure once', async () => {

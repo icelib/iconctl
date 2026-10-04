@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { generateIconNameTypes, resolveConfig, sync } from '../src'
+import { generateIconNameTypes, renderIconNameTypes, resolveConfig, sync, writeIconNameTypes } from '../src'
 
 const exec = promisify(execFile)
 const compiler = createRequire(import.meta.url).resolve('typescript/bin/tsc')
@@ -29,6 +29,9 @@ it('compiles generated declarations and source modules with exact literal types 
     { kind: 'escaped', prefix: 'brand\'\\\n\u2028\u2029', names: ['folder/home', 'alias\'\\\n', 'line\u2028\u2029separator'] },
     { kind: 'empty', prefix: 'empty', names: [] },
     { kind: 'sync', prefix: 'brand', names: ['home', 'rotated'] },
+    { kind: 'standalone', prefix: 'brand', names: ['hidden', 'home', 'rotated'] },
+    { kind: 'standalone-escaped', prefix: 'brand\'\\\n\u2028\u2029', names: ['folder/home', 'alias\'\\\n', 'line\u2028\u2029separator'] },
+    { kind: 'standalone-empty', prefix: 'empty', names: [] },
   ]
   for (const item of cases) {
     for (const extension of ['d.ts', 'ts']) {
@@ -44,6 +47,13 @@ it('compiles generated declarations and source modules with exact literal types 
         }))
         const config = resolveConfig({ prefix: item.prefix, sources: [{ type: 'iconify', file: 'input.json' }], output: { json: 'icons.json', types: filename } })
         expect(await sync({ cwd: directory, config })).toMatchObject({ complete: true, processed: 2 })
+      }
+      else if (item.kind.startsWith('standalone')) {
+        const json = item.kind === 'standalone'
+          ? { prefix: item.prefix, icons: { home: { body: '<path/>' }, hidden: { body: '<path/>', hidden: true } }, aliases: { rotated: { parent: 'home', rotate: 1 } } }
+          : { prefix: item.prefix, icons: Object.fromEntries(item.names.map(name => [name, { body: 'not XML' }])) }
+        expect(await writeIconNameTypes(output, json)).toEqual({ prefix: item.prefix, count: item.names.length })
+        expect(await readFile(output, 'utf8')).toBe(renderIconNameTypes(json))
       }
       else {
         await writeFile(output, generateIconNameTypes(item.prefix, item.names))

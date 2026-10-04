@@ -49,5 +49,6 @@ export {
 export { renderSvgSprite, type SvgSpriteSummary, writeSvgSprite, type WriteSvgSpriteOptions } from './sprite-output'
 export { emptyIconSet, importLocalSvgDirectory, mergeIconSets, sync, type SyncOptions, type SyncResult } from './sync'
 export { FIGMA_TOKEN_HELP, MASTERGO_TOKEN_HELP, resolveFigmaToken, resolveMastergoToken } from './token'
+export { type IconNameTypesSummary, renderIconNameTypes, writeIconNameTypes, type WriteIconNameTypesOptions } from './types-output'
 export { formatValidationIssues, validateIconSet, type ValidationIssue } from './validate'
 export { watch, type WatchEvent, type WatchOptions } from './watch'

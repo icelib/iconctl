@@ -417,6 +417,37 @@ const summary: SvgSpriteSummary = await writeSvgSprite('assets/icons.svg', icons
 
 `renderSvgSprite` returns deterministic SVG bytes ending in a newline without writing files. `writeSvgSprite` prepares the collection once, then validates and publishes those bytes. Library callers supply `inputs` to protect source files; the CLI supplies its input automatically. Omit the third argument when no input-file protection is needed.
 
+### Generate types from local JSON
+
+Generate names from a downloaded snapshot or vendor collection without setting up a source:
+
+```sh
+iconctl types --input ./collection.json
+iconctl types --input ./collection.json --output ./src/icon-names.ts --json
+iconctl types --input ./collection.json --output ./new/icons.d.ts --dry-run --json
+```
+
+`--input` is required. The default destination is `icons.d.ts` in the current directory. A `.d.ts` file supplies declarations for type checking; use `.ts` when your application needs to import `ICONIFY_PREFIX` at runtime. Both export the exact prefix and an `IconName` union. Names are sorted, include hidden icons and resolved aliases, and retain their original characters with TypeScript literal escaping. An empty collection produces `IconName = never`.
+
+This command reads local JSON, accepts a UTF-8 BOM, and writes only the requested types file. It does not execute configuration, load sources, contact credentials or update caches. Paths follow the existing local-command rules: relative to the current directory, preserving real filename whitespace; URLs, `-`, blank/repeated path options, `--config` and `--continue` are rejected. Source selection, renaming, color processing and watch remain configuration workflows.
+
+The complete collection must pass structure, dimensions and alias resolution checks; missing/cyclic aliases or unresolved `not_found` entries fail the whole operation. Type generation does not render or sanitize SVG XML and does not impose sprite ID restrictions on names. It preserves the input bytes. For a processed sync result, `renderIconNameTypes(result.json)` matches that same sync's `output.types`; unprocessed vendor inputs may have different names after configured source processing.
+
+Success JSON is `{ input: { file, prefix }, count, outputFiles }`, with absolute paths and every resolved name counted. `--dry-run` still validates the collection and destination but returns `outputFiles: []` plus `dryRun: true`, creating no files, parents, staging directories or caches. Failure uses the common JSON envelope with `command: "types"`: option errors use `arguments`; read, collection and write failures use `execution`. Existing regular files can be replaced, but input aliases through direct paths, symlinks or hard links are protected. Output leaf symlinks and directories are rejected. Validation and staged-write failures preserve the old file; commit rollback and cleanup follow the [shared output transaction](#sync-integrity-and-cancellation).
+
+Both public packages expose the synchronous renderer and asynchronous writer:
+
+```ts
+import { renderIconNameTypes, writeIconNameTypes, type IconNameTypesSummary, type WriteIconNameTypesOptions } from 'iconctl'
+
+const source: string = renderIconNameTypes(iconsJson)
+const options: WriteIconNameTypesOptions = { inputs: ['collection.json'], dryRun: true }
+const summary: IconNameTypesSummary = await writeIconNameTypes('icons.d.ts', iconsJson, options)
+// summary: { prefix, count }
+```
+
+Library callers supply `inputs` to protect source paths; the CLI supplies its input automatically. The existing lower-level `generateIconNameTypes(prefix, names)` in `@iconctl/core` remains available for caller-provided names.
+
 ## 5. Use the JSON
 
 With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font.
