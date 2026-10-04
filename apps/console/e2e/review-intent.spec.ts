@@ -282,7 +282,7 @@ test('renders unknown diagnostic stages literally without inherited object looku
   await open(page)
   const diagnostics = page.getByLabel('快照诊断', { exact: true })
   for (const stage of stages) {
-    await expect(diagnostics.getByText(`阶段：${stage} · 来源：未记录`, { exact: true })).toBeVisible()
+    await expect(diagnostics.getByText(`阶段：${stage} · 来源：未记录来源`, { exact: true })).toBeVisible()
   }
   await expect(page.getByRole('button', { name: '查看发布确认', exact: true })).toBeDisabled()
 })

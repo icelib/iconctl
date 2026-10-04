@@ -32,6 +32,8 @@ async function copyHarness(page: Page, mode: ClipboardMode) {
 async function login(page: Page, context: BrowserContext, worker: Worker) {
   await context.addCookies([{ name: '__Host-iconctl-session', value: worker.fixture.session.token, domain: new URL(worker.origin).hostname, path: '/', httpOnly: true, secure: true, sameSite: 'Lax' }])
   await page.goto(`${worker.origin}/app/?job=${worker.fixture.job.id}`)
+  // Finish initial deep-link navigation before this test issues a new intent.
+  await expect(page.locator(`#job-${worker.fixture.job.id}`)).toBeFocused()
 }
 async function view(page: Page, snapshot: Snapshot) {
   const pending = page.waitForResponse(response => new URL(response.url()).pathname === `/api/snapshots/${snapshot.id}`)
