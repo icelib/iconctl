@@ -98,7 +98,8 @@ interface AttemptHistoryCursor {
   jobId: string
   projectId: string
   attempt?: number
-  offset: number
+  /** Return attempts older than the last group in the previous page. */
+  beforeAttempt: number
 }
 
 export class AccountState extends DurableObject<Env> {
@@ -469,7 +470,7 @@ export class AccountState extends DurableObject<Env> {
     ) {
       fail(400, 'History attempt is invalid')
     }
-    let offset = 0
+    let beforeAttempt: number | undefined
     let filterAttempt = options.attempt
     if (options.cursor !== undefined) {
       if (options.cursor.length > 4096) {
@@ -492,8 +493,8 @@ export class AccountState extends DurableObject<Env> {
         || cursor.version !== 1
         || cursor.jobId !== id
         || cursor.projectId !== job.projectId
-        || !Number.isSafeInteger(cursor.offset)
-        || cursor.offset < 0
+        || !Number.isSafeInteger(cursor.beforeAttempt)
+        || cursor.beforeAttempt < 1
         || (cursor.attempt !== undefined
           && (!Number.isSafeInteger(cursor.attempt) || cursor.attempt < 1))
       ) {
@@ -505,7 +506,7 @@ export class AccountState extends DurableObject<Env> {
       ) {
         fail(400, 'History cursor does not match the attempt filter')
       }
-      offset = cursor.offset
+      beforeAttempt = cursor.beforeAttempt
       filterAttempt = cursor.attempt
     }
 
@@ -534,12 +535,14 @@ export class AccountState extends DurableObject<Env> {
     if (filterAttempt !== undefined) {
       ordered = ordered.filter(value => value.attempt === filterAttempt)
     }
+    else if (beforeAttempt !== undefined) {
+      ordered = ordered.filter(value => value.attempt < beforeAttempt)
+    }
     for (const value of ordered) {
       value.snapshots.sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
     }
-    const page = ordered.slice(offset, offset + limit)
-    const nextOffset = offset + page.length
-    const hasMore = nextOffset < ordered.length
+    const page = ordered.slice(0, limit)
+    const hasMore = page.length < ordered.length
     const nextCursor = hasMore
       ? await encrypt(
           this.env.CREDENTIAL_ENCRYPTION_KEY,
@@ -549,7 +552,7 @@ export class AccountState extends DurableObject<Env> {
             jobId: id,
             projectId: job.projectId,
             ...(filterAttempt === undefined ? {} : { attempt: filterAttempt }),
-            offset: nextOffset,
+            beforeAttempt: page[page.length - 1]!.attempt,
           } satisfies AttemptHistoryCursor,
         )
       : undefined
@@ -557,7 +560,7 @@ export class AccountState extends DurableObject<Env> {
       jobId: id,
       projectId: job.projectId,
       attempts: page,
-      ...(offset === 0
+      ...(!beforeAttempt
         ? { legacyEvents: (job.events ?? []).filter(event => event.attempt === undefined) }
         : {}),
       ...(nextCursor ? { nextCursor } : {}),
