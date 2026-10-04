@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -320,6 +321,27 @@ describe('built CLI process boundary', () => {
       expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { phase: 'execution', message: expect.stringMatching(/conflicts with input/) } })
       expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(`\uFEFF${JSON.stringify(icons)}`)
     })
+  })
+
+  it('diagnoses missing and corrupt caches through installed CLI, ESM and CJS entries', async () => {
+    await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("cache-dir must bypass configuration")')
+    const url = 'https://cache.invalid/icons.json'
+    const cacheFile = join(cwd, 'cache/iconify-v1', `${createHash('sha256').update(url).digest('hex')}.json`)
+    const args = ['cache', 'diagnose', '--cache-dir', 'cache', '--url', url, '--strict', '--json']
+    const missing = await run(...args)
+    expect(missing.code).toBe(1)
+    expect(missing.stderr).toBe('')
+    expect(JSON.parse(missing.stdout)).toMatchObject({ missing: 1, invalid: 0, entries: [{ file: cacheFile, status: 'missing' }] })
+    await expect(readdir(join(cwd, 'cache'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await mkdir(dirname(cacheFile), { recursive: true })
+    await writeFile(cacheFile, '{corrupt')
+    for (const entry of [executable, join(fixture, 'cli/esm-consumer.mjs'), join(fixture, 'cli/cjs-consumer.cjs')]) {
+      const result = await runEntry(entry, args)
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ missing: 0, invalid: 1, entries: [{ file: cacheFile, status: 'invalid' }] })
+    }
+    expect(await readFile(cacheFile, 'utf8')).toBe('{corrupt')
   })
 
   describe('offline diff with the common one-shot error boundary', () => {

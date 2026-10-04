@@ -32,6 +32,7 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | `iconctl init` | Create a new config interactively or from explicit options |
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl watch` | Continuously sync local SVG folders and reload config |
+| `iconctl cache diagnose` | Inspect remote Iconify caches, including missing or corrupt entries |
 | `iconctl check` | Validate configured output or `--input icons.json` |
 | `iconctl preview` | Write a searchable offline gallery from config or `--input icons.json` |
 | `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML or Markdown report |

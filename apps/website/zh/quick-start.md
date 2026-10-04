@@ -121,6 +121,21 @@ pnpm exec iconctl sync --json
 
 配置使用远程 Iconify 来源时，`pnpm exec iconctl sync --offline` 只复用之前在线同步写入且已通过校验的缓存，不请求该来源。缓存缺失或损坏会在导入来源前明确失败；先执行一次普通在线同步即可建立缓存。本地来源不受影响，配置模式的 `preview` 也接受此选项。
 
+### 检查远程 Iconify 缓存
+
+```bash
+pnpm exec iconctl cache diagnose --json
+pnpm exec iconctl cache diagnose --cache-dir .iconctl-cache --url https://cdn.example.com/icons.json --strict --json
+```
+
+默认命令加载项目配置以确定 `cacheDir`；使用 `--cache-dir` 会完全跳过配置及其导入，不能与 `--config` 同用。诊断只读取远程 Iconify 响应缓存，不请求来源、不修复缓存、不改变产物。添加 `--dry-run` 也保持只读。
+
+JSON 格式为 `{ directory, entries, valid, invalid, missing }`。每个条目包含绝对路径 `file`、状态 `status`、元数据字节数 `bytes`；可读取时还包含 `url`、`bodyBytes`、`keyMatches`、`etag`、`lastModified` 和错误 `error`，不会包含图标正文。空缓存目录返回空列表；`--url` 直接检查该 URL 的缓存键，文件不存在时也会明确返回 `missing`。UTF-8／JSON 损坏、URL／键不一致、非普通文件和无法用于 HTTP 请求的验证头均返回 `invalid`。使用 `--strict` 时，无效或缺失条目会令退出码为 1；不使用时，这类诊断结果退出码为 0。参数错误、配置错误和缓存目录不可读取仍通过统一 CLI 错误格式以 1 退出。
+
+`valid` 表示缓存响应和集合结构可由同步复用，不保证每个图标正文、选中别名或项目规则均有效；可用 `sync --offline --dry-run` 继续验证。此命令不检查 Figma 缓存或同步完成标记。在线同步遇到无效缓存会不带条件头重新请求；离线同步要求缓存有效。
+
+core API 为 `inspectIconifyCache({ cwd, cacheDir, url? })`，所有选项均可省略，且不会加载配置，返回与 CLI 相同的报告。
+
 ### SVG sprite
 
 可选配置 `output.sprite: 'icons.svg'` 会生成一份 SVG，按名称排序，为每个已解析的图标、变体或别名生成一个 `<symbol>`。ID 格式为 `iconctl-${prefix}-${name}`，例如前缀 `brand`、名称 `home` 对应 `iconctl-brand-home`。每个 symbol 都有独立的 `viewBox`，保留解析后的翻转、旋转及处理后的颜色，包括 `currentColor`。内部 ID 会按 symbol 重写，避免渐变、遮罩等本地引用相互冲突。

@@ -121,6 +121,21 @@ pnpm exec iconctl sync --json
 
 For a remote Iconify source, `pnpm exec iconctl sync --offline` reuses only the validated cache from an earlier online sync and does not fetch that source. Missing or corrupted cache data fails before any source is imported; run a normal online sync once to populate it. Local sources are unchanged, and config-backed `preview` accepts the same flag.
 
+### Diagnose remote Iconify caches
+
+```bash
+pnpm exec iconctl cache diagnose --json
+pnpm exec iconctl cache diagnose --cache-dir .iconctl-cache --url https://cdn.example.com/icons.json --strict --json
+```
+
+The default command loads the project config to locate `cacheDir`. `--cache-dir` bypasses configuration entirely, including its imports, and cannot be combined with `--config`. Diagnostics read remote Iconify transport caches without requesting sources, repairing caches or changing outputs. `--dry-run` is also read-only.
+
+JSON contains `{ directory, entries, valid, invalid, missing }`. Each entry reports its absolute `file`, `status`, metadata `bytes` and, when readable, `url`, `bodyBytes`, `keyMatches`, `etag`, `lastModified` and `error`. Icon bodies are never included. An empty cache directory reports no entries; `--url` checks the exact URL cache key and explicitly reports `missing` even when that file does not exist. Corrupt UTF-8/JSON, a mismatched URL/key, non-file entries and unusable HTTP validators report `invalid`. `--strict` exits 1 for invalid or missing entries; without it, these findings exit 0. Invalid arguments, configuration errors and unreadable cache directories always exit 1 through the normal CLI error envelope.
+
+`valid` means the cached response and collection structure are reusable by sync. It does not certify individual icon bodies, selected aliases or project validation rules; use `sync --offline --dry-run` to validate those. Figma caches and the sync completion marker are outside this command's scope. Online sync refetches invalid cache entries without conditional headers, while offline sync requires a valid entry.
+
+The core API is `inspectIconifyCache({ cwd, cacheDir, url? })`; all options are optional, and it never loads configuration. It returns the same report as the CLI.
+
 ### SVG sprites
 
 Optional `output.sprite: 'icons.svg'` writes a single SVG containing one `<symbol>` per resolved icon, variation or alias, sorted by name. IDs follow `iconctl-${prefix}-${name}`: `brand` + `home` becomes `iconctl-brand-home`. Each symbol has its own `viewBox`; resolved flips, rotations and processed colors, including `currentColor`, are preserved. Internal IDs are rewritten per symbol so gradients, masks and other local references do not collide.

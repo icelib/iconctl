@@ -1,3 +1,4 @@
+import type { CacheDiagnoseOptions } from './cache.ts'
 import type { CheckCommandOptions } from './check.ts'
 import type { CommandContext } from './failure.ts'
 import type { InitCommandOptions } from './init.ts'
@@ -12,6 +13,7 @@ import {
 import { cac } from 'cac'
 import { consola } from 'consola'
 import packageJson from '../package.json' with { type: 'json' }
+import { runCacheCommand } from './cache.ts'
 import { runCheck } from './check.ts'
 import { runDiff } from './diff.ts'
 import { reportCliError } from './failure.ts'
@@ -90,6 +92,15 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
   cli.option('--offline', 'Use cached remote Iconify collections instead of fetching them')
+
+  cli
+    .command('cache <operation>', 'Inspect persisted remote Iconify caches without network access')
+    .option('--url <url>', 'Show only the cache entry for this HTTPS URL')
+    .option('--cache-dir <path>', 'Inspect a cache directory without loading iconctl config')
+    .option('--strict', 'Exit with status 1 when an invalid or missing cache entry is found')
+    .action(action((operation: string, options: CacheDiagnoseOptions) => {
+      return runCacheCommand(operation, options, context)
+    }))
 
   cli
     .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')

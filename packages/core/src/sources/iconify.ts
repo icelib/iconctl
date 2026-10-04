@@ -1,48 +1,15 @@
+import type { RemoteIconifyCache } from '../iconify-cache'
 import type { LoadedSource, ResolvedIconifySourceConfig } from './types'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { blankIconSet, cleanupSVG, SVG } from '@iconify/tools'
 import { checkpoint, settleWithAbort, throwIfAborted } from '../abort'
 import { IconctlError } from '../errors'
+import { readIconifyCacheEntry, remoteCacheFile } from '../iconify-cache'
 import { createIconifyJsonResolver } from '../iconify-json'
 import { decodeUtf8 } from '../json-input'
 import { shouldSkipName } from '../naming'
-
-interface RemoteIconifyCache {
-  url: string
-  body: string
-  etag?: string
-  lastModified?: string
-}
-
-function remoteCacheFile(cacheDir: string, url: string): string {
-  const key = createHash('sha256').update(url).digest('hex')
-  return join(cacheDir, 'iconify-v1', `${key}.json`)
-}
-
-async function readRemoteCache(file: string, url: string): Promise<RemoteIconifyCache | undefined> {
-  try {
-    const value = JSON.parse(decodeUtf8(await readFile(file))) as Partial<RemoteIconifyCache>
-    if (value.url !== url || typeof value.body !== 'string') {
-      return undefined
-    }
-    // A conditional 304 is only useful when the cached body can still be
-    // consumed. Validate the collection before sending validators so an
-    // interrupted or hand-edited cache cannot silently poison a sync.
-    const parsed = JSON.parse(value.body.replace(/^\uFEFF/, ''))
-    createIconifyJsonResolver(parsed)
-    return {
-      url,
-      body: value.body,
-      ...(typeof value.etag === 'string' && value.etag ? { etag: value.etag } : {}),
-      ...(typeof value.lastModified === 'string' && value.lastModified ? { lastModified: value.lastModified } : {}),
-    }
-  }
-  catch {
-    return undefined
-  }
-}
 
 async function writeRemoteCache(file: string, value: RemoteIconifyCache, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal)
@@ -75,7 +42,7 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cwd: string, cacheDir: string, signal?: AbortSignal, offline?: boolean }): Promise<string> {
   const url = source.url!
   const file = remoteCacheFile(resolve(options.cwd, options.cacheDir), url)
-  const cached = await readRemoteCache(file, url)
+  const { value: cached } = await readIconifyCacheEntry(file, url)
   if (options.offline) {
     if (!cached) {
       throw new IconctlError(`Remote Iconify JSON at ${url} is unavailable in offline mode. Run sync online first to populate a valid cache.`)

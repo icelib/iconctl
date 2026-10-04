@@ -32,6 +32,7 @@ pnpm exec iconctl sync
 | `iconctl init` | 通过向导或显式参数创建新配置 |
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
 | `iconctl watch` | 持续同步本地 SVG 目录，自动重载配置 |
+| `iconctl cache diagnose` | 检查远程 Iconify 缓存，定位缺失或损坏条目 |
 | `iconctl check` | 校验配置产物或 `--input icons.json` |
 | `iconctl preview` | 从配置或 `--input icons.json` 生成可离线搜索的画廊 |
 | `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
