@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   return consumer
@@ -53,10 +53,16 @@ try {
   const coreTarball = await pack(core, join(fixture, 'core-package'))
   const cliTarball = await pack(cli, join(fixture, 'cli-package'))
   const consumer = await install('fixed', [coreTarball, cliTarball])
-  const typeProbe = `import { watch, IconctlAbortError, type WatchEvent } from '@iconctl/core'
+  const typeProbe = `import { watch, IconctlAbortError, defineConfig, resolveConfig, exportOutputs, sync, type IconctlOutputConfig, type SyncResult, type WatchEvent } from '@iconctl/core'
 import { requestFigmaToken } from '@iconctl/core/figma/oauth'
 const event: WatchEvent = { type: 'stopped', reason: 'aborted' }
-void watch; void IconctlAbortError; void event; void requestFigmaToken
+const output: IconctlOutputConfig = { sprite: 'sprite.svg' }
+const config = resolveConfig(defineConfig({ prefix: 'brand', sources: [{ type: 'directory', dir: 'raw' }], output }))
+const sprite: string | undefined = config.output.sprite
+const synced: Promise<SyncResult> = sync({ config, dryRun: true })
+// @ts-expect-error Sprite output must be a path rather than a boolean.
+const invalid: IconctlOutputConfig = { sprite: true }
+void watch; void IconctlAbortError; void event; void requestFigmaToken; void exportOutputs; void sprite; void synced; void invalid
 `
   for (const extension of ['mts', 'cts']) {
     await writeFile(join(consumer, `consumer.${extension}`), typeProbe)
@@ -74,6 +80,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken
     process.stdout.write(figma.stdout)
     const configuration = await run(node, [join(consumer, 'config-watch-consumer.mjs'), mode], consumer)
     process.stdout.write(configuration.stdout)
+    const sprite = await run(node, [join(consumer, 'sprite-consumer.mjs'), mode], consumer)
+    process.stdout.write(sprite.stdout)
   }
   await check(consumer, 'bin', 'startup')
   const evaluated = await run(node, ['--input-type=module', '--eval', `

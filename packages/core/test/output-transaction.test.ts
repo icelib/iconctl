@@ -19,9 +19,9 @@ function iconSet() {
   return set
 }
 function config() {
-  return resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'icons.json', svg: 'svg', preview: 'preview.html', types: 'types.ts', jsonPackage: { dir: 'pkg', clean: false }, changelog: 'CHANGELOG.md' } })
+  return resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'icons.json', svg: 'svg', sprite: 'sprite.svg', preview: 'preview.html', types: 'types.ts', jsonPackage: { dir: 'pkg', clean: false }, changelog: 'CHANGELOG.md' } })
 }
-const originalFiles = ['icons.json', 'svg/keep.svg', 'types.ts', 'preview.html', 'pkg/KEEP', 'pkg/package.json', 'CHANGELOG.md']
+const originalFiles = ['icons.json', 'svg/keep.svg', 'sprite.svg', 'types.ts', 'preview.html', 'pkg/KEEP', 'pkg/package.json', 'CHANGELOG.md']
 async function snapshot() {
   return await Promise.all(originalFiles.map(file => fs.readFile(join(cwd, file), 'utf8')))
 }
@@ -82,11 +82,11 @@ it('finishes a started commit even when cancellation arrives during replacement'
   expect(await stagedFiles()).toEqual([])
 })
 
-it('rolls back earlier replacements when a later replacement fails', async () => {
+it.each(['svg', 'sprite.svg', 'pkg', 'types.ts'])('rolls back earlier replacements when replacing %s fails', async (target) => {
   const before = await snapshot()
   let failed = false
   vi.mocked(fs.rename).mockImplementation(async (...args) => {
-    if (!failed && String(args[0]).endsWith('/output') && String(args[1]) === join(cwd, 'svg')) {
+    if (!failed && String(args[0]).endsWith('/output') && String(args[1]) === join(cwd, target)) {
       failed = true
       throw new Error('simulated disk failure')
     }
@@ -124,11 +124,11 @@ it('does not touch outputs if generation fails', async () => {
 })
 
 it.each([false, true])('groups nested outputs with clean:%s', async (clean) => {
-  const cfg = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'pkg/custom.json', jsonPackage: { dir: 'pkg', clean }, svg: 'pkg/svg', types: 'pkg/types.ts', preview: 'pkg/preview.html', changelog: 'pkg/CHANGELOG.md' } })
+  const cfg = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: '.' }], output: { json: 'pkg/custom.json', jsonPackage: { dir: 'pkg', clean }, svg: 'pkg/svg', sprite: 'pkg/sprite.svg', types: 'pkg/types.ts', preview: 'pkg/preview.html', changelog: 'pkg/CHANGELOG.md' } })
   await fs.writeFile(join(cwd, 'pkg/CHANGELOG.md'), '# Changelog\n\n## 2020-01-01\n\n- Added: `historical`\n')
   await sync({ cwd, config: cfg, iconSet: iconSet() })
   expect(await fs.readFile(join(cwd, 'pkg/CHANGELOG.md'), 'utf8')).toContain('historical')
-  for (const file of ['custom.json', 'icons.json', 'types.ts', 'preview.html', 'CHANGELOG.md', 'svg/first.svg']) {
+  for (const file of ['custom.json', 'icons.json', 'sprite.svg', 'types.ts', 'preview.html', 'CHANGELOG.md', 'svg/first.svg']) {
     expect(await fs.readFile(join(cwd, 'pkg', file), 'utf8')).not.toBe('')
   }
   if (!clean) {
@@ -159,7 +159,9 @@ it('does not allow partial export names to escape the temporary SVG directory', 
   const set = blankIconSet('fixture')
   set.fromSVG('../../escape', new SVG(svg))
   const before = await snapshot()
-  await expect(sync({ cwd, config: config(), iconSet: set, continueOnError: true })).rejects.toThrow('escapes the output directory')
+  const cfg = config()
+  delete cfg.output.sprite
+  await expect(sync({ cwd, config: cfg, iconSet: set, continueOnError: true })).rejects.toThrow('escapes the output directory')
   expect(await snapshot()).toEqual(before)
   await expect(fs.readFile(join(cwd, 'escape.svg'))).rejects.toThrow()
   expect(await stagedFiles()).toEqual([])

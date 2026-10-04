@@ -1,6 +1,6 @@
 # 图标方案
 
-iconctl 写出的是 **Iconify JSON**（以及可选的 SVG 文件）。那是工程源。各端怎么把图标画出来，是另一件事。`i-brand-arrow-left` 是 CSS class，通常是 mask，不是字体。
+iconctl 写出的是 **Iconify JSON**，以及可选的独立 SVG 文件和 SVG Symbol 雪碧图。那是工程源。各端怎么把图标画出来，是另一件事。`i-brand-arrow-left` 是 CSS class，通常是 mask，不是字体。
 
 ## 目录
 
@@ -13,7 +13,7 @@ iconctl 写出的是 **Iconify JSON**（以及可选的 SVG 文件）。那是�
 | [Iconify 运行时](#iconify-运行时) | 主流 | 公共图标集 / 已经有 `@iconify/vue` 的应用。 |
 | [SVG 文件](#svg-文件) | 按需 | 插画、Logo、`<img>`。 |
 | [CSS background](#css-background) | 按需 | 多色图标还想用 class。 |
-| [Symbol 雪碧图](#symbol-雪碧图) | 遗留 | `<use>` / iconfont Symbol JS。国内还常见。 |
+| [Symbol 雪碧图](#symbol-雪碧图) | 按需 | 静态 `<symbol>` + `<use>` 图标集。 |
 | [Webfont](#webfont) | 遗留 | `@font-face` + 私用区。国内还常见。 |
 
 iconctl **不会**产出 webfont 或 symbol JS。iconfont Symbol URL 是[输入](/zh/sources)。PNG、原生 iOS/Android 矢量这里不展开。
@@ -52,7 +52,7 @@ iconctl **不会**产出 webfont 或 symbol JS。iconfont Symbol URL 是[输入]
 
 ## Symbol 雪碧图
 
-**遗留**，国内 iconfont 流程里还常见。一份文件里一堆 `<symbol id>`，再用 `<svg><use href="#id"></use></svg>`。iconfont 的 Symbol 就是这个，外加一段注入 JS。宿主 SVG 上可以 `currentColor`。外链 sprite 会碰到 CORS；不按应用重生就会整包下载。微信 / 支付宝 / 抖音基本没有 `<use>`。iconctl 不写这种产物。
+**按需。** 配置 `output.sprite: 'icons.svg'`，即可生成静态 `<symbol>` 集合，再用 `<svg><use href="/icons.svg#iconctl-brand-home"></use></svg>` 引用。各符号保留自己的视口与 `currentColor`，内部引用互相隔离。外链文件应与应用同源，也可以将生成的符号内联到页面。未按应用重新生成时，浏览器仍会下载整个集合；小程序通常不支持 `<use>`。配置和支持的静态格式详见 [SVG 雪碧图](/zh/quick-start#svg-雪碧图)。iconfont Symbol JavaScript 注入器仍是输入格式。
 
 <IconFormatDemo scheme="symbol" />
 

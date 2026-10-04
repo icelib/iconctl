@@ -73,7 +73,8 @@
     "c12": "^3.3.1",
     "chokidar": "^5.0.0",
     "pathe": "^2.0.3",
-    "proper-lockfile": "^4.1.2"
+    "proper-lockfile": "^4.1.2",
+    "saxes": "^6.0.0"
   },
   "devDependencies": {
     "@types/proper-lockfile": "^4.1.4"

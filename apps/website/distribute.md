@@ -69,7 +69,7 @@ pnpm add @iconify-json/brand
 import icons from '@iconify-json/brand/icons.json'
 ```
 
-Same `iconSets` / `collections` wiring as above. `clean: false` keeps sibling files (README, changelog) in that directory.
+Same `iconSets` / `collections` wiring as above. `clean: false` keeps sibling files (README, changelog) and custom `package.json` fields. Generated entry points and explicitly configured `jsonPackage.package` values take precedence over existing fields.
 
 ### Workspace / npm package with preview
 

@@ -29,6 +29,7 @@ export default defineConfig({
   output: {
     json: 'icons.json',
     svg: 'svg',
+    sprite: 'icons.svg', // Optional SVG symbol sprite
     preview: 'preview.html',
   },
   validate: {
@@ -65,6 +66,41 @@ CI:
 ```bash
 pnpm exec iconctl sync --json
 ```
+
+### SVG sprites
+
+Optional `output.sprite: 'icons.svg'` writes a single SVG containing one `<symbol>` per resolved icon, variation or alias, sorted by name. IDs follow `iconctl-${prefix}-${name}`: `brand` + `home` becomes `iconctl-brand-home`. Each symbol has its own `viewBox`; resolved flips, rotations and processed colors, including `currentColor`, are preserved. Internal IDs are rewritten per symbol so gradients, masks and other local references do not collide.
+
+Serve the generated file from the same origin as your app. A decorative icon can use:
+
+```html
+<svg width="24" height="24" aria-hidden="true">
+  <use href="/icons.svg#iconctl-brand-home"></use>
+</svg>
+```
+
+For inline use, insert the generated SVG once in the page and reference `#iconctl-brand-home`. This abbreviated example gives an informative icon an accessible name:
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true">
+  <symbol id="iconctl-brand-home" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M3 10 12 3l9 7v11h-6v-7H9v7H3Z"></path>
+  </symbol>
+</svg>
+<svg width="24" height="24" role="img" aria-label="Home">
+  <use href="#iconctl-brand-home"></use>
+</svg>
+```
+
+Use `aria-hidden="true"` when adjacent text already conveys the meaning; use a meaningful `aria-label` with `role="img"` when the icon itself conveys information.
+
+Sprite prefix, icon names and internal IDs must be nonempty ASCII strings matching `[A-Za-z0-9_.:-]+`; leading digits are allowed. Unsupported names fail explicitly rather than being renamed. The exporter supports local `href="#id"`, `xlink:href="#id"`, ARIA ID references and complete local `url(#id)` values, including quoted forms such as `url( '#id' )` and surrounding whitespace. Duplicate IDs, missing reference targets and URL fallback expressions are rejected.
+
+The static format rejects residual CSS styles or stylesheets, SMIL animation, scripts, event attributes, `foreignObject`, external references and unsupported SVG elements. XML attributes may use single or double quotes; entities are decoded correctly and mixed text is retained. DTDs and processing instructions are rejected. These checks define the supported sprite format, not a complete SVG sanitizer. They apply to the processed SVG and cannot restore content removed during source cleanup.
+
+The sprite joins JSON, individual SVGs, types, preview and changelog in the existing [output transaction](#sync-integrity-and-cancellation). Conflicting destinations fail before replacement. Its bytes also participate in the completion cache: a missing or edited sprite forces revalidation on the next sync even when remote metadata is unchanged. `output.types` includes resolved icon, variation and alias names as escaped TypeScript string literals.
+
+`watch` updates the sprite after source edits and excludes it from change triggers. Keep `icons.svg` outside SVG source directories; source/output conflicts and symlink aliases are checked, and outputs cannot replace configuration or Iconify input files. `sync --dry-run` and `watch --dry-run` still validate the sprite's static format while skipping icon-output writes.
 
 ### JSON failures
 
@@ -107,7 +143,7 @@ Processing and validation issues follow the source that successfully supplied th
 
 Use `continueOnError: true` (CLI: `--continue`) only when you want partial outputs. The result has `complete: false`, failure details in `failed` / `issues`, and `diff.deletionsReliable: false` with `removed: []`. It does not update the changelog or retain a complete-sync cache marker. Authentication failures, unreadable sources and a Figma source with no successfully imported icons still reject. The CLI prints warnings for partial results; `--json` exposes `complete`, `deletionsReliable`, `skipped` and `issues`. Explicitly requested partial success keeps a successful exit status.
 
-After fixing a source or connection, run `sync` again. Without a valid complete-sync marker, sync refreshes the Figma document so a corrected file revision can be imported immediately. Completion markers record the validation rules version and fingerprints of all configured generated files, including SVGs, the SVG manifest, package files, types, preview and changelog. Missing or changed artifacts and older markers trigger a full check even when the remote file has not changed. Unrelated files in output directories do not invalidate completion. A changed changelog is preserved during revalidation; deleted history cannot be reconstructed from the current icons. Invalid SVG responses and incomplete image export responses are not reused from the download cache.
+After fixing a source or connection, run `sync` again. Without a valid complete-sync marker, sync refreshes the Figma document so a corrected file revision can be imported immediately. Completion markers record the validation rules version and fingerprints of all configured generated files, including SVGs, the SVG sprite and manifest, package files, types, preview and changelog. Missing or changed artifacts and older markers trigger a full check even when the remote file has not changed. Unrelated files in output directories do not invalidate completion. A changed changelog is preserved during revalidation; deleted history cannot be reconstructed from the current icons. Invalid SVG responses and incomplete image export responses are not reused from the download cache.
 
 ```ts
 import { IconctlAbortError, loadConfig, sync } from 'iconctl'
@@ -128,7 +164,7 @@ catch (error) {
 
 Outputs are generated in temporary locations first. Cancellation before commit preserves the previous outputs and removes temporary artifacts. Requests receive the signal (combined with Figma's timeout), and processing yields between icons. An individual synchronous SVG operation or an already-started library export must finish before cancellation is observed. Once commit starts, cancellation is ignored: the call finishes committing and returns success. A commit I/O failure attempts rollback; if recovery fails, the error identifies retained backups.
 
-Legal nested outputs are prepared and committed together, including JSON package contents, SVGs, preview, types, changelog and cache metadata. Conflicting targets are rejected before replacement. A cleanup failure after commit emits an `ICONCTL_OUTPUT_CLEANUP` warning with residual directories; the committed sync still succeeds.
+Legal nested outputs are prepared and committed together, including JSON package contents, SVGs, the SVG sprite, preview, types, changelog and cache metadata. Conflicting targets are rejected before replacement. A cleanup failure after commit emits an `ICONCTL_OUTPUT_CLEANUP` warning with residual directories; the committed sync still succeeds.
 
 The SVG output directory contains an `.iconctl-manifest.json` that tracks generated SVGs, including aliases. Obsolete files are removed only when their names and contents still match the previous Iconify JSON and, when present, the manifest lists them. Manually edited obsolete SVGs and files whose ownership cannot be confirmed are retained; filenames generated by the current sync are still updated. Keep the manifest with the SVG output directory. The console runner excludes this internal manifest from publication artifacts.
 

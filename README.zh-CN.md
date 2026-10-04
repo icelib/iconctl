@@ -42,6 +42,8 @@ pnpm exec iconctl sync
 
 本地开发可运行 `iconctl watch`：启动时同步一次，随后监听 SVG 变更。请将 `raw-svg` 等输入与生成的 SVG／包目录分开。支持 `directory`、`jsdesign.dir`、`iconfont.dir` 和 `iconify.file` 本地来源；远程来源继续使用 `sync`。`watch --json` 输出 NDJSON 事件。配置恢复、取消和 API 详见[本地监听](apps/website/zh/quick-start.md#本地监听)。
 
+可选配置 `output.sprite: 'icons.svg'` 会在 Iconify JSON 之外生成一份 SVG symbol 集合。使用 `<use href="/icons.svg#iconctl-brand-home">` 引用图标；symbol ID 稳定，别名保留对应变换。内联用法、无障碍标注及支持的静态 SVG 格式详见 [SVG sprite](apps/website/zh/quick-start.md#svg-sprite)。
+
 本地 Iconify JSON 可以与 SVG 或远程来源混用：`{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`。别名、旋转和继承尺寸会先解析，再进入已有处理流程。详见 [Iconify JSON 来源](apps/website/zh/sources.md#本地-iconify-json)。
 
 独立校验一个集合可运行 `iconctl check --input ./icons.json --width 24 --height 24 --json`，不加载配置、不请求来源、不写文件。尺寸规则可省略，`--name` 可覆盖命名正则。失败报告汇总导入、SVG 处理及校验问题，并以状态码 1 退出。详见[校验已有产物](apps/website/zh/quick-start.md#校验已有产物)。
@@ -81,6 +83,7 @@ export default defineConfig({
   output: {
     json: 'icons.json',
     svg: 'svg',
+    sprite: 'icons.svg', // 可选的 SVG symbol 集合
     jsonPackage: 'packages/icons',
     preview: 'preview.html',
   },

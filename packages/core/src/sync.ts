@@ -232,6 +232,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (config.output.svg) {
         files.push(resolve(cwd, config.output.svg))
       }
+      if (config.output.sprite) {
+        files.push(resolve(cwd, config.output.sprite))
+      }
       if (config.output.jsonPackage) {
         files.push(resolve(cwd, config.output.jsonPackage.dir))
       }
@@ -273,7 +276,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     }
   }
   else {
-    await checkpoint(options.signal)
+    await generateOutputs(iconSet, config, { cwd, dryRun: true, ...cancellation })
   }
 
   const result: SyncResult = {

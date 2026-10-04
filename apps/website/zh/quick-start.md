@@ -29,6 +29,7 @@ export default defineConfig({
   output: {
     json: 'icons.json',
     svg: 'svg',
+    sprite: 'icons.svg', // 可选的 SVG symbol 集合
     preview: 'preview.html',
   },
   validate: {
@@ -65,6 +66,41 @@ CI：
 ```bash
 pnpm exec iconctl sync --json
 ```
+
+### SVG sprite
+
+可选配置 `output.sprite: 'icons.svg'` 会生成一份 SVG，按名称排序，为每个已解析的图标、变体或别名生成一个 `<symbol>`。ID 格式为 `iconctl-${prefix}-${name}`，例如前缀 `brand`、名称 `home` 对应 `iconctl-brand-home`。每个 symbol 都有独立的 `viewBox`，保留解析后的翻转、旋转及处理后的颜色，包括 `currentColor`。内部 ID 会按 symbol 重写，避免渐变、遮罩等本地引用相互冲突。
+
+将生成文件部署在应用同源地址，装饰性图标可以这样引用：
+
+```html
+<svg width="24" height="24" aria-hidden="true">
+  <use href="/icons.svg#iconctl-brand-home"></use>
+</svg>
+```
+
+内联使用时，将生成的 SVG 在页面中插入一次，再引用 `#iconctl-brand-home`。下面省略了其他 symbol，并为表达信息的图标提供无障碍名称：
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true">
+  <symbol id="iconctl-brand-home" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M3 10 12 3l9 7v11h-6v-7H9v7H3Z"></path>
+  </symbol>
+</svg>
+<svg width="24" height="24" role="img" aria-label="首页">
+  <use href="#iconctl-brand-home"></use>
+</svg>
+```
+
+相邻文字已表达含义时使用 `aria-hidden="true"`；图标本身承载信息时，使用有意义的 `aria-label` 和 `role="img"`。
+
+Sprite 的前缀、图标名称及内部 ID 必须是匹配 `[A-Za-z0-9_.:-]+` 的非空 ASCII 字符串，允许数字开头。不支持的名称会明确报错，不会自动改名。支持本地 `href="#id"`、`xlink:href="#id"`、ARIA ID 引用，以及完整的本地 `url(#id)` 值；允许 `url( '#id' )` 等带引号形式及周围空白。重复 ID、找不到目标的引用及 URL 回退表达式会被拒绝。
+
+这一静态格式拒绝残余 CSS 样式或样式表、SMIL 动画、脚本、事件属性、`foreignObject`、外部引用及不支持的 SVG 元素。XML 属性可使用单引号或双引号，实体会正确解析，混合文本会保留；DTD 和处理指令会被拒绝。这些检查定义 sprite 支持的格式，不是完整的 SVG 清洗器；校验面向已处理的 SVG，无法恢复来源清理阶段删除的内容。
+
+Sprite 与 JSON、独立 SVG、类型、预览和 changelog 一起参与已有[输出事务](#同步完整性与取消)，目标冲突会在替换前拒绝。Sprite 内容也纳入完成缓存校验：文件缺失或被修改时，即使远端元数据未变，下次同步也会重新校验。`output.types` 包含已解析的图标、变体和别名名称，并输出为经过转义的 TypeScript 字符串字面量。
+
+`watch` 会在来源修改后更新 sprite，并将生成文件排除在变化触发范围之外。请把 `icons.svg` 放在 SVG 来源目录外；来源与输出冲突、符号链接别名都会校验，输出也不能替换配置或 Iconify 输入文件。`sync --dry-run` 和 `watch --dry-run` 仍校验 sprite 的静态格式，同时跳过图标产物写入。
 
 ### JSON 失败报告
 
@@ -107,7 +143,7 @@ pnpm exec iconctl sync --json
 
 仅在需要部分产物时启用 `continueOnError: true`（CLI：`--continue`）。此时返回 `complete: false`，`failed`／`issues` 包含失败明细，`diff.deletionsReliable: false` 且 `removed: []`；不更新 changelog，也不保留完整同步缓存标记。认证失败、来源不可读取或 Figma 来源没有任何成功导入的图标时仍然拒绝。CLI 通过警告说明部分结果；`--json` 提供 `complete`、`deletionsReliable`、`skipped` 和 `issues`。显式请求部分成功时保持成功退出状态。
 
-修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。完整同步标记记录校验规则版本及所有已配置产物的文件指纹，包括 SVG、SVG 清单、JSON 包文件、类型、预览和 changelog。产物缺失、内容改变或标记过旧都会触发完整检查，即使远端文件没有变化。输出目录中的无关文件不影响缓存复用。重新校验会保留修改后的 changelog；已删除的历史无法仅凭当前图标恢复。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
+修复来源或网络后，再运行 `sync`。没有有效的完整同步标记时，会重新获取 Figma 文档，立即读取修正后的文件版本。完整同步标记记录校验规则版本及所有已配置产物的文件指纹，包括 SVG、SVG sprite 和清单、JSON 包文件、类型、预览和 changelog。产物缺失、内容改变或标记过旧都会触发完整检查，即使远端文件没有变化。输出目录中的无关文件不影响缓存复用。重新校验会保留修改后的 changelog；已删除的历史无法仅凭当前图标恢复。无效 SVG 响应、不完整的图片导出响应不会从下载缓存复用。
 
 ```ts
 import { IconctlAbortError, loadConfig, sync } from 'iconctl'
@@ -128,7 +164,7 @@ catch (error) {
 
 产物先在临时位置生成。提交前取消会保留旧产物并清理临时内容。请求接收 signal（与 Figma 内部超时组合），处理流程在图标之间让出事件循环；单次同步 SVG 运算或已开始的库导出操作需要先结束才能响应取消。提交开始后忽略取消，等待提交完成并返回成功。提交遇到 I/O 错误时尝试恢复旧产物；恢复失败则在错误中指出保留的备份位置。
 
-合法的嵌套输出会统一准备和提交，包括 JSON 包内文件、SVG、预览、类型、变更日志和缓存元数据。冲突目标会在替换产物前拒绝。提交完成后若临时目录清理失败，会通过 `ICONCTL_OUTPUT_CLEANUP` 警告报告残留目录，同步仍视为成功。
+合法的嵌套输出会统一准备和提交，包括 JSON 包内文件、SVG、SVG sprite、预览、类型、变更日志和缓存元数据。冲突目标会在替换产物前拒绝。提交完成后若临时目录清理失败，会通过 `ICONCTL_OUTPUT_CLEANUP` 警告报告残留目录，同步仍视为成功。
 
 SVG 输出目录中的 `.iconctl-manifest.json` 记录生成的 SVG，包括别名。只有名称和内容仍与上一份 Iconify JSON 匹配，且被现有清单登记的过期文件才会删除；没有清单时仍需名称和内容匹配。手工修改过或无法确认归属的旧 SVG 会保留；本次生成的同名文件仍会更新。请随 SVG 输出目录一起保留该清单。控制台 runner 会从发布产物中排除这一内部清单。
 

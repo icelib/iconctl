@@ -12,6 +12,7 @@ export interface JsonPackageOutputConfig {
 export interface IconctlOutputConfig {
   json?: string
   svg?: string
+  sprite?: string
   jsonPackage?: string | JsonPackageOutputConfig
   types?: string
   preview?: string
@@ -205,6 +206,9 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
   }
   if (config.output?.svg) {
     output.svg = config.output.svg
+  }
+  if (config.output?.sprite) {
+    output.sprite = config.output.sprite
   }
   if (config.output?.jsonPackage) {
     output.jsonPackage = resolveJsonPackage(config.prefix, config.output.jsonPackage)

@@ -9,6 +9,7 @@ import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 import { createIconifyJsonResolver } from './iconify-json'
 import { OutputTransaction } from './output-transaction'
+import { generateSvgSprite } from './sprite'
 
 export interface ExportResult {
   files: string[]
@@ -19,13 +20,17 @@ const svgManifest = '.iconctl-manifest.json'
 const safeSvgName = /^[^/\\\0]+\.svg$/
 const jsonPackageFiles = ['icons.json', 'info.json', 'metadata.json', 'chars.json', 'index.js', 'index.mjs', 'index.d.ts', 'package.json']
 
+function outputIconNames(iconSet: IconSet): string[] {
+  return iconSet.list(['icon', 'variation', 'alias']).sort().filter(name => iconSet.resolve(name) !== null)
+}
+
 function svgOutputNames(iconSet: IconSet): string[] {
-  return iconSet.list(['icon', 'variation', 'alias']).sort().filter((name) => {
+  return outputIconNames(iconSet).map((name) => {
     const file = `${name}.svg`
     if (!safeSvgName.test(file)) {
       throw new IconctlError('SVG name escapes the output directory: names must be filenames without path separators')
     }
-    return iconSet.resolve(name) !== null
+    return name
   })
 }
 
@@ -52,7 +57,7 @@ export function managedOutputFiles(config: ResolvedIconctlConfig, json: IconifyJ
       add(join(output.jsonPackage.dir, file))
     }
   }
-  for (const file of [output.types, output.preview]) {
+  for (const file of [output.sprite, output.types, output.preview]) {
     if (file) {
       add(file)
     }
@@ -135,10 +140,11 @@ async function writeTextFile(file: string, contents: string) {
 }
 
 export function generateIconNameTypes(prefix: string, names: string[]): string {
+  const literal = (value: string) => `'${JSON.stringify(value).slice(1, -1).replaceAll('\'', '\\\'').replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029')}'`
   const union = names.length
-    ? names.map(name => `'${name}'`).join(' | ')
+    ? names.map(literal).join(' | ')
     : 'never'
-  return `export const ICONIFY_PREFIX = '${prefix}' as const\nexport type IconName = ${union}\n`
+  return `export const ICONIFY_PREFIX = ${literal(prefix)} as const\nexport type IconName = ${union}\n`
 }
 
 export async function readPreviousIconJson(file: string): Promise<IconifyJSON | undefined> {
@@ -158,6 +164,8 @@ export async function generateOutputs(
   const files: string[] = []
   const json = iconSet.export()
   const resolve = (file: string) => file.startsWith('/') ? file : join(options.cwd, file)
+  await checkpoint(options.signal)
+  const sprite = config.output.sprite ? await generateSvgSprite(iconSet, options.signal) : undefined
 
   if (!options.dryRun) {
     await checkpoint(options.signal)
@@ -173,7 +181,7 @@ export async function generateOutputs(
         generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
       }
     }
-    for (const file of [config.output.json, config.output.types, config.output.preview, config.output.changelog]) {
+    for (const file of [config.output.json, config.output.sprite, config.output.types, config.output.preview, config.output.changelog]) {
       if (!file) {
         continue
       }
@@ -217,9 +225,11 @@ export async function generateOutputs(
           if (pkg.clean !== false) {
             return
           }
-          for (const key of ['private', 'scripts', 'files', 'devDependencies', 'author', 'license', 'repository', 'bugs', 'keywords']) {
-            if (existing[key] != null && contents[key] == null) {
-              contents[key] = existing[key]
+          for (const [key, value] of Object.entries(existing)) {
+            if (!Object.hasOwn(contents, key)) {
+              // Retain user metadata without allowing a JSON __proto__ key to
+              // change the generated package object's prototype.
+              Object.defineProperty(contents, key, { value, enumerable: true, configurable: true, writable: true })
             }
           }
         },
@@ -264,16 +274,23 @@ export async function generateOutputs(
       files.push(svgDir)
     }
 
+    if (config.output.sprite && sprite !== undefined) {
+      await checkpoint(options.signal)
+      const spriteFile = resolve(config.output.sprite)
+      await writeTextFile(spriteFile, sprite)
+      files.push(spriteFile)
+    }
+
     await checkpoint(options.signal)
     if (config.output.types) {
-      const names = Object.keys(json.icons).sort()
+      const names = outputIconNames(iconSet)
       const typesFile = resolve(config.output.types)
       await writeTextFile(typesFile, generateIconNameTypes(config.prefix, names))
       files.push(typesFile)
     }
   }
 
-  const order = [config.output.json, config.output.svg, config.output.jsonPackage?.dir, config.output.types]
+  const order = [config.output.json, config.output.svg, config.output.sprite, config.output.jsonPackage?.dir, config.output.types]
     .flatMap(file => file ? [resolve(file)] : [])
   files.sort((a, b) => order.indexOf(a) - order.indexOf(b))
   return { files, json }
@@ -284,6 +301,7 @@ export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { pat
   return [
     { path: resolvePath(cwd, output.json) },
     ...(output.svg ? [{ path: resolvePath(cwd, output.svg), directory: true }] : []),
+    ...(output.sprite ? [{ path: resolvePath(cwd, output.sprite) }] : []),
     ...(output.jsonPackage ? [{ path: resolvePath(cwd, output.jsonPackage.dir), directory: true }] : []),
     ...[output.types, output.preview, output.changelog].flatMap(file => file ? [{ path: resolvePath(cwd, file) }] : []),
   ]
@@ -297,6 +315,7 @@ export function stagedConfig(config: ResolvedIconctlConfig, cwd: string, transac
     output: {
       json: path(output.json),
       ...(output.svg ? { svg: path(output.svg) } : {}),
+      ...(output.sprite ? { sprite: path(output.sprite) } : {}),
       ...(output.jsonPackage ? { jsonPackage: { ...output.jsonPackage, dir: path(output.jsonPackage.dir) } } : {}),
       ...(output.types ? { types: path(output.types) } : {}),
       ...(output.preview ? { preview: path(output.preview) } : {}),
@@ -312,7 +331,7 @@ export async function exportOutputs(
 ): Promise<ExportResult> {
   await checkpoint(options.signal)
   if (options.dryRun) {
-    return { files: [], json: iconSet.export() }
+    return generateOutputs(iconSet, config, options)
   }
   // Preview and changelog remain sync() responsibilities.
   const { preview: _preview, changelog: _changelog, ...output } = config.output

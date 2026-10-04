@@ -69,7 +69,7 @@ pnpm add @iconify-json/brand
 import icons from '@iconify-json/brand/icons.json'
 ```
 
-`iconSets` / `collections` 接法和上面一样。`clean: false` 会保留同目录里的 README、changelog。
+`iconSets` / `collections` 接法和上面一样。`clean: false` 会保留同目录里的 README、changelog 和 `package.json` 自定义字段；生成的入口字段以及显式配置的 `jsonPackage.package` 值优先于已有字段。
 
 ### 带预览的 workspace / npm 包
 

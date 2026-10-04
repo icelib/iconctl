@@ -9,12 +9,12 @@ import { IconctlError } from './errors'
 /** Only filesystem locations cross the configuration worker boundary. */
 export interface WatchInputDescriptor {
   sources: { type: ResolvedIconctlConfig['sources'][number]['type'], dir?: string, file?: string, url?: string }[]
-  output: Pick<ResolvedIconctlConfig['output'], 'json' | 'svg' | 'types' | 'preview' | 'changelog'> & { jsonPackage?: { dir: string } }
+  output: Pick<ResolvedIconctlConfig['output'], 'json' | 'svg' | 'sprite' | 'types' | 'preview' | 'changelog'> & { jsonPackage?: { dir: string } }
   cacheDir: string
 }
 
 export function watchInputDescriptor(config: ResolvedIconctlConfig): WatchInputDescriptor {
-  const { json, svg, types, preview, changelog, jsonPackage } = config.output
+  const { json, svg, sprite, types, preview, changelog, jsonPackage } = config.output
   return {
     sources: config.sources.map(source => ({
       type: source.type,
@@ -25,6 +25,7 @@ export function watchInputDescriptor(config: ResolvedIconctlConfig): WatchInputD
     output: {
       json,
       ...(svg !== undefined ? { svg } : {}),
+      ...(sprite !== undefined ? { sprite } : {}),
       ...(types !== undefined ? { types } : {}),
       ...(preview !== undefined ? { preview } : {}),
       ...(changelog !== undefined ? { changelog } : {}),
@@ -376,7 +377,7 @@ export async function watchPaths(config: WatchInputDescriptor, cwd: string, conf
   }))]
   const output = config.output
   const directories = [output.svg, output.jsonPackage?.dir].filter((file): file is string => Boolean(file)).map(file => resolve(cwd, file))
-  const files = [output.json, output.types, output.preview, output.changelog].filter((file): file is string => Boolean(file)).map(file => resolve(cwd, file))
+  const files = [output.json, output.sprite, output.types, output.preview, output.changelog].filter((file): file is string => Boolean(file)).map(file => resolve(cwd, file))
   const cache = resolve(cwd, config.cacheDir)
   const watchedConfig = configFiles.map(file => resolve(cwd, file))
   return await validateWatchInputs({ roots, sourceFiles, configFiles: watchedConfig, directories, files, cache }, signal)

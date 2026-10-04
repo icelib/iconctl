@@ -1,6 +1,6 @@
 # Icon formats
 
-iconctl writes **Iconify JSON** (and optional SVG files). That is the engineering source. How each app *paints* an icon is a separate choice. `i-brand-arrow-left` is a CSS class, usually a mask — not a font.
+iconctl writes **Iconify JSON**, optional individual SVG files and SVG symbol sprites. That is the engineering source. How each app *paints* an icon is a separate choice. `i-brand-arrow-left` is a CSS class, usually a mask — not a font.
 
 ## Catalog
 
@@ -13,7 +13,7 @@ Every paint scheme that has shown up in this product. **Mainstream** here means 
 | [Iconify runtime](#iconify-runtime) | Mainstream | Public sets / apps that already have `@iconify/vue`. |
 | [SVG file](#svg-file) | Situational | Illustrations, logos, `<img>`. |
 | [CSS background](#css-background) | Situational | Multi-color icon as a CSS class. |
-| [Symbol sprite](#symbol-sprite) | Legacy | `<use>` / iconfont Symbol JS. Still common in CN. |
+| [Symbol sprite](#symbol-sprite) | Situational | Static `<symbol>` + `<use>` collections. |
 | [Webfont](#webfont) | Legacy | `@font-face` + PUA. Still common in CN. |
 
 iconctl **does not** emit webfonts or symbol JS. iconfont Symbol URLs are an [input](/sources). PNG / native iOS/Android vectors are out of scope.
@@ -52,7 +52,7 @@ iconctl **does not** emit webfonts or symbol JS. iconfont Symbol URLs are an [in
 
 ## Symbol sprite
 
-**Legacy**, still common in Chinese iconfont workflows. One file of `<symbol id>`, then `<svg><use href="#id"></use></svg>`. iconfont “Symbol” is this plus a JS injector. `currentColor` works on the host SVG. External sprites hit CORS; the whole set downloads unless you regenerate per app. `<use>` is generally missing in WeChat / Alipay / Douyin. iconctl will not write this.
+**Situational.** Enable `output.sprite: 'icons.svg'` to write a static collection of `<symbol>` elements, then use `<svg><use href="/icons.svg#iconctl-brand-home"></use></svg>`. Each symbol preserves its viewport and `currentColor`; internal references are isolated. Serve external sprites from the same origin, or insert the generated symbols inline. The whole set downloads unless you regenerate per app. Mini programs generally do not support `<use>`. See [SVG sprites](/quick-start#svg-sprites) for configuration and the supported static format. iconfont Symbol JavaScript injectors remain an input format.
 
 <IconFormatDemo scheme="symbol" />
 

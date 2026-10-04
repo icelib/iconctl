@@ -15,6 +15,10 @@ expectType<{ prefix: string, sources: [{ type: 'figma', file: string }] }>(defin
 }))
 
 const config = resolveConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: 'svg' }] })
+const spriteConfig = defineConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: 'raw' }], output: { sprite: 'icons.svg' } })
+expectType<string>(spriteConfig.output.sprite)
+expectType<string | undefined>(resolveConfig(spriteConfig).output.sprite)
+expectError(defineConfig({ prefix: 'fixture', sources: [{ type: 'directory', dir: 'raw' }], output: { sprite: true } }))
 interface ExtendedCheckOptions extends CheckOptions { extra: boolean }
 declare const checkOptions: ExtendedCheckOptions
 expectType<typeof config>(checkOptions.config)
