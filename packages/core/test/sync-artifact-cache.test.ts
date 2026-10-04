@@ -125,7 +125,7 @@ it('certifies the final managed file bytes alongside the existing completion dig
   expect(marker.configDigest).toMatch(/^[a-f0-9]{64}$/)
   expect(marker.outputDigest).toBe(digest(JSON.stringify(JSON.parse(contents['icons.json']!))))
   expect(marker.outputProof).toEqual({
-    version: 2,
+    version: 3,
     artifacts: managedFiles.toSorted().map(file => ({ path: join(cwd, file), sha256: digest(contents[file]!) })),
   })
   const before = await readFile(metaPath(), 'utf8')
@@ -247,9 +247,10 @@ const malformedProofs: [string, (proof: OutputProof) => unknown][] = [
   ['absent', () => undefined],
   ['null', () => null],
   ['old version', proof => ({ ...proof, version: 0 })],
-  ['previous output semantics', proof => ({ ...proof, version: 1 })],
-  ['missing artifacts', () => ({ version: 2 })],
-  ['non-array artifacts', () => ({ version: 2, artifacts: {} })],
+  ['legacy type semantics', proof => ({ ...proof, version: 1 })],
+  ['previous preview semantics', proof => ({ ...proof, version: 2 })],
+  ['missing artifacts', () => ({ version: 3 })],
+  ['non-array artifacts', () => ({ version: 3, artifacts: {} })],
   ['empty roster', proof => ({ ...proof, artifacts: [] })],
   ['missing artifact', proof => ({ ...proof, artifacts: proof.artifacts.slice(1) })],
   ['duplicate artifact', proof => ({ ...proof, artifacts: [...proof.artifacts, proof.artifacts[0]] })],
@@ -271,9 +272,27 @@ it('regenerates a certified legacy type artifact after an output-semantics upgra
   expect((await sync({ cwd, config: legacy })).notModified).toBe(false)
   expect(depths).toEqual(['3', '3'])
   expect(await readFile(join(cwd, 'types.ts'), 'utf8')).toContain('brand\\\'s')
-  expect((await readMarker()).outputProof.version).toBe(2)
+  expect((await readMarker()).outputProof.version).toBe(3)
   expect((await sync({ cwd, config: legacy })).notModified).toBe(true)
   expect(depths).toEqual(['3', '3', '1'])
+})
+
+it('regenerates a certified static preview from the previous output version, then reuses the new proof', async () => {
+  await publish()
+  const oldPreview = '<!doctype html><title>brand icons</title><figure>brand:home</figure>\n'
+  await writeFile(join(cwd, 'preview.html'), oldPreview)
+  const marker = await readMarker()
+  marker.outputProof.version = 2
+  marker.outputProof.artifacts.find(entry => entry.path === join(cwd, 'preview.html'))!.sha256 = digest(oldPreview)
+  await writeFile(metaPath(), JSON.stringify(marker))
+  await expectRefreshThenReuse()
+  const preview = await readFile(join(cwd, 'preview.html'), 'utf8')
+  expect(preview).toContain('Search icons')
+  expect(preview).toContain('Copy Iconify name')
+  expect(preview).toContain('Copy CSS class')
+  const refreshed = await readMarker()
+  expect(refreshed).toMatchObject({ validationVersion: 1, outputProof: { version: 3 } })
+  expect(refreshed.outputProof.artifacts.find(entry => entry.path === join(cwd, 'preview.html'))).toEqual({ path: join(cwd, 'preview.html'), sha256: digest(preview) })
 })
 
 it.each(malformedProofs)('refreshes an otherwise valid completion with %s output proof', async (_, mutate) => {
@@ -282,7 +301,7 @@ it.each(malformedProofs)('refreshes an otherwise valid completion with %s output
   await writeFile(metaPath(), JSON.stringify({ ...marker, outputProof: mutate(marker.outputProof) }))
   await expectRefreshThenReuse()
   const currentJson = JSON.parse(await readFile(join(cwd, config.output.json), 'utf8'))
-  expect(await readMarker()).toMatchObject({ configDigest: marker.configDigest, outputDigest: digest(JSON.stringify(currentJson)), outputProof: { version: 2 } })
+  expect(await readMarker()).toMatchObject({ configDigest: marker.configDigest, outputDigest: digest(JSON.stringify(currentJson)), outputProof: { version: 3 } })
 })
 
 it.each(['absolute', 'relative'] as const)('rejects an unconfigured %s marker path without reading it', async (kind) => {
@@ -293,7 +312,7 @@ it.each(['absolute', 'relative'] as const)('rejects an unconfigured %s marker pa
   const marker = await readMarker()
   const path = kind === 'absolute' ? outside : '../outside'
   const artifacts = marker.outputProof.artifacts.map((entry, index) => index ? entry : { path, sha256: digest(contents) })
-  await writeFile(metaPath(), JSON.stringify({ ...marker, outputProof: { version: 2, artifacts } }))
+  await writeFile(metaPath(), JSON.stringify({ ...marker, outputProof: { version: 3, artifacts } }))
   vi.mocked(createReadStream).mockClear()
   vi.mocked(lstat).mockClear()
   vi.mocked(readFile).mockClear()

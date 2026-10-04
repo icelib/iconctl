@@ -15,6 +15,10 @@ output: {
 }
 ```
 
+Open the generated `preview.html` directly to browse offline. Search matches full Iconify names and available utility classes as case-insensitive, literal text; clearing the search restores every icon, including aliases. Copy buttons provide `brand:arrow-left` and `i-brand-arrow-left`. The latter follows the configured icon utility convention below and is offered only when both prefix and name contain lowercase letters/digits separated by single hyphens. Other names remain visible and copyable as full Iconify names.
+
+When the browser denies clipboard access or does not provide it for a local file, the gallery shows selectable text for manual copying. Without JavaScript, all icons and names remain visible. The generated file needs no server or network; `iconctl preview` itself runs sync and can contact configured sources while generating it.
+
 Worked example: [`examples/app-json`](https://github.com/icelib/iconctl/tree/main/examples/app-json). This site’s [demo gallery](/demo) is the same pattern.
 
 Tailwind (`@iconify/tailwind4`):
@@ -118,7 +122,7 @@ Personal tokens remain supported through the `token` input using the `FIGMA_TOKE
 | `iconctl init` | Write `iconctl.config.ts` |
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl check` | Validate existing SVG/JSON |
-| `iconctl preview` | Write `preview.html` |
+| `iconctl preview` | Write a searchable offline `preview.html` gallery |
 
 Library API:
 

@@ -14,8 +14,8 @@ interface ArtifactProof {
 }
 
 export interface OutputProof {
-  // Includes output semantics: v2 regenerates safely escaped alias-aware types.
-  version: 2
+  // Includes output semantics: v3 regenerates previews with search and copy controls.
+  version: 3
   artifacts: ArtifactProof[]
 }
 
@@ -108,7 +108,7 @@ export async function captureOutputProof(
       sha256: await fingerprint(options.stagedPath?.(file.path) ?? file.path, file.optional === true, options.signal),
     })
   }
-  return { version: 2, artifacts }
+  return { version: 3, artifacts }
 }
 
 export async function matchesOutputProof(
@@ -120,7 +120,7 @@ export async function matchesOutputProof(
 ): Promise<boolean> {
   await checkpoint(signal)
   try {
-    if (!proof || typeof proof !== 'object' || !('version' in proof) || proof.version !== 2
+    if (!proof || typeof proof !== 'object' || !('version' in proof) || proof.version !== 3
       || !('artifacts' in proof) || !Array.isArray(proof.artifacts)) {
       return false
     }
