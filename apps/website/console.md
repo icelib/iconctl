@@ -107,6 +107,8 @@ Retrying a failed task keeps its task ID and event history and starts a new atte
 
 Existing snapshots without an attempt number and older snapshot reservations belong to the first attempt. They remain readable without a data migration. Runner request formats are unchanged: the server binds each result to the current attempt and its claimed GitHub workflow run. A prepared publication retry continues to use the original confirmed snapshot, tarball and commit.
 
+The console reads older attempt groups on demand from `GET /api/jobs/:id/history`. The endpoint returns a bounded page and an encrypted opaque cursor bound to the job and project; clients must pass the cursor back unchanged and must not construct one. The existing `/api/state` response and its 500-event retention limit remain compatible. Legacy snapshots without `attempt` are projected as attempt 1, while legacy events without an attempt remain unassigned. A missing or invalid cursor is rejected without changing task or snapshot state.
+
 ### Attempt history and diagnostics
 
 Open **Tasks and versions → Attempts and snapshots** (「任务与版本 → 尝试与快照」) to inspect each attempt's stages, error, GitHub Actions run and immutable snapshot. Retrying keeps earlier snapshots visible even after the current result changes. The current attempt appears first. Up to 500 recent stage events are retained per task; snapshot retention is independent. Publication retries reuse the confirmed snapshot, which remains accessible through the task's result button.

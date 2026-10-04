@@ -91,6 +91,19 @@ async function ownerHeaders() {
   const session = await account().newSession(OWNER_ID)
   return { Cookie: `__Host-iconctl-session=${session.token}` }
 }
+async function failure(
+  action: (instance: import('../worker/state').AccountState) => unknown,
+) {
+  return runInDurableObject(account(), async (instance) => {
+    try {
+      await action(instance)
+      return ''
+    }
+    catch (error) {
+      return (error as Error).message
+    }
+  })
+}
 
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -138,6 +151,73 @@ it('retains failed diagnostics and each run identity after a successful retry th
     const stored = await env.ARTIFACTS.get(`snapshots/${snapshot.id}/${snapshot.digest}`)
     expect((await stored!.json<SnapshotContent>()).issues).toEqual(issues)
   }
+})
+
+it('pages attempt history with an opaque project-bound cursor without changing state', async () => {
+  const job = await queuedJob()
+  const firstSnapshot = {
+    id: crypto.randomUUID(),
+    jobId: job.id,
+    projectId: job.projectId,
+    createdAt: 20,
+    digest: 'a'.repeat(64),
+    iconCount: 1,
+    issues: 1,
+  }
+  const legacySnapshot = {
+    id: crypto.randomUUID(),
+    jobId: job.id,
+    projectId: job.projectId,
+    createdAt: 10,
+    digest: 'b'.repeat(64),
+    iconCount: 1,
+    issues: 0,
+  }
+  await seed(`snapshot:${firstSnapshot.id}`, { ...firstSnapshot, attempt: 2 })
+  await seed(`snapshot:${legacySnapshot.id}`, legacySnapshot)
+  await seed(`snapshot:${crypto.randomUUID()}`, {
+    ...legacySnapshot,
+    id: crypto.randomUUID(),
+    projectId: crypto.randomUUID(),
+  })
+  await seed(`job:${job.id}`, {
+    ...job,
+    attempt: 3,
+    events: [
+      ...(job.events ?? []),
+      { at: 2, stage: 'failed', status: 'failed', attempt: 1, error: 'old' },
+      { at: 3, stage: 'complete', status: 'succeeded', attempt: 2 },
+    ],
+  })
+  const before = await account().state()
+  const first = await account().attemptHistory(job.id, { limit: 1 })
+  expect(first.attempts.map(item => item.attempt)).toEqual([3])
+  expect(first.hasMore).toBe(true)
+  expect(first.legacyEvents).toEqual(job.events)
+  expect(first.nextCursor).toBeTruthy()
+  const second = await account().attemptHistory(job.id, {
+    limit: 1,
+    cursor: first.nextCursor,
+  })
+  expect(second.attempts.map(item => item.attempt)).toEqual([2])
+  expect(second.attempts[0]?.snapshots[0]?.id).toBe(firstSnapshot.id)
+  const filtered = await account().attemptHistory(job.id, { attempt: 1, limit: 5 })
+  expect(filtered.attempts).toEqual([
+    expect.objectContaining({ attempt: 1, snapshots: [legacySnapshot] }),
+  ])
+  expect(await failure(instance => instance.attemptHistory(job.id, { cursor: 'invalid' }))).toContain('History cursor is invalid')
+  expect(await account().state()).toEqual(before)
+
+  const headers = await ownerHeaders()
+  const response = await exports.default.fetch(
+    `${env.APP_ORIGIN}/api/jobs/${job.id}/history?limit=1`,
+    { headers },
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({
+    ...first,
+    nextCursor: expect.any(String),
+  })
 })
 
 it('records an attempt-only change without assigning an attempt to legacy events', async () => {

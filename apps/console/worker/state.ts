@@ -1,4 +1,6 @@
 import type {
+  AttemptHistory,
+  AttemptHistoryPage,
   ConnectionStatus,
   ConsoleState,
   Job,
@@ -90,6 +92,13 @@ interface Confirmation {
 interface SnapshotReservation {
   snapshotId: string
   digest: string
+}
+interface AttemptHistoryCursor {
+  version: 1
+  jobId: string
+  projectId: string
+  attempt?: number
+  offset: number
 }
 
 export class AccountState extends DurableObject<Env> {
@@ -437,6 +446,122 @@ export class AccountState extends DurableObject<Env> {
         projectId,
         label,
       })),
+    }
+  }
+
+  /**
+   * Read-only history projection for the console. Cursors are encrypted and
+   * bound to both the job and its project so callers cannot turn a cursor into
+   * an arbitrary records query. The legacy state response remains unchanged.
+   */
+  async attemptHistory(
+    id: string,
+    options: { attempt?: number, cursor?: string, limit?: number } = {},
+  ): Promise<AttemptHistoryPage> {
+    const job = this.getJob(id)
+    const limit = options.limit ?? 5
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      fail(400, 'History page size is invalid')
+    }
+    if (
+      options.attempt !== undefined
+      && (!Number.isSafeInteger(options.attempt) || options.attempt < 1)
+    ) {
+      fail(400, 'History attempt is invalid')
+    }
+    let offset = 0
+    let filterAttempt = options.attempt
+    if (options.cursor !== undefined) {
+      if (options.cursor.length > 4096) {
+        fail(400, 'History cursor is invalid')
+      }
+      let cursor: AttemptHistoryCursor
+      try {
+        cursor = await decrypt<AttemptHistoryCursor>(
+          this.env.CREDENTIAL_ENCRYPTION_KEY,
+          'iconctl-attempt-history-v1',
+          options.cursor,
+        )
+      }
+      catch {
+        fail(400, 'History cursor is invalid')
+      }
+      if (
+        !cursor
+        || typeof cursor !== 'object'
+        || cursor.version !== 1
+        || cursor.jobId !== id
+        || cursor.projectId !== job.projectId
+        || !Number.isSafeInteger(cursor.offset)
+        || cursor.offset < 0
+        || (cursor.attempt !== undefined
+          && (!Number.isSafeInteger(cursor.attempt) || cursor.attempt < 1))
+      ) {
+        fail(400, 'History cursor is invalid')
+      }
+      if (
+        options.attempt !== undefined
+        && cursor.attempt !== options.attempt
+      ) {
+        fail(400, 'History cursor does not match the attempt filter')
+      }
+      offset = cursor.offset
+      filterAttempt = cursor.attempt
+    }
+
+    const groups = new Map<number, AttemptHistory>()
+    const group = (attempt: number) => {
+      let value = groups.get(attempt)
+      if (!value) {
+        value = { attempt, events: [], snapshots: [] }
+        groups.set(attempt, value)
+      }
+      return value
+    }
+    group(job.attempt)
+    for (const event of job.events ?? []) {
+      if (event.attempt !== undefined) {
+        group(event.attempt).events.push(event)
+      }
+    }
+    for (const snapshot of this.list<Snapshot>('snapshot')) {
+      if (snapshot.jobId !== id || snapshot.projectId !== job.projectId) {
+        continue
+      }
+      group(snapshot.attempt ?? 1).snapshots.push(snapshot)
+    }
+    let ordered = [...groups.values()].sort((a, b) => b.attempt - a.attempt)
+    if (filterAttempt !== undefined) {
+      ordered = ordered.filter(value => value.attempt === filterAttempt)
+    }
+    for (const value of ordered) {
+      value.snapshots.sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+    }
+    const page = ordered.slice(offset, offset + limit)
+    const nextOffset = offset + page.length
+    const hasMore = nextOffset < ordered.length
+    const nextCursor = hasMore
+      ? await encrypt(
+          this.env.CREDENTIAL_ENCRYPTION_KEY,
+          'iconctl-attempt-history-v1',
+          {
+            version: 1,
+            jobId: id,
+            projectId: job.projectId,
+            ...(filterAttempt === undefined ? {} : { attempt: filterAttempt }),
+            offset: nextOffset,
+          } satisfies AttemptHistoryCursor,
+        )
+      : undefined
+    return {
+      jobId: id,
+      projectId: job.projectId,
+      attempts: page,
+      ...(offset === 0
+        ? { legacyEvents: (job.events ?? []).filter(event => event.attempt === undefined) }
+        : {}),
+      ...(nextCursor ? { nextCursor } : {}),
+      hasMore,
     }
   }
 

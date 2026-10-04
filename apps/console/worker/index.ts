@@ -603,6 +603,25 @@ app.post('/api/projects/:id/release/confirm', async (c) => {
 })
 app.post('/api/jobs/:id/retry', async c =>
   c.json(await account(c.env).retry(identifier.parse(c.req.param('id'))), 202))
+app.get('/api/jobs/:id/history', async (c) => {
+  const query = c.req.query()
+  const rawAttempt = query.attempt
+  const rawLimit = query.limit
+  const attempt = rawAttempt === undefined
+    ? undefined
+    : z.coerce.number().int().min(1).max(1_000_000).parse(rawAttempt)
+  const limit = rawLimit === undefined
+    ? 5
+    : z.coerce.number().int().min(1).max(50).parse(rawLimit)
+  const cursor = query.cursor
+  if (cursor !== undefined && (cursor.length < 1 || cursor.length > 4096)) {
+    fail(400, 'History cursor is invalid')
+  }
+  return c.json(await account(c.env).attemptHistory(
+    identifier.parse(c.req.param('id')),
+    { attempt, limit, ...(cursor === undefined ? {} : { cursor }) },
+  ))
+})
 app.get('/api/snapshots/:id', async (c) => {
   return c.json(JSON.parse(await account(c.env).snapshotPreviewDocument(
     identifier.parse(c.req.param('id')),

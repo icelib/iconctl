@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { Job, JobEvent, Snapshot } from '@iconctl/console-contracts'
+import type { AttemptHistory, AttemptHistoryPage, Job, JobEvent, Snapshot } from '@iconctl/console-contracts'
 import type { ComponentPublicInstance } from 'vue'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { api } from '../../api'
 import { recordedRunUrl } from './snapshot-origin'
 
 const props = defineProps<{
@@ -12,7 +13,7 @@ const props = defineProps<{
   date: (timestamp: number) => string
 }>()
 const emit = defineEmits<{ snapshot: [id: string] }>()
-const history = computed(() => {
+function localGroups() {
   const groups = new Map<number, { attempt: number, events: JobEvent[], snapshots: Snapshot[] }>()
   function group(attempt: number) {
     let value = groups.get(attempt)
@@ -33,9 +34,58 @@ const history = computed(() => {
       group(snapshot.attempt ?? 1).snapshots.push(snapshot)
     }
   }
+  return groups
+}
+const page = ref<AttemptHistoryPage>()
+const loading = ref(false)
+const loadError = ref('')
+const cursor = ref<string>()
+let generation = 0
+let controller: AbortController | undefined
+const history = computed(() => {
+  const groups = localGroups()
+  const add = (incoming: AttemptHistory) => {
+    const current = groups.get(incoming.attempt)
+    if (!current) {
+      groups.set(incoming.attempt, {
+        attempt: incoming.attempt,
+        events: [...incoming.events],
+        snapshots: [...incoming.snapshots],
+      })
+      return
+    }
+    const eventKeys = new Set(current.events.map(event => `${event.at}|${event.stage}|${event.status}|${event.attempt ?? ''}|${event.runId ?? ''}|${event.runAttempt ?? ''}|${event.error ?? ''}`))
+    for (const event of incoming.events) {
+      const key = `${event.at}|${event.stage}|${event.status}|${event.attempt ?? ''}|${event.runId ?? ''}|${event.runAttempt ?? ''}|${event.error ?? ''}`
+      if (!eventKeys.has(key)) {
+        current.events.push(event)
+        eventKeys.add(key)
+      }
+    }
+    const snapshotIds = new Set(current.snapshots.map(snapshot => snapshot.id))
+    current.snapshots.push(...incoming.snapshots.filter(snapshot => !snapshotIds.has(snapshot.id)))
+    current.snapshots.sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+  }
+  for (const incoming of page.value?.attempts ?? []) {
+    add(incoming)
+  }
   return [...groups.values()].sort((a, b) => b.attempt - a.attempt)
 })
-const legacyEvents = computed(() => props.job.events?.filter(event => event.attempt === undefined) ?? [])
+const legacyEvents = computed(() => {
+  const all = [
+    ...(props.job.events?.filter(event => event.attempt === undefined) ?? []),
+    ...(page.value?.legacyEvents ?? []),
+  ]
+  const seen = new Set<string>()
+  return all.filter((event) => {
+    const key = `${event.at}|${event.stage}|${event.status}|${event.error ?? ''}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+})
 const disclosure = ref<HTMLDetailsElement>()
 const attempts = new Map<number, HTMLElement>()
 function rememberAttempt(attempt: number, element: Element | ComponentPublicInstance | null) {
@@ -57,11 +107,70 @@ function reveal(attempt: number) {
 function runLink(event: JobEvent) {
   return recordedRunUrl(props.job.project.repository, event.runId, event.runAttempt)
 }
+async function loadMore(reset = false) {
+  if (loading.value) {
+    return
+  }
+  if (!reset && page.value && !page.value.hasMore) {
+    return
+  }
+  controller?.abort()
+  const requestGeneration = ++generation
+  const request = new AbortController()
+  controller = request
+  loading.value = true
+  loadError.value = ''
+  try {
+    const query = new URLSearchParams({ limit: '5' })
+    if (!reset && cursor.value) {
+      query.set('cursor', cursor.value)
+    }
+    const result = await api<AttemptHistoryPage>(`jobs/${props.job.id}/history?${query}`, undefined, 'GET', { signal: request.signal })
+    if (requestGeneration !== generation || request.signal.aborted) {
+      return
+    }
+    if (reset || !page.value) {
+      page.value = result
+    }
+    else {
+      page.value = {
+        ...result,
+        attempts: [...page.value.attempts, ...result.attempts],
+        legacyEvents: page.value.legacyEvents ?? result.legacyEvents,
+      }
+    }
+    cursor.value = result.nextCursor
+  }
+  catch (cause) {
+    if (requestGeneration === generation && !request.signal.aborted) {
+      loadError.value = cause instanceof Error ? cause.message : '读取历史失败，请重试'
+    }
+  }
+  finally {
+    if (requestGeneration === generation) {
+      loading.value = false
+    }
+  }
+}
+function onToggle(event: Event) {
+  if ((event.target as HTMLDetailsElement).open && !page.value) {
+    void loadMore(true)
+  }
+}
+watch(() => props.job.id, () => {
+  controller?.abort()
+  generation++
+  page.value = undefined
+  cursor.value = undefined
+  loading.value = false
+  loadError.value = ''
+})
+onBeforeUnmount(() => controller?.abort())
 defineExpose({ reveal })
 </script>
 
 <template>
-  <details ref="disclosure" class="attempt-history">
+  <details ref="disclosure" class="attempt-history" @toggle="onToggle">
     <summary>尝试与快照</summary>
     <section
       v-for="group in history"
@@ -101,8 +210,22 @@ defineExpose({ reveal })
         </li>
       </ol>
     </section>
+    <p v-if="loadError" class="error-text" role="alert">
+      {{ loadError }}
+      <button class="text-button" type="button" :disabled="loading" @click="loadMore(!page)">
+        重试读取历史
+      </button>
+    </p>
+    <p v-if="page?.hasMore" class="history-more">
+      <button type="button" :disabled="loading" @click="loadMore()">
+        {{ loading ? '读取中…' : '加载更多尝试' }}
+      </button>
+    </p>
+    <p v-else-if="loading" class="help" role="status">
+      读取历史中…
+    </p>
     <p class="help">
-      最多保留最近 500 条阶段记录；历史快照单独保存。
+      最多保留最近 500 条阶段记录；历史快照单独保存。展开后可按需加载更早尝试。
     </p>
   </details>
 </template>

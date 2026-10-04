@@ -155,6 +155,21 @@ export interface JobEvent {
   runId?: string
   runAttempt?: string
 }
+export interface AttemptHistory {
+  /** Missing attempt metadata in stored snapshots is projected as attempt 1. */
+  attempt: number
+  events: JobEvent[]
+  snapshots: Snapshot[]
+}
+export interface AttemptHistoryPage {
+  jobId: string
+  projectId: string
+  attempts: AttemptHistory[]
+  /** Legacy events have no trustworthy attempt and are never assigned here. */
+  legacyEvents?: JobEvent[]
+  nextCursor?: string
+  hasMore: boolean
+}
 export interface Job {
   id: string
   projectId: string
