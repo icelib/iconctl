@@ -100,6 +100,20 @@ it('validates unsupported sprite input in dry-run without creating output direct
   expect(await readdir(cwd)).toEqual([])
 })
 
+it('validates output collisions during dry-run without creating staging files', async () => {
+  const cfg = config({ json: 'new/icons.json', sprite: 'new/icons.json' })
+  await expect(exportOutputs(icons(), cfg, { cwd, dryRun: true })).rejects.toThrow('Conflicting output targets')
+  expect(await readdir(cwd)).toEqual([])
+})
+
+it('validates output file types during dry-run without replacing a symlink', async () => {
+  await writeFile(join(cwd, 'external.svg'), 'user-owned')
+  await symlink(join(cwd, 'external.svg'), join(cwd, 'sprite.svg'))
+  const before = await readFile(join(cwd, 'external.svg'), 'utf8')
+  await expect(exportOutputs(icons(), config(), { cwd, dryRun: true })).rejects.toThrow('wrong file type')
+  expect(await readFile(join(cwd, 'external.svg'), 'utf8')).toBe(before)
+})
+
 it('keeps all existing outputs when static sprite generation is rejected', async () => {
   const cfg = config()
   await exportOutputs(icons(), cfg, { cwd })

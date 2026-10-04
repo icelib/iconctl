@@ -4,7 +4,7 @@ import process from 'node:process'
 import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 
-interface Target {
+export interface OutputTarget {
   path: string
   directory?: boolean
 }
@@ -45,6 +45,39 @@ export async function canonicalTarget(path: string): Promise<{ path: string, par
   return { path: join(parent, relative(ancestor, path)), parent }
 }
 
+interface NormalizedTarget extends OutputTarget {
+  path: string
+  parent: string
+}
+
+/**
+ * Resolve and validate output destinations without creating a staging
+ * directory. Dry-run callers use this to exercise the same destination
+ * checks as publication while keeping the filesystem untouched.
+ */
+export async function validateOutputTargets(targets: readonly OutputTarget[], signal?: AbortSignal): Promise<void> {
+  const normalized: NormalizedTarget[] = []
+  for (const target of targets) {
+    await checkpoint(signal)
+    const absolute = resolve(target.path)
+    const canonical = await canonicalTarget(absolute)
+    if (await exists(canonical.path)) {
+      const stat = await lstat(canonical.path)
+      if (stat.isSymbolicLink() || (target.directory ? !stat.isDirectory() : !stat.isFile())) {
+        throw new IconctlError(`Output target has the wrong file type: ${absolute}`)
+      }
+    }
+    for (const other of normalized) {
+      if (canonical.path === other.path
+        || (!other.directory && contains(other.path, canonical.path))
+        || (!target.directory && contains(canonical.path, other.path))) {
+        throw new IconctlError(`Conflicting output targets: ${other.path} and ${canonical.path}`)
+      }
+    }
+    normalized.push({ ...target, ...canonical })
+  }
+}
+
 /** Stage related paths together, so nested outputs cannot overwrite each other at commit. */
 export class OutputTransaction {
   private readonly entries: Entry[] = []
@@ -52,9 +85,9 @@ export class OutputTransaction {
   private readonly createdParents: string[] = []
   private committed = false
 
-  static async create(targets: Target[], signal?: AbortSignal): Promise<OutputTransaction> {
+  static async create(targets: OutputTarget[], signal?: AbortSignal): Promise<OutputTransaction> {
     const transaction = new OutputTransaction()
-    const normalized: (Target & { parent: string })[] = []
+    const normalized: NormalizedTarget[] = []
     for (const target of targets) {
       await checkpoint(signal)
       const absolute = resolve(target.path)

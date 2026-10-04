@@ -154,7 +154,7 @@ The static format rejects residual CSS styles or stylesheets, SMIL animation, sc
 
 The sprite joins JSON, individual SVGs, types, preview and changelog in the existing [output transaction](#sync-integrity-and-cancellation). Conflicting destinations fail before replacement. Its bytes also participate in the completion cache: a missing or edited sprite forces revalidation on the next sync even when remote metadata is unchanged. `output.types` includes resolved icon, variation and alias names as escaped TypeScript string literals.
 
-`watch` updates the sprite after source edits and excludes it from change triggers. Keep `icons.svg` outside SVG source directories; source/output conflicts and symlink aliases are checked, and outputs cannot replace configuration or Iconify input files. `sync --dry-run` and `watch --dry-run` still validate the sprite's static format while skipping icon-output writes.
+`watch` updates the sprite after source edits and excludes it from change triggers. Keep `icons.svg` outside SVG source directories; source/output conflicts and symlink aliases are checked, and outputs cannot replace configuration or Iconify input files. `sync --dry-run` and `watch --dry-run` validate output collisions, existing file/directory types and symlink targets as well as the sprite's static format, while skipping icon-output writes.
 
 ### JSON failures
 

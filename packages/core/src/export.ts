@@ -9,7 +9,7 @@ import { checkpoint } from './abort'
 import { IconctlError } from './errors'
 import { createIconifyJsonResolver } from './iconify-json'
 import { decodeUtf8 } from './json-input'
-import { OutputTransaction } from './output-transaction'
+import { OutputTransaction, validateOutputTargets } from './output-transaction'
 import { generateSvgSprite } from './sprite'
 
 export interface ExportResult {
@@ -169,6 +169,17 @@ export async function readPreviousIconJson(file: string): Promise<IconifyJSON | 
   }
 }
 
+export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { path: string, directory?: boolean }[] {
+  const output = config.output
+  return [
+    { path: resolvePath(cwd, output.json) },
+    ...(output.svg ? [{ path: resolvePath(cwd, output.svg), directory: true }] : []),
+    ...(output.sprite ? [{ path: resolvePath(cwd, output.sprite) }] : []),
+    ...(output.jsonPackage ? [{ path: resolvePath(cwd, output.jsonPackage.dir), directory: true }] : []),
+    ...[output.types, output.preview, output.changelog].flatMap(file => file ? [{ path: resolvePath(cwd, file) }] : []),
+  ]
+}
+
 export async function generateOutputs(
   iconSet: IconSet,
   config: ResolvedIconctlConfig,
@@ -177,6 +188,11 @@ export async function generateOutputs(
   const files: string[] = []
   const json = iconSet.export()
   const resolve = (file: string) => file.startsWith('/') ? file : join(options.cwd, file)
+  if (options.dryRun) {
+    // Keep dry-run validation side-effect free while checking the same
+    // destination conflicts and filesystem types as publication.
+    await validateOutputTargets(outputTargets(config, options.cwd), options.signal)
+  }
   await checkpoint(options.signal)
   const sprite = config.output.sprite ? await generateSvgSprite(iconSet, options.signal) : undefined
 
@@ -307,17 +323,6 @@ export async function generateOutputs(
     .flatMap(file => file ? [resolve(file)] : [])
   files.sort((a, b) => order.indexOf(a) - order.indexOf(b))
   return { files, json }
-}
-
-export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { path: string, directory?: boolean }[] {
-  const output = config.output
-  return [
-    { path: resolvePath(cwd, output.json) },
-    ...(output.svg ? [{ path: resolvePath(cwd, output.svg), directory: true }] : []),
-    ...(output.sprite ? [{ path: resolvePath(cwd, output.sprite) }] : []),
-    ...(output.jsonPackage ? [{ path: resolvePath(cwd, output.jsonPackage.dir), directory: true }] : []),
-    ...[output.types, output.preview, output.changelog].flatMap(file => file ? [{ path: resolvePath(cwd, file) }] : []),
-  ]
 }
 
 export function stagedConfig(config: ResolvedIconctlConfig, cwd: string, transaction: OutputTransaction): ResolvedIconctlConfig {
