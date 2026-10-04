@@ -1,4 +1,5 @@
-import type { Job, Project, Snapshot, SnapshotPreview } from '@iconctl/console-contracts'
+import type { ConsoleState, Job, Project, Snapshot, SnapshotPreview } from '@iconctl/console-contracts'
+import { writeFile } from 'node:fs/promises'
 import { createWorkerTest, expect } from './local-worker'
 
 interface HistoryFixture {
@@ -73,8 +74,46 @@ test('reviews the failed attempt and its original diagnostics after a successful
   await expect(firstAttempt).toBeVisible()
   await expect(firstAttempt).toBeFocused()
   await expect(firstAttempt.getByRole('button', { name: '查看第 1 次快照', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '刷新状态', exact: true }).click()
-  await expect(page.getByRole('button', { name: '刷新状态', exact: true })).toBeFocused()
+  const refresh = page.getByRole('button', { name: '刷新状态', exact: true })
+  const search = page.getByLabel('搜索任务', { exact: true })
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let refreshedJob: Job | undefined
+  await page.route(`${origin}/api/state`, async (route) => {
+    const response = await route.fetch()
+    expect(response.status()).toBe(200)
+    const state = await response.json() as ConsoleState
+    refreshedJob = state.jobs.find(job => job.id === fixture.job.id)
+    expect(refreshedJob).toMatchObject({ id: fixture.job.id, attempt: 2, status: 'succeeded' })
+    await held
+    await route.fulfill({ response })
+  }, { times: 1 })
+  try {
+    const refreshed = page.waitForResponse(`${origin}/api/state`)
+    await refresh.click()
+    await expect.poll(() => refreshedJob?.attempt).toBe(2)
+    await expect(refresh).toBeDisabled()
+    // Native disabled buttons relinquish focus; the completed real read must
+    // preserve the user's newer focus and keep the selected attempt expanded.
+    await search.focus()
+    release()
+    await (await refreshed).finished()
+    await expect(refresh).toBeEnabled()
+    await expect(search).toBeFocused()
+    await expect(row.locator('details')).toHaveAttribute('open', '')
+    await expect(firstAttempt).toBeVisible()
+    await writeFile(testInfo.outputPath('history-refresh-evidence.json'), JSON.stringify({
+      response: { status: 200, jobId: refreshedJob!.id, attempt: refreshedJob!.attempt, jobStatus: refreshedJob!.status },
+      focus: 'search',
+      attemptExpanded: true,
+    }, null, 2))
+  }
+  finally {
+    release()
+    await page.unroute(`${origin}/api/state`)
+  }
   const successResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/snapshots/${completed.snapshot.id}`)
   await row.getByRole('button', { name: '查看第 2 次快照', exact: true }).click()
   const success = await (await successResponse).json() as SnapshotPreview
