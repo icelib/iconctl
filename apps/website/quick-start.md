@@ -386,6 +386,37 @@ const diff = diffIconSets(beforeJson, afterJson)
 
 `compareIconSets(undefined, afterJson)` treats all icons as added. `writeDiffHtml` accepts `dryRun: true`; pass `inputs` when protecting source files in your own integration. The render function returns a string without writing files.
 
+### Convert local JSON to a sprite
+
+For an existing Iconify collection, export a static sprite directly:
+
+```sh
+iconctl sprite --input ./collection.json
+iconctl sprite --input ./collection.json --output ./assets/icons.svg --json
+iconctl sprite --input ./collection.json --output ./new/icons.svg --dry-run --json
+```
+
+`--input` is required; `--output` defaults to `icons.svg` in the current directory. Both paths are local and relative to that directory unless absolute. URLs, `-` for stdin/stdout, repeated path flags, `--config` and `--continue` are rejected. The command reads the complete collection without loading configuration, credentials, remote sources or caches. It writes only the sprite, with no companion JSON. Use configuration sources and `output.sprite` when you need selection, source merging, color processing or watch.
+
+Every resolved icon and alias is included, including hidden icons and names containing `_` or `.`. Hidden metadata does not become an SVG visibility attribute. Each symbol preserves its resolved viewport, rotations, flips and original colors; missing dimensions default to 16×16. An empty collection produces an empty SVG root with count zero. Prefixes and names follow the [sprite format](#svg-sprites): ASCII letters, digits, `_`, `.`, `:`, and `-`, with no renaming.
+
+The whole collection must be valid. A broken alias, invalid dimension, `not_found` entry or unsupported SVG prevents all output. Direct conversion does not clean the source: JSON that works after configured source cleanup can still fail here for a nonempty `style`, stylesheet or animation. The existing static format rejects scripts/event handlers, `foreignObject`, SMIL, external resources, cross-icon or dangling references, DTDs, processing instructions and malformed XML. Local href, paint and ARIA references are rewritten separately within each symbol. This is a static exporter, not a complete SVG sanitizer.
+
+Success JSON has `{ input: { file, prefix }, count, outputFiles }`, using absolute paths and counting all emitted symbols. Dry-run adds `dryRun: true` and returns `outputFiles: []`; it still renders and validates the destination, but creates no output, parent directory, staging file or cache. Argument failures and execution failures use the common JSON error envelope with `command: "sprite"`. Existing regular outputs can be replaced. Outputs cannot overwrite the input through direct paths, symlink aliases or hard links; output leaf symlinks and directories are rejected. Validation or staged-write failure preserves the previous file. The shared transaction rolls back a failed commit; recovery or cleanup failures follow the [existing transaction diagnostics](#sync-integrity-and-cancellation).
+
+Both `iconctl` and `@iconctl/core` export the same asynchronous APIs and types:
+
+```ts
+import { renderSvgSprite, writeSvgSprite, type SvgSpriteSummary, type WriteSvgSpriteOptions } from 'iconctl'
+
+const svg: string = await renderSvgSprite(iconsJson)
+const options: WriteSvgSpriteOptions = { inputs: ['collection.json'], dryRun: true }
+const summary: SvgSpriteSummary = await writeSvgSprite('assets/icons.svg', iconsJson, options)
+// summary: { prefix, count }; normal writes return the same shape after publication.
+```
+
+`renderSvgSprite` returns deterministic SVG bytes ending in a newline without writing files. `writeSvgSprite` prepares the collection once, then validates and publishes those bytes. Library callers supply `inputs` to protect source files; the CLI supplies its input automatically. Omit the third argument when no input-file protection is needed.
+
 ## 5. Use the JSON
 
 With `@iconify/tailwind4` or UnoCSS, point a custom collection at `icons.json` and use `i-brand-arrow-left`. That class is a CSS mask, not a font.

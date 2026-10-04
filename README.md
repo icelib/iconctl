@@ -54,7 +54,7 @@ To browse an existing collection, run `iconctl preview --input ./icons.json --ou
 
 For local development, `iconctl watch` performs an initial sync and watches SVG edits. Keep inputs such as `raw-svg` separate from generated SVG/package directories. It supports local `directory`, `jsdesign.dir`, `iconfont.dir` and `iconify.file` sources; remote sources still use `sync`. `watch --json` emits NDJSON events. See [local watch](apps/website/quick-start.md#local-watch) for configuration recovery, cancellation and the API.
 
-Add optional `output.sprite: 'icons.svg'` to export one SVG symbol collection alongside Iconify JSON. Reference an icon with `<use href="/icons.svg#iconctl-brand-home">`; symbol IDs are stable and aliases retain their transforms. See [SVG sprites](apps/website/quick-start.md#svg-sprites) for inline use, accessibility and the supported static SVG format.
+Add optional `output.sprite: 'icons.svg'` to export one SVG symbol collection alongside Iconify JSON. Reference an icon with `<use href="/icons.svg#iconctl-brand-home">`; symbol IDs are stable and aliases retain their transforms. For an existing local collection, run `iconctl sprite --input collection.json --output icons.svg` without config or credentials. See [SVG sprites](apps/website/quick-start.md#svg-sprites) for inline use, accessibility and the supported static SVG format.
 
 Local Iconify JSON can be mixed with SVG or remote sources: `{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`. Aliases, rotations and inherited dimensions are resolved before the usual processing. See [Iconify JSON sources](apps/website/sources.md#local-iconify-json).
 

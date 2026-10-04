@@ -2,6 +2,7 @@ import type { CheckCommandOptions } from './check.ts'
 import type { CommandContext } from './failure.ts'
 import type { InitCommandOptions } from './init.ts'
 import type { PreviewCommandOptions } from './preview.ts'
+import type { SpriteCommandOptions } from './sprite.ts'
 import process from 'node:process'
 import {
   loadConfig,
@@ -16,6 +17,7 @@ import { reportCliError } from './failure.ts'
 import { runFigmaAuth } from './figma-auth.ts'
 import { runInit } from './init.ts'
 import { runLocalPreview } from './preview.ts'
+import { runSprite } from './sprite.ts'
 import { syncSummary } from './sync-summary.ts'
 import { runWatch } from './watch.ts'
 
@@ -142,6 +144,12 @@ export async function runCli(argv: string[] = process.argv) {
       })
       printSyncResult(result, Boolean(options.json))
     }))
+
+  cli
+    .command('sprite', 'Render a static SVG sprite from local Iconify JSON without config or credentials')
+    .option('--input <file>', 'Required local JSON collection; dry-run writes no files or caches')
+    .option('--output <file>', 'SVG destination (default: icons.svg in the current directory)')
+    .action(action((options: SpriteCommandOptions) => runSprite(options, context)))
 
   cli
     .command('init', 'Create a new TypeScript config without overwriting existing files')

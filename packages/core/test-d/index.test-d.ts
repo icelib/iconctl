@@ -1,6 +1,6 @@
-import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SyncIssue, SyncResult, WritePreviewHtmlOptions } from '..'
+import type { CheckInputOptions, CheckIssue, CheckOptions, CheckReport, CheckResult, IconDiff, IconSetComparison, SvgSpriteSummary, SyncIssue, SyncResult, WritePreviewHtmlOptions, WriteSvgSpriteOptions } from '..'
 import { expectError, expectType } from 'tsd'
-import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, renderPreviewHtml, resolveConfig, sync, watch, writeDiffHtml, writePreviewHtml } from '..'
+import { check, compareIconSets, defineConfig, diffIconSets, IconctlAbortError, IconctlCheckError, IconctlSyncError, parseFigmaFileKey, renderDiffHtml, renderPreviewHtml, renderSvgSprite, resolveConfig, sync, watch, writeDiffHtml, writePreviewHtml, writeSvgSprite } from '..'
 
 expectType<string>(parseFigmaFileKey('AbCdEfGhIjKlMnOpQrStUv'))
 const comparison = compareIconSets(undefined, { prefix: 'brand', icons: { arrow: { body: '<path/>' } } })
@@ -58,3 +58,11 @@ expectType<Promise<void>>(watch({ signal: new AbortController().signal, onEvent(
     expectType<'initial' | 'source' | 'config'>(event.reason)
   }
 } }))
+
+const spriteOptions: WriteSvgSpriteOptions = { inputs: ['icons.json'] as const, dryRun: true }
+expectType<Promise<string>>(renderSvgSprite(previewIcons))
+expectType<Promise<SvgSpriteSummary>>(writeSvgSprite('icons.svg', previewIcons))
+expectType<Promise<SvgSpriteSummary>>(writeSvgSprite('icons.svg', previewIcons, spriteOptions))
+expectError(writeSvgSprite('icons.svg', previewIcons, { inputs: 'icons.json' }))
+expectError(writeSvgSprite('icons.svg', previewIcons, { dryRun: 'true' }))
+expectError(renderSvgSprite({ icons: {} }))

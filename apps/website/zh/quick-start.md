@@ -386,6 +386,37 @@ const diff = diffIconSets(beforeJson, afterJson)
 
 `compareIconSets(undefined, afterJson)` 将全部图标视为新增。`writeDiffHtml` 支持 `dryRun: true`；在自定义集成中传入 `inputs` 可保护来源文件。渲染函数只返回字符串，不写文件。
 
+### 将本地 JSON 转成 sprite
+
+已有 Iconify 集合时，可以直接导出静态 sprite：
+
+```sh
+iconctl sprite --input ./collection.json
+iconctl sprite --input ./collection.json --output ./assets/icons.svg --json
+iconctl sprite --input ./collection.json --output ./new/icons.svg --dry-run --json
+```
+
+`--input` 必填；`--output` 默认为当前目录下的 `icons.svg`。两者均为本地路径，相对路径以当前目录为基准。URL、代表 stdin/stdout 的 `-`、重复路径参数、`--config` 和 `--continue` 会被拒绝。命令读取完整集合，不加载配置、凭据、远端来源或缓存，只写 sprite，不另写 JSON。需要选择图标、合并来源、处理颜色或 watch 时，请使用配置来源和 `output.sprite`。
+
+所有可解析图标和别名都会导出，包括 hidden 图标以及含 `_` 或 `.` 的名称。Hidden 元数据不会转成 SVG 可见性属性。每个 symbol 保留解析后的视口、旋转、翻转和原始颜色；缺少尺寸时默认为 16×16。空集合会生成空 SVG 根节点，count 为零。前缀和名称遵循 [sprite 格式](#svg-sprite)，仅支持 ASCII 字母、数字、`_`、`.`、`:` 和 `-`，不会自动重命名。
+
+整个集合必须有效。坏别名、非法尺寸、`not_found` 项或不支持的 SVG 都会使本次导出整体失败。直接转换不会清理来源：经过配置来源清理后可用的 JSON，直接转换时仍可能因非空 `style`、样式表或动画而失败。现有静态格式拒绝脚本／事件属性、`foreignObject`、SMIL、外部资源、跨图标或悬空引用、DTD、处理指令及非法 XML。局部 href、颜色和 ARIA 引用会在各自 symbol 内重写。这是静态导出器，不是完整的 SVG 清洗器。
+
+成功 JSON 为 `{ input: { file, prefix }, count, outputFiles }`，路径为绝对路径，count 包含所有生成的 symbol。Dry-run 增加 `dryRun: true`，并返回 `outputFiles: []`；仍会完整渲染和校验目标，但不创建输出、父目录、staging 文件或缓存。参数错误和执行错误沿用公共 JSON 错误结构，`command` 为 `"sprite"`。已有普通输出文件可替换；输出不能通过直接路径、符号链接别名或硬链接覆盖输入，输出末级符号链接和目录也会被拒绝。校验或 staging 写入失败会保留原文件。共享事务会回滚失败的提交；恢复或清理失败沿用[既有事务诊断](#同步完整性与取消)。
+
+`iconctl` 和 `@iconctl/core` 均提供相同的异步 API 与类型：
+
+```ts
+import { renderSvgSprite, writeSvgSprite, type SvgSpriteSummary, type WriteSvgSpriteOptions } from 'iconctl'
+
+const svg: string = await renderSvgSprite(iconsJson)
+const options: WriteSvgSpriteOptions = { inputs: ['collection.json'], dryRun: true }
+const summary: SvgSpriteSummary = await writeSvgSprite('assets/icons.svg', iconsJson, options)
+// summary: { prefix, count }；普通写入在发布成功后返回相同结构。
+```
+
+`renderSvgSprite` 返回字节稳定、以换行结尾的 SVG，不写文件。`writeSvgSprite` 只准备一次集合，再校验并发布这些字节。库调用者通过 `inputs` 传入需要保护的源文件，CLI 会自动传入输入路径。不需要保护源文件时，可以直接使用两个参数的 writer 调用。
+
 ## 5. 使用 JSON
 
 在 `@iconify/tailwind4` 或 UnoCSS 里把自定义 collection 指到 `icons.json`，然后写 `i-brand-arrow-left`。这个 class 是 CSS mask，不是字体。

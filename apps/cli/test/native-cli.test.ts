@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { renderSvgSprite } from '@iconctl/core'
 import { build } from 'tsdown'
+import spriteFixture from '../../../packages/core/test/fixtures/standalone-sprite.json'
 
 const cliDirectory = fileURLToPath(new URL('..', import.meta.url))
 const coreDirectory = resolve(cliDirectory, '../../packages/core')
@@ -96,6 +98,7 @@ describe('native TypeScript CLI process boundary', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout).toContain(`iconctl/${version}`)
     expect(result.stdout).toContain('preview')
+    expect(result.stdout).toContain('sprite')
     expect(result.stdout).toContain('init')
   })
 
@@ -130,6 +133,26 @@ describe('native TypeScript CLI process boundary', () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { phase: 'arguments' } })
     expect(result.stdout).not.toContain('must not execute config')
     expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json'])
+  })
+
+  it('runs the raw native sprite command with exact bytes, summary and no configuration', async () => {
+    await writeFile(join(cwd, 'icons.json'), JSON.stringify(spriteFixture))
+    const dry = await run(['sprite', '--input', 'icons.json', '--output', 'new/icons.svg', '--dry-run', '--json'])
+    expect(dry.code).toBe(0)
+    expect(dry.stderr).toBe('')
+    expect(JSON.parse(dry.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 8, outputFiles: [], dryRun: true })
+    expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json'])
+    const result = await run(['sprite', '--input', 'icons.json', '--json'])
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 8, outputFiles: [join(cwd, 'icons.svg')] })
+    expect(await readFile(join(cwd, 'icons.svg'), 'utf8')).toBe(await renderSvgSprite(spriteFixture))
+    const failure = await run(['sprite', '--input', 'icons.json', '--output', 'icons.json', '--dry-run', '--json'])
+    expect(failure.code).toBe(1)
+    expect(failure.stderr).toBe('')
+    expect(JSON.parse(failure.stdout)).toMatchObject({ success: false, command: 'sprite', error: { phase: 'execution' } })
+    expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe(JSON.stringify(spriteFixture))
+    expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json', 'icons.svg'])
   })
 
   it('prints a human configuration failure once', async () => {

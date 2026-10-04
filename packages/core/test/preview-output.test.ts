@@ -57,7 +57,7 @@ it.each([false, true])('protects inputs through direct paths, hard links and dir
   await symlink(input, linkedInput)
   for (const source of [input, linkedInput]) {
     for (const target of [input, hardlink, join(alias, 'icons.json')]) {
-      await expect(writePreviewHtml(target, icons, { inputs: [source], dryRun })).rejects.toThrow(/conflicts with input/)
+      await expect(writePreviewHtml(target, icons, { inputs: [source], dryRun })).rejects.toThrow(`Report output conflicts with input: ${source}`)
     }
   }
   expect(await readFile(input, 'utf8')).toBe(JSON.stringify(icons))
@@ -72,7 +72,7 @@ it.each([false, true])('rejects leaf symlinks, dangling symlinks, directories an
   await symlink(join(cwd, 'missing.html'), dangling)
   await mkdir(directory)
   for (const target of [linkedOutput, dangling, directory]) {
-    await expect(writePreviewHtml(target, icons, { dryRun })).rejects.toThrow(/regular file/)
+    await expect(writePreviewHtml(target, icons, { dryRun })).rejects.toThrow(`Report target must be a regular file: ${target}`)
   }
   await expect(writePreviewHtml(join(input, 'preview.html'), icons, { dryRun })).rejects.toThrow()
   expect(await readFile(input, 'utf8')).toBe(JSON.stringify(icons))

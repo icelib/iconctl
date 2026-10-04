@@ -1,8 +1,7 @@
 import type { CommandContext } from './failure.ts'
-import { resolve } from 'node:path'
 import process from 'node:process'
 import { compareIconSets, IconctlError, writePreviewHtml } from '@iconctl/core'
-import { readIcons } from './read-icons.ts'
+import { localIconPath, readIcons } from './read-icons.ts'
 
 export interface PreviewCommandOptions {
   input?: string
@@ -11,13 +10,6 @@ export interface PreviewCommandOptions {
   continue?: boolean
   dryRun?: boolean
   json?: boolean
-}
-
-function localPath(value: unknown, option: string): string {
-  if (typeof value !== 'string' || !value.trim() || value === '-' || /^[a-z][\w+.-]*:\/\//i.test(value.trim())) {
-    throw new IconctlError(`--${option} must be a local file path; URLs and stdin/stdout are not supported.`)
-  }
-  return resolve(value)
 }
 
 /** Return false only when the original configuration-backed preview should run. */
@@ -35,8 +27,8 @@ export async function runLocalPreview(options: PreviewCommandOptions, context: C
   if (options.continue) {
     throw new IconctlError('--continue is not supported with --input; the complete local collection must be valid.')
   }
-  const input = localPath(options.input, 'input')
-  const output = localPath(options.output ?? 'preview.html', 'output')
+  const input = localIconPath(options.input, 'input')
+  const output = localIconPath(options.output ?? 'preview.html', 'output')
   context.phase = 'execution'
   const json = await readIcons(input)
   const comparison = compareIconSets(undefined, json)

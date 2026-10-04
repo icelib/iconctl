@@ -75,7 +75,7 @@ describe('writeDiffHtml', () => {
     await link(input, hardlink)
     await symlink(cwd, alias)
     for (const target of [input, hardlink, join(alias, 'icons.json')]) {
-      await expect(writeDiffHtml(target, comparison, { inputs: [input], dryRun: true })).rejects.toThrow(/conflicts with input/)
+      await expect(writeDiffHtml(target, comparison, { inputs: [input], dryRun: true })).rejects.toThrow(`Report output conflicts with input: ${input}`)
     }
     expect(await readFile(input, 'utf8')).toBe('{"input":true}')
   })
@@ -86,7 +86,7 @@ describe('writeDiffHtml', () => {
     await symlink(input, symlinkTarget)
     await mkdir(directory)
     for (const target of [symlinkTarget, directory]) {
-      await expect(writeDiffHtml(target, comparison)).rejects.toThrow(/regular file/)
+      await expect(writeDiffHtml(target, comparison)).rejects.toThrow(`Report target must be a regular file: ${target}`)
     }
   })
 

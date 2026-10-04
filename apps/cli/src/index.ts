@@ -12,10 +12,12 @@ export {
   parseFigmaFileKey,
   renderDiffHtml,
   renderPreviewHtml,
+  renderSvgSprite,
   resolveConfig,
   sync,
   writeDiffHtml,
   writePreviewHtml,
+  writeSvgSprite,
 } from '@iconctl/core'
 export type {
   CheckInputOptions,
@@ -29,9 +31,11 @@ export type {
   IconDiff,
   IconSetComparison,
   SourceConfig,
+  SvgSpriteSummary,
   SyncIssue,
   SyncOptions,
   SyncResult,
   WriteDiffHtmlOptions,
   WritePreviewHtmlOptions,
+  WriteSvgSpriteOptions,
 } from '@iconctl/core'

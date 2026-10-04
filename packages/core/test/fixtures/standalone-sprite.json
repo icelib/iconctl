@@ -1,0 +1,39 @@
+{
+  "prefix": "brand",
+  "icons": {
+    "default": {
+      "body": "<path fill=\"red\" d=\"M0 0h8v8z\"/>"
+    },
+    "wide": {
+      "body": "<title id=\"label\">A &amp; B</title><defs><linearGradient id=\"paint\"><stop stop-color=\"#abc\"/></linearGradient></defs><path id=\"shape\" aria-labelledby=\"label\" fill=\"url(#paint)\" stroke=\"currentColor\" d=\"M0 0h8v8z\"/><use href=\"#shape\"/>",
+      "left": -2,
+      "top": 3,
+      "width": 32,
+      "height": 16
+    },
+    "repeated": {
+      "body": "<title id=\"label\">A &amp; B</title><defs><linearGradient id=\"paint\"><stop stop-color=\"#abc\"/></linearGradient></defs><path id=\"shape\" aria-labelledby=\"label\" fill=\"url(#paint)\" stroke=\"currentColor\" d=\"M0 0h8v8z\"/><use href=\"#shape\"/>"
+    },
+    "hidden": {
+      "body": "<path fill=\"currentColor\"/>",
+      "hidden": true
+    },
+    "_dot.name": {
+      "body": "<circle r=\"2\"/>"
+    }
+  },
+  "aliases": {
+    "rotated": {
+      "parent": "wide",
+      "rotate": 1
+    },
+    "flipped": {
+      "parent": "rotated",
+      "hFlip": true
+    },
+    "twice": {
+      "parent": "rotated",
+      "rotate": 1
+    }
+  }
+}

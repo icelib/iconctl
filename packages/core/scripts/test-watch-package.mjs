@@ -39,9 +39,10 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs', 'standalone-sprite-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
+  await copyFile(join(core, 'test/fixtures/standalone-sprite.json'), join(consumer, 'standalone-sprite.json'))
   return consumer
 }
 async function check(consumer, mode, scenario) {
@@ -57,6 +58,20 @@ try {
 import { requestFigmaToken } from '@iconctl/core/figma/oauth'
 import { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from '@iconctl/core'
 import { renderPreviewHtml as renderPreview, writePreviewHtml as writePreview, type WritePreviewHtmlOptions as PreviewOptions } from 'iconctl'
+import { renderSvgSprite, writeSvgSprite, type SvgSpriteSummary, type WriteSvgSpriteOptions } from '@iconctl/core'
+import { renderSvgSprite as renderSprite, writeSvgSprite as writeSprite, type SvgSpriteSummary as SpriteSummary, type WriteSvgSpriteOptions as SpriteOptions } from 'iconctl'
+const spriteOptions: WriteSvgSpriteOptions = { inputs: ['icons.json'] as const, dryRun: true }
+const spriteFacadeOptions: SpriteOptions = spriteOptions
+const spriteJson = { prefix: 'brand', icons: {} }
+const svg: Promise<string> = renderSvgSprite(spriteJson)
+const facadeSvg: Promise<string> = renderSprite(spriteJson)
+const spriteWriter: Promise<SvgSpriteSummary> = writeSvgSprite('icons.svg', spriteJson)
+const facadeSpriteWriter: Promise<SpriteSummary> = writeSprite('icons.svg', spriteJson, spriteFacadeOptions)
+// @ts-expect-error Sprite input protection requires an array of file paths.
+const invalidSprite: WriteSvgSpriteOptions = { inputs: 'icons.json' }
+// @ts-expect-error Sprite dryRun is boolean.
+const invalidSpriteFacade: SpriteOptions = { dryRun: 'true' }
+void svg; void facadeSvg; void spriteWriter; void facadeSpriteWriter; void invalidSprite; void invalidSpriteFacade
 const previewOptions: WritePreviewHtmlOptions = { inputs: ['icons.json'] as const, dryRun: true }
 const facadeOptions: PreviewOptions = previewOptions
 const json = { prefix: 'brand', icons: {} }
@@ -115,6 +130,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
     process.stdout.write(configuration.stdout)
     const sprite = await run(node, [join(consumer, 'sprite-consumer.mjs'), mode], consumer)
     process.stdout.write(sprite.stdout)
+    const standalone = await run(node, [join(consumer, 'standalone-sprite-consumer.mjs'), mode], consumer)
+    process.stdout.write(standalone.stdout)
     const preview = await run(node, [join(consumer, 'preview-consumer.mjs'), mode], consumer)
     process.stdout.write(preview.stdout)
     const initialized = await run(node, [join(consumer, 'init-consumer.mjs'), mode], consumer)
