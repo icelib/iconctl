@@ -15,6 +15,7 @@ import type { NavigationIntent } from './features/projects/draft-navigation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, downloadSnapshotSvg, initializeSession, restoreBackup, upload } from './api'
 import { downloadBlob } from './browser-download'
+import { createDiagnosticCopy } from './features/history/diagnostic-copy'
 import { createHistoryReveal, historyJobAvailable } from './features/history/history-reveal'
 import JobAttempts from './features/history/JobAttempts.vue'
 import { snapshotOrigin } from './features/history/snapshot-origin'
@@ -257,6 +258,10 @@ const reportDownload = createComparisonReportDownload({
   save: downloadBlob,
 })
 const reportDownloadState = reportDownload.state
+const diagnosticCopy = createDiagnosticCopy({
+  current: () => preview.value,
+  blocked: () => view.value !== 'preview' || !!reviewState.value.pending,
+})
 const svgFiles = computed(() => Object.keys(preview.value?.content.files ?? {}).filter(name => name.startsWith('svg/') && /\.svg$/i.test(name)))
 const latePublication = ref<Job>()
 const publication = createReleaseReview({
@@ -287,12 +292,14 @@ watch(
   { flush: 'post' },
 )
 watch(selectedId, () => {
+  diagnosticCopy.invalidate()
   svgDownload.invalidate()
   reportDownload.invalidate()
   review.invalidate(true)
   publication.close()
 }, { flush: 'sync' })
 watch(view, () => {
+  diagnosticCopy.invalidate()
   svgDownload.invalidate()
   reportDownload.invalidate()
   review.invalidate()
@@ -576,6 +583,7 @@ async function openSnapshot(id: string, compareTo = '') {
       publication.close()
       svgDownload.invalidate()
       reportDownload.invalidate()
+      diagnosticCopy.invalidate()
       void review.open(id, compareTo)
       return true
     },
@@ -689,6 +697,10 @@ async function logout() {
   })
 }
 onMounted(retryWorkspace)
+onMounted(() => {
+  window.addEventListener('pagehide', diagnosticCopy.suspend)
+  window.addEventListener('pageshow', diagnosticCopy.resume)
+})
 onUnmounted(() => {
   disposed = true
   workspace.dispose()
@@ -696,6 +708,9 @@ onUnmounted(() => {
   attemptViews.clear()
   svgDownload.dispose()
   reportDownload.dispose()
+  diagnosticCopy.dispose()
+  window.removeEventListener('pagehide', diagnosticCopy.suspend)
+  window.removeEventListener('pageshow', diagnosticCopy.resume)
   uploads.dispose()
   draftNavigation.dispose()
   window.removeEventListener('beforeunload', protectDocumentLeave)
@@ -1337,7 +1352,7 @@ onUnmounted(() => {
             第 {{ preview.snapshot.attempt ?? 1 }} 次尝试 · {{ date(preview.snapshot.createdAt) }}
           </p>
           <SnapshotOrigin v-if="origin" :origin="origin" :locatable="!!originLocatable" :busy="busy" :refreshing="workspaceState.pending" @locate="locateSnapshotOrigin" @refresh="retryWorkspace" />
-          <SnapshotDiagnostics :issues="preview.content.issues" :failed="preview.content.failed" />
+          <SnapshotDiagnostics :snapshot="preview.snapshot" :issues="preview.content.issues" :failed="preview.content.failed" :blocked="!!reviewState.pending" :copy="diagnosticCopy" />
           <div class="icon-grid">
             <article v-for="name in iconNames" :key="name" class="icon-tile">
               <div class="icon-comparison">

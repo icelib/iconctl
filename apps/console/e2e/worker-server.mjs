@@ -11,6 +11,7 @@ import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from
 async function main() {
   const entrypoint = new Map([
     ['history', './fixtures/history-worker.mjs'],
+    ['diagnostics', './fixtures/diagnostics-worker.mjs'],
     ['provenance', './fixtures/provenance-worker.mjs'],
     ['release-comparison', './fixtures/release-comparison-worker.mjs'],
     ['comparison-report', './fixtures/comparison-report-worker.mjs'],
