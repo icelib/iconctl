@@ -1,10 +1,10 @@
 import type { SourceConfig } from '@iconctl/core'
-import type { CommandContext } from './failure'
+import type { CommandContext } from './failure.ts'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { IconctlError, parseFigmaFileKey, resolveConfig } from '@iconctl/core'
 import { consola } from 'consola'
-import { comparableInitPath, createInitFile, initLocation, inspectInitTarget, sameInitLocation } from './init-file'
+import { comparableInitPath, createInitFile, initLocation, inspectInitTarget, sameInitLocation } from './init-file.ts'
 
 export interface InitCommandOptions {
   config?: unknown

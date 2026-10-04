@@ -1,4 +1,4 @@
-export { runCli } from './program'
+export { runCli } from './program.ts'
 export {
   check,
   compareIconSets,

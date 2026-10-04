@@ -395,3 +395,24 @@ const diff = diffIconSets(beforeJson, afterJson)
 ## 私有线上控制台
 
 需要在网页管理多项目、授权续期、快照审核和 npm 发布时，参阅[控制台接入](./console)。
+
+## 在本仓库开发 CLI
+
+Workspace 可执行入口通过 Node 类型擦除直接运行 `apps/cli/dev/index.ts`。先构建公开的 core 依赖，再从本地图标包调用真实入口：
+
+```sh
+pnpm --filter @iconctl/core build
+pnpm --filter @iconctl/icons exec iconctl --help
+pnpm --filter @iconctl/icons exec iconctl --version
+pnpm --filter iconctl start --help
+```
+
+CLI 源码修改会立即生效；修改 core 源码后需要重新构建 `@iconctl/core`，或保持它的 `dev` 监听运行。原生入口要求 Node 22.13 或更新版本，CLI 内部相对导入须带 `.ts` 扩展名。Node 22.13 会输出类型擦除的实验性警告。导入 CLI 库的公开入口不会自动执行命令。
+
+发布包使用 `bin/index.js` 和编译后的 `dist` 文件。`--version` 与 `-v` 使用 CLI 自身的包版本，不受当前目录或调用方项目版本影响。发布产物的版本在构建时写入：修改 CLI 源码或包 metadata 后，须先运行 `pnpm --filter iconctl... build` 再打包。仓库 release 流程会在版本更新后构建；手动 pack 也需要当前构建产物。
+
+回归验证区分原生源码执行、已打包的开发入口和发布入口。要保持构建工具使用当前 Node，同时用另一个已安装的 Node 验证原始源码进程，可执行：
+
+```sh
+ICONCTL_NATIVE_NODE=/absolute/path/to/node pnpm exec vitest run --project iconctl apps/cli/test/native-cli.test.ts
+```

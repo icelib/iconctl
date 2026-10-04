@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { compareIconSets, writeDiffHtml } from '@iconctl/core'
-import { readIcons } from './read-icons'
+import { readIcons } from './read-icons.ts'
 
 interface DiffOptions {
   html?: string

@@ -48,7 +48,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "start": "node --experimental-strip-types src/index.ts",
+    "start": "node --experimental-strip-types dev/index.ts",
     "dev": "tsdown --watch --sourcemap",
     "build": "tsdown",
     "test": "vitest run",

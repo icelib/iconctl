@@ -1,8 +1,8 @@
-import type { CommandContext } from './failure'
+import type { CommandContext } from './failure.ts'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { compareIconSets, IconctlError, writePreviewHtml } from '@iconctl/core'
-import { readIcons } from './read-icons'
+import { readIcons } from './read-icons.ts'
 
 export interface PreviewCommandOptions {
   input?: string

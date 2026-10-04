@@ -1,5 +1,5 @@
 import type { CheckReport, CheckValidation } from '@iconctl/core'
-import type { CommandContext } from './failure'
+import type { CommandContext } from './failure.ts'
 import process from 'node:process'
 import { check, IconctlError, loadConfig } from '@iconctl/core'
 import { consola } from 'consola'

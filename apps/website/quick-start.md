@@ -395,3 +395,24 @@ Two ways to get the JSON to other developers: ship it **in the app repo**, or pu
 ## Private online console
 
 For browser-based projects, OAuth renewal, snapshot review and npm publishing, see [console setup](./console).
+
+## Developing the CLI in this workspace
+
+The workspace executable runs `apps/cli/dev/index.ts` directly with Node's type stripping. Build its public core dependency first, then use the same executable as the local icons package:
+
+```sh
+pnpm --filter @iconctl/core build
+pnpm --filter @iconctl/icons exec iconctl --help
+pnpm --filter @iconctl/icons exec iconctl --version
+pnpm --filter iconctl start --help
+```
+
+CLI source edits take effect immediately; rebuild `@iconctl/core` after changing core source, or keep its `dev` watcher running. This native entry needs Node 22.13 or newer and explicit `.ts` extensions for local CLI imports. Node 22.13 emits an experimental type-stripping warning. Importing the CLI library facade does not start a command.
+
+Published packages use `bin/index.js` and compiled `dist` files. `--version` and `-v` read the CLI package's version, independently of the working directory or the calling project's version. The published version is embedded during build: after changing CLI source or package metadata, run `pnpm --filter iconctl... build` before packing. The repository release workflow builds after version updates; a manual pack needs the same fresh build.
+
+Regression checks distinguish native source execution from bundled development and published entry points. To run the raw-source process tests against another installed Node while keeping the build tools on your current Node:
+
+```sh
+ICONCTL_NATIVE_NODE=/absolute/path/to/node pnpm exec vitest run --project iconctl apps/cli/test/native-cli.test.ts
+```

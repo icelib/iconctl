@@ -1,7 +1,7 @@
-import type { CheckCommandOptions } from './check'
-import type { CommandContext } from './failure'
-import type { InitCommandOptions } from './init'
-import type { PreviewCommandOptions } from './preview'
+import type { CheckCommandOptions } from './check.ts'
+import type { CommandContext } from './failure.ts'
+import type { InitCommandOptions } from './init.ts'
+import type { PreviewCommandOptions } from './preview.ts'
 import process from 'node:process'
 import {
   loadConfig,
@@ -9,14 +9,15 @@ import {
 } from '@iconctl/core'
 import { cac } from 'cac'
 import { consola } from 'consola'
-import { runCheck } from './check'
-import { runDiff } from './diff'
-import { reportCliError } from './failure'
-import { runFigmaAuth } from './figma-auth'
-import { runInit } from './init'
-import { runLocalPreview } from './preview'
-import { syncSummary } from './sync-summary'
-import { runWatch } from './watch'
+import packageJson from '../package.json' with { type: 'json' }
+import { runCheck } from './check.ts'
+import { runDiff } from './diff.ts'
+import { reportCliError } from './failure.ts'
+import { runFigmaAuth } from './figma-auth.ts'
+import { runInit } from './init.ts'
+import { runLocalPreview } from './preview.ts'
+import { syncSummary } from './sync-summary.ts'
+import { runWatch } from './watch.ts'
 
 interface GlobalOptions {
   config?: string
@@ -153,7 +154,7 @@ export async function runCli(argv: string[] = process.argv) {
     .action(action((options: InitCommandOptions) => runInit(options, context)))
 
   cli.help()
-  cli.version('0.0.0')
+  cli.version(packageJson.version)
 
   try {
     const parsed = cli.parse(argv, { run: false })

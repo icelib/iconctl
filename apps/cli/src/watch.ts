@@ -1,7 +1,7 @@
 import type { WatchEvent } from '@iconctl/core'
 import process from 'node:process'
 import { IconctlAbortError, IconctlSyncError, watch } from '@iconctl/core'
-import { syncSummary } from './sync-summary'
+import { syncSummary } from './sync-summary.ts'
 
 interface WatchCliOptions {
   config?: string

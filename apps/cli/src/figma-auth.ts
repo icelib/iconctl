@@ -1,4 +1,4 @@
-import type { CommandContext } from './failure'
+import type { CommandContext } from './failure.ts'
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { getFigmaAuthStatus, IconctlError, loginFigma, logoutFigma } from '@iconctl/core'

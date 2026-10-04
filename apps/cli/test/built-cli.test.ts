@@ -13,6 +13,7 @@ describe('built CLI process boundary', () => {
   let fixture: string
   let cwd: string
   let executable: string
+  let version: string
 
   beforeAll(async () => {
     fixture = await mkdtemp(join(tmpdir(), 'iconctl-built-cli-'))
@@ -35,6 +36,9 @@ describe('built CLI process boundary', () => {
     await mkdir(join(fixture, 'cli', 'bin'))
     executable = join(fixture, 'cli', 'bin', 'index.js')
     await copyFile(join(cliDirectory, 'bin', 'index.js'), executable)
+    version = JSON.parse(await readFile(join(fixture, 'cli', 'package.json'), 'utf8')).version
+    await writeFile(join(fixture, 'cli', 'esm-consumer.mjs'), `import { runCli } from './dist/index.mjs'; await runCli(process.argv)`)
+    await writeFile(join(fixture, 'cli', 'cjs-consumer.cjs'), `const { runCli } = require('./dist/index.cjs'); runCli(process.argv).catch(() => { process.exitCode ||= 1 })`)
   }, 30000)
 
   beforeEach(async () => {
@@ -58,6 +62,7 @@ describe('built CLI process boundary', () => {
         env: {
           ...process.env,
           NO_COLOR: '1',
+          npm_package_version: 'unrelated-consumer',
           FIGMA_TOKEN: '',
           FIGMA_CLIENT_ID: '',
           FIGMA_CLIENT_SECRET: '',
@@ -80,12 +85,26 @@ describe('built CLI process boundary', () => {
     return runEntry(executable, args)
   }
 
+  it.each([
+    ['published bin', 'bin/index.js'],
+    ['bundled development', 'dist/dev.mjs'],
+    ['ESM consumer', 'esm-consumer.mjs'],
+    ['CJS consumer', 'cjs-consumer.cjs'],
+  ])('reports package metadata version through the %s', async (_name, entry) => {
+    for (const flag of ['--version', '-v']) {
+      const result = await runEntry(join(fixture, 'cli', entry), [flag])
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout.trim()).toBe(`iconctl/${version} ${process.platform}-${process.arch} node-${process.version}`)
+    }
+  })
+
   describe('safe initialization through the built entry points', () => {
     const flags = ['--source', 'directory', '--input', './source', '--prefix', 'brand']
 
-    it.each(['packaged', 'development'])('creates a usable config from the %s entry with closed stdin', async (entry) => {
+    it.each(['published bin', 'bundled development'])('creates a usable config from the %s entry with closed stdin', async (entry) => {
       await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("init must not execute configuration")')
-      const result = await runEntry(entry === 'packaged' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['init', ...flags, '--config', 'nested/config.ts', '--no-interactive', '--json'])
+      const result = await runEntry(entry === 'published bin' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['init', ...flags, '--config', 'nested/config.ts', '--no-interactive', '--json'])
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')
       expect(JSON.parse(result.stdout)).toEqual({ configFile: join(cwd, 'nested/config.ts'), sourceType: 'directory', prefix: 'brand', outputFiles: [join(cwd, 'nested/config.ts')] })
@@ -172,9 +191,9 @@ describe('built CLI process boundary', () => {
     expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe('previous output')
   })
 
-  it.each(['packaged', 'development'])('prints a human failure once at the %s entry boundary', async (entry) => {
+  it.each(['published bin', 'bundled development'])('prints a human failure once at the %s entry boundary', async (entry) => {
     await rm(join(cwd, 'iconctl.config.mjs'))
-    const result = await runEntry(entry === 'packaged' ? executable : join(fixture, 'cli', 'dist', 'dev.mjs'), ['sync'])
+    const result = await runEntry(entry === 'published bin' ? executable : join(fixture, 'cli', 'dist', 'dev.mjs'), ['sync'])
     expect(result.code).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr.match(/No iconctl config found/g)).toHaveLength(1)
@@ -238,15 +257,15 @@ describe('built CLI process boundary', () => {
     expect(report).toMatchObject({ prefix: 'brand', count: 1, source: 'json', valid: false, success: false, command: 'check', issues: [{ name: 'good', stage: 'validation' }], error: { phase: 'execution' } })
     expect(report.error.issues).toEqual(report.issues)
   })
-  describe('local preview with the shipped and development entry points', () => {
+  describe('local preview with the published and bundled development entry points', () => {
     const icons = { prefix: 'brand', icons: { arrow: { body: '<path d="M0 0h8v8H0z"/>', hidden: true } }, aliases: { rotated: { parent: 'arrow', rotate: 1 } } }
     beforeEach(async () => {
       await writeFile(join(cwd, 'icons.json'), `\uFEFF${JSON.stringify(icons)}`)
       await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("preview must not execute project configuration")')
     })
 
-    it.each(['packaged', 'development'])('writes a local gallery through the %s entry', async (entry) => {
-      const result = await runEntry(entry === 'packaged' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['preview', '--input', 'icons.json', '--output', 'reports/local.html', '--json'])
+    it.each(['published bin', 'bundled development'])('writes a local gallery through the %s entry', async (entry) => {
+      const result = await runEntry(entry === 'published bin' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['preview', '--input', 'icons.json', '--output', 'reports/local.html', '--json'])
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')
       expect(JSON.parse(result.stdout)).toEqual({ input: { file: join(cwd, 'icons.json'), prefix: 'brand' }, count: 2, outputFiles: [join(cwd, 'reports/local.html')] })

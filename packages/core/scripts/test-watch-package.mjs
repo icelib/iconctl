@@ -85,6 +85,26 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
   assert((await readFile(join(installedCore, 'THIRD_PARTY_NOTICES'), 'utf8')).includes('Thorsten Lorenz'))
   const cliManifest = JSON.parse(await readFile(join(consumer, 'node_modules/iconctl/package.json'), 'utf8'))
   assert.equal(cliManifest.bin.iconctl, './bin/index.js')
+  const installedCliFiles = await readdir(join(consumer, 'node_modules/iconctl'))
+  assert(!installedCliFiles.includes('src'))
+  assert(!installedCliFiles.includes('dev'))
+  await writeFile(join(consumer, 'version-esm.mjs'), `import { runCli } from 'iconctl'; await runCli(process.argv)`)
+  await writeFile(join(consumer, 'version-cjs.cjs'), `const { runCli } = require('iconctl'); runCli(process.argv).catch(() => { process.exitCode ||= 1 })`)
+  const versionCwd = join(consumer, 'version-cwd')
+  await mkdir(versionCwd)
+  const runtime = (await run(node, ['--version'], versionCwd)).stdout.trim()
+  for (const [mode, entry] of [
+    ['bin', join(consumer, 'node_modules/iconctl/bin/index.js')],
+    ['esm', join(consumer, 'version-esm.mjs')],
+    ['cjs', join(consumer, 'version-cjs.cjs')],
+  ]) {
+    for (const flag of ['--version', '-v']) {
+      const result = await exec(node, [entry, flag], { cwd: versionCwd, env: { ...env, npm_package_version: 'unrelated-consumer' }, timeout: 10000 })
+      assert.equal(result.stderr, '')
+      assert.equal(result.stdout.trim(), `iconctl/${cliManifest.version} ${process.platform}-${process.arch} node-${runtime}`)
+    }
+    process.stdout.write(`${JSON.stringify({ scenario: 'installed-cli-version', mode, version: cliManifest.version, runtime, passed: true })}\n`)
+  }
   for (const mode of ['esm', 'cjs']) {
     for (const scenario of ['healthy', 'startup', 'handover', 'cancel']) {
       await check(consumer, mode, scenario)
