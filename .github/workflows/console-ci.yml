@@ -43,6 +43,9 @@ jobs:
       - name: Test runner and contracts
         run: pnpm exec vitest run --project=@iconctl/console-runner --project=@iconctl/console-contracts
 
+      - name: Test assembled site output
+        run: pnpm --filter @iconctl/console test:build
+
       # The Cloudflare test runtime uses the console's Vitest version.
       - name: Test Worker
         run: pnpm --filter @iconctl/console test:worker

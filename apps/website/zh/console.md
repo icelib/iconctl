@@ -183,6 +183,8 @@ pnpm --filter @iconctl/console exec wrangler secret bulk /absolute/path/producti
 pnpm --filter @iconctl/console run deploy
 ```
 
+控制台构建先完成类型检查及完整 Website 输出预检，再重建自有的 `apps/console/dist/public` 目录，随后把当前 Vue 应用写入 `app/` 并复制完整文档。因此页面和公开资源删除、改名后不会继续残留。请使用上面的命令先构建依赖；单独执行控制台构建时，需要已有当前 Website 产物。内部组装脚本根据脚本位置解析固定目录，要求 Website 具有普通文件 `index.html`，拒绝文档产物及复制目标中的符号链接、拒绝链接形式的 `dist`/`public` 输出目录，并为应用保留 `app`、`api`、`login` 及其 `.html`、大小写变体。自编文件应放在源码或 public 输入目录，不放在生成目录。类型检查或输入预检失败会保留当前输出；准备完成后的失败可能留下不完整产物，只有构建成功后才能部署。`pnpm --filter @iconctl/console test:build` 使用 Node 原生测试运行器验证独立输出夹具，Console CI 将其与 Worker Vitest 分开执行。
+
 部署要求改动已提交且提交已推送到 `origin/main`，执行器固定到该 SHA；脚本先执行 dry-run 再部署。GitHub 自动部署需配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` Secrets，并在初次接入验证后设置仓库变量 `ICONCTL_DEPLOY_ENABLED=true`。创建 GitHub production environment 可进一步管理部署访问。
 
 仓库保留可选的独立 staging 配置（独立 DO 和 R2）。本实例按所有者选择直接使用 `iconctl.icebreaker.top`；真实 Figma OAuth 与 npm 发布仍需要完成提供方配置后验收。每次更新执行器后，目标仓库需重新创建并合并安装 PR。
