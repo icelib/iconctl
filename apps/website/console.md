@@ -115,6 +115,8 @@ Open **Tasks and versions → Attempts and snapshots** (「任务与版本 → �
 
 Snapshot diagnostics include the failing stage, source type and position, and design node when recorded. Figma issues with a file key and node ID provide an **Open in Figma** link. Source positions start at 1 in the UI. A snapshot's issue count and publishing checks are unchanged.
 
+The review also shows the immutable source records captured with the snapshot, including each source's position, type, file key when available and whether it was reused as not modified. Older artifacts without source records remain reviewable and are labelled as unrecorded; the panel never infers sources from the current project configuration.
+
 Older snapshots without `attempt` are shown under attempt 1. Older stage events without an attempt are listed separately as unassigned legacy records; their attempt is not guessed. Older issues remain readable and show unavailable metadata as unrecorded. These optional fields require no data migration or runner request changes. New metadata is available when the pinned executor emits structured issues; update the runner installation after deploying an executor that supports them.
 
 ### Filter diagnostics and copy one record's location

@@ -21,6 +21,7 @@ import JobAttempts from './features/history/JobAttempts.vue'
 import { snapshotOrigin } from './features/history/snapshot-origin'
 import SnapshotDiagnostics from './features/history/SnapshotDiagnostics.vue'
 import SnapshotOrigin from './features/history/SnapshotOrigin.vue'
+import SnapshotSources from './features/history/SnapshotSources.vue'
 import { upsertSubmittedJob } from './features/history/submitted-job'
 import { emptyTaskFilters, filterTasks, jobLabels as labels } from './features/history/task-filters'
 import { createTaskSubmission } from './features/history/task-submission'
@@ -1399,6 +1400,7 @@ onUnmounted(() => {
             第 {{ preview.snapshot.attempt ?? 1 }} 次尝试 · {{ date(preview.snapshot.createdAt) }}
           </p>
           <SnapshotOrigin v-if="origin" :origin="origin" :locatable="!!originLocatable" :busy="busy" :refreshing="workspaceState.pending" @locate="locateSnapshotOrigin" @refresh="retryWorkspace" />
+          <SnapshotSources :sources="preview.content.sources" />
           <SnapshotDiagnostics :snapshot="preview.snapshot" :issues="preview.content.issues" :failed="preview.content.failed" :blocked="!!reviewState.pending" :copy="diagnosticCopy" />
           <div class="icon-grid">
             <article v-for="name in iconNames" :key="name" class="icon-tile">
