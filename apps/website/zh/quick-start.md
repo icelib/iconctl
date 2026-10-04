@@ -121,6 +121,8 @@ pnpm exec iconctl sync --json
 
 配置使用远程 Iconify 来源时，`pnpm exec iconctl sync --offline` 只复用之前在线同步写入且已通过校验的缓存，不请求该来源。缓存缺失或损坏会在导入来源前明确失败；先执行一次普通在线同步即可建立缓存。本地来源不受影响，配置模式的 `preview` 也接受此选项。
 
+远程 HTTPS Iconify 集合限制为 25 MiB（26,214,400 字节），按 HTTP 解压后的实际响应正文计数，不依赖 `Content-Length`。30 秒请求时限覆盖响应头和正文；读取响应正文与缓存期间也可由调用方取消。响应超限会失败，不回退到旧缓存，也不替换缓存或产物。HTTP 错误响应最多读取前 4 KiB，并显示最多 300 个字符。这些限制不改变本地 Iconify 文件来源的行为。
+
 ### 检查远程 Iconify 缓存
 
 ```bash
@@ -130,7 +132,7 @@ pnpm exec iconctl cache diagnose --cache-dir .iconctl-cache --url https://cdn.ex
 
 默认命令加载项目配置以确定 `cacheDir`；使用 `--cache-dir` 会完全跳过配置及其导入，不能与 `--config` 同用。诊断只读取远程 Iconify 响应缓存，不请求来源、不修复缓存、不改变产物。添加 `--dry-run` 也保持只读。
 
-JSON 格式为 `{ directory, entries, valid, invalid, missing }`。每个条目包含绝对路径 `file`、状态 `status`、元数据字节数 `bytes`；可读取时还包含 `url`、`bodyBytes`、`keyMatches`、`etag`、`lastModified` 和错误 `error`，不会包含图标正文。空缓存目录返回空列表；`--url` 直接检查该 URL 的缓存键，文件不存在时也会明确返回 `missing`。UTF-8／JSON 损坏、URL／键不一致、非普通文件和无法用于 HTTP 请求的验证头均返回 `invalid`。使用 `--strict` 时，无效或缺失条目会令退出码为 1；不使用时，这类诊断结果退出码为 0。参数错误、配置错误和缓存目录不可读取仍通过统一 CLI 错误格式以 1 退出。
+JSON 格式为 `{ directory, entries, valid, invalid, missing }`。每个条目包含绝对路径 `file`、状态 `status`、元数据字节数 `bytes`；可读取时还包含 `url`、`bodyBytes`、`keyMatches`、`etag`、`lastModified` 和错误 `error`，不会包含图标正文。空缓存目录返回空列表；`--url` 直接检查该 URL 的缓存键，文件不存在时也会明确返回 `missing`。UTF-8／JSON 损坏、URL／键不一致、非普通文件和无法用于 HTTP 请求的验证头均返回 `invalid`。缓存的集合正文同样受 25 MiB UTF-8 上限约束，外层元数据 JSON 另有独立读取上限，超过任一上限也会返回 `invalid`。使用 `--strict` 时，无效或缺失条目会令退出码为 1；不使用时，这类诊断结果退出码为 0。参数错误、配置错误和缓存目录不可读取仍通过统一 CLI 错误格式以 1 退出。
 
 `valid` 表示缓存响应和集合结构可由同步复用，不保证每个图标正文、选中别名或项目规则均有效；可用 `sync --offline --dry-run` 继续验证。此命令不检查 Figma 缓存或同步完成标记。在线同步遇到无效缓存会不带条件头重新请求；离线同步要求缓存有效。
 

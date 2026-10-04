@@ -1,5 +1,6 @@
 import type { RemoteIconifyCache } from '../iconify-cache'
 import type { LoadedSource, ResolvedIconifySourceConfig } from './types'
+import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -8,15 +9,21 @@ import { checkpoint, settleWithAbort, throwIfAborted } from '../abort'
 import { IconctlError } from '../errors'
 import { readIconifyCacheEntry, remoteCacheFile } from '../iconify-cache'
 import { createIconifyJsonResolver } from '../iconify-json'
+import { ICONIFY_BODY_MAX_BYTES, ICONIFY_CACHE_MAX_BYTES } from '../iconify-limits'
+import { discardResponseBody, readResponseBytes } from '../iconify-transport'
 import { decodeUtf8 } from '../json-input'
 import { shouldSkipName } from '../naming'
 
 async function writeRemoteCache(file: string, value: RemoteIconifyCache, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal)
+  const serialized = `${JSON.stringify(value)}\n`
+  if (Buffer.byteLength(serialized) > ICONIFY_CACHE_MAX_BYTES) {
+    return
+  }
   const temporary = `${file}.${randomUUID()}.tmp`
   try {
     await mkdir(dirname(file), { recursive: true })
-    await writeFile(temporary, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    await writeFile(temporary, serialized, { encoding: 'utf8', mode: 0o600, flag: 'wx', ...(signal ? { signal } : {}) })
     throwIfAborted(signal)
     await rename(temporary, file)
   }
@@ -42,10 +49,11 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cwd: string, cacheDir: string, signal?: AbortSignal, offline?: boolean }): Promise<string> {
   const url = source.url!
   const file = remoteCacheFile(resolve(options.cwd, options.cacheDir), url)
-  const { value: cached } = await readIconifyCacheEntry(file, url)
+  const { value: cached, entry } = await readIconifyCacheEntry(file, url, options.signal)
+  throwIfAborted(options.signal)
   if (options.offline) {
     if (!cached) {
-      throw new IconctlError(`Remote Iconify JSON at ${url} is unavailable in offline mode. Run sync online first to populate a valid cache.`)
+      throw new IconctlError(`Remote Iconify JSON at ${url} is unavailable in offline mode. ${entry.error ?? 'No valid cache is available'}. Run sync online first to populate a valid cache.`)
     }
     return cached.body
   }
@@ -58,43 +66,65 @@ async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cw
   }
 
   throwIfAborted(options.signal)
+  const signal = requestSignal(options.signal)
+  const requestError = (cause: unknown, status?: number) => new IconctlError(`Could not fetch remote Iconify JSON from ${url}. The request failed or timed out${status === undefined ? '' : ` (HTTP ${status})`}.`, { cause })
   let response: Response
   try {
     response = await fetch(url, {
       headers,
       redirect: 'error',
-      signal: requestSignal(options.signal),
+      signal,
     })
   }
   catch (error) {
     throwIfAborted(options.signal)
-    throw new IconctlError(`Could not fetch remote Iconify JSON from ${url}. The request failed or timed out.`, { cause: error })
+    throw requestError(error)
   }
-  throwIfAborted(options.signal)
+  if (signal.aborted) {
+    discardResponseBody(response)
+    throwIfAborted(options.signal)
+    throw requestError(signal.reason)
+  }
 
   if (response.status === 304) {
-    await response.body?.cancel()
+    discardResponseBody(response)
     if (!cached) {
       throw new IconctlError(`Remote Iconify JSON at ${url} returned 304, but no valid cached body is available.`)
     }
     return cached.body
   }
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
+    let body: string
+    try {
+      // A text hint may end inside a code point; replacement decoding is fine
+      // here, unlike decoding a collection that will be imported.
+      body = new TextDecoder().decode(await readResponseBytes(response, signal, 4 * 1024, true))
+    }
+    catch (error) {
+      throwIfAborted(options.signal)
+      throw requestError(error, response.status)
+    }
+    throwIfAborted(options.signal)
     throw new IconctlError(`Remote Iconify JSON request failed (HTTP ${response.status}) for ${url}${body ? `: ${body.slice(0, 300)}` : ''}`)
   }
 
-  let body: string
+  let bytes: Uint8Array
   try {
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    bytes = await readResponseBytes(response, signal, ICONIFY_BODY_MAX_BYTES)
     throwIfAborted(options.signal)
-    body = decodeUtf8(bytes)
   }
   catch (error) {
     throwIfAborted(options.signal)
     if (error instanceof IconctlError) {
       throw error
     }
+    throw requestError(error)
+  }
+  let body: string
+  try {
+    body = decodeUtf8(bytes)
+  }
+  catch (error) {
     throw new IconctlError(`Cannot decode remote Iconify JSON from ${url}`, { cause: error })
   }
   const text = body.replace(/^\uFEFF/, '')

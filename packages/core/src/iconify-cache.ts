@@ -1,10 +1,14 @@
+import type { BigIntStats } from 'node:fs'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { lstat, readdir, readFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open, readdir } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import process from 'node:process'
+import { throwIfAborted } from './abort'
 import { IconctlError } from './errors'
 import { createIconifyJsonResolver } from './iconify-json'
+import { ICONIFY_BODY_MAX_BYTES, ICONIFY_CACHE_MAX_BYTES } from './iconify-limits'
 import { decodeUtf8 } from './json-input'
 
 export type IconifyCacheEntryStatus = 'valid' | 'invalid' | 'missing'
@@ -63,16 +67,76 @@ function validateUrl(value: unknown): string {
   }
 }
 
-/** One parser defines cache usability for both sync and diagnostics. */
-export async function readIconifyCacheEntry(file: string, expectedUrl?: string): Promise<{ entry: IconifyCacheEntry, value?: RemoteIconifyCache }> {
-  const entry: IconifyCacheEntry = { file, status: 'invalid', bytes: 0 }
+function sameFile(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
+    && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs
+}
+
+async function readCacheMetadata(file: string, entry: IconifyCacheEntry, signal?: AbortSignal): Promise<Buffer> {
+  throwIfAborted(signal)
+  const info = await lstat(file, { bigint: true })
+  throwIfAborted(signal)
+  if (!info.isFile()) {
+    throw new IconctlError('Cache entry must be a regular file')
+  }
+  entry.bytes = Number(info.size)
+  if (info.size > BigInt(ICONIFY_CACHE_MAX_BYTES)) {
+    throw new IconctlError(`Cache metadata exceeds the ${ICONIFY_CACHE_MAX_BYTES}-byte limit`)
+  }
+  // No-follow rejects a swapped symlink; non-blocking prevents a swapped FIFO
+  // from hanging open before the descriptor's regular-file check can run.
+  const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
   try {
-    const info = await lstat(file)
-    if (!info.isFile()) {
+    throwIfAborted(signal)
+    const opened = await handle.stat({ bigint: true })
+    throwIfAborted(signal)
+    if (!opened.isFile()) {
       throw new IconctlError('Cache entry must be a regular file')
     }
-    const input = await readFile(file)
-    entry.bytes = input.byteLength
+    if (!sameFile(info, opened)) {
+      throw new IconctlError('Cache entry changed while it was being read')
+    }
+    const initialBytes = Number(info.size)
+    // One allocation also bounds memory for repeated short reads. The extra
+    // byte detects growth without reading a concurrently expanding file.
+    const input = Buffer.allocUnsafe(initialBytes + 1)
+    let bytes = 0
+    while (true) {
+      throwIfAborted(signal)
+      const result = await handle.read(input, bytes, Math.min(64 * 1024, input.byteLength - bytes), null)
+      throwIfAborted(signal)
+      if (result.bytesRead === 0) {
+        break
+      }
+      bytes += result.bytesRead
+      entry.bytes = bytes
+      if (bytes > ICONIFY_CACHE_MAX_BYTES) {
+        throw new IconctlError(`Cache metadata exceeds the ${ICONIFY_CACHE_MAX_BYTES}-byte limit`)
+      }
+      if (bytes > initialBytes) {
+        throw new IconctlError('Cache entry changed while it was being read')
+      }
+    }
+    const completed = await handle.stat({ bigint: true })
+    throwIfAborted(signal)
+    const current = await lstat(file, { bigint: true })
+    throwIfAborted(signal)
+    if (!sameFile(info, completed) || !sameFile(info, current) || BigInt(bytes) !== info.size) {
+      throw new IconctlError('Cache entry changed while it was being read')
+    }
+    return input.subarray(0, bytes)
+  }
+  finally {
+    await handle.close()
+  }
+}
+
+/** One bounded parser defines cache usability for both sync and diagnostics. */
+export async function readIconifyCacheEntry(file: string, expectedUrl?: string, signal?: AbortSignal): Promise<{ entry: IconifyCacheEntry, value?: RemoteIconifyCache }> {
+  const entry: IconifyCacheEntry = { file, status: 'invalid', bytes: 0 }
+  try {
+    const input = await readCacheMetadata(file, entry, signal)
+    throwIfAborted(signal)
     let text: string
     try {
       text = decodeUtf8(input)
@@ -105,6 +169,9 @@ export async function readIconifyCacheEntry(file: string, expectedUrl?: string):
     }
     const body = metadata['body']
     entry.bodyBytes = Buffer.byteLength(body)
+    if (entry.bodyBytes > ICONIFY_BODY_MAX_BYTES) {
+      throw new IconctlError(`Cached Iconify JSON exceeds the ${ICONIFY_BODY_MAX_BYTES}-byte limit`)
+    }
     try {
       createIconifyJsonResolver(JSON.parse(body.replace(/^\uFEFF/, '')))
     }
@@ -129,6 +196,7 @@ export async function readIconifyCacheEntry(file: string, expectedUrl?: string):
     return { entry, value: { url, body, ...validators } }
   }
   catch (error) {
+    throwIfAborted(signal)
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       entry.status = 'missing'
       entry.error = 'Cache entry is missing'

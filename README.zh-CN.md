@@ -60,7 +60,9 @@ pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-
 
 本地 Iconify JSON 可以与 SVG 或远程来源混用：`{ type: 'iconify', file: './vendor/icons.json', include: ['home'], namePrefix: 'vendor-' }`。别名、旋转和继承尺寸会先解析，再进入已有处理流程。详见 [Iconify JSON 来源](apps/website/zh/sources.md#本地-iconify-json)。
 
-本地 Iconify 集合文件按 UTF-8 读取。允许一个开头的 UTF-8 BOM；损坏的 UTF-8 会被拒绝，不会替换成其他字符。合法 Unicode（包括非 ASCII 名称和真实的替换字符）会保持不变。这条约定只适用于本地 Iconify 集合输入。
+本地 Iconify 集合文件按 UTF-8 读取。允许一个开头的 UTF-8 BOM；损坏的 UTF-8 会被拒绝，不会替换成其他字符。合法 Unicode（包括非 ASCII 名称和真实的替换字符）会保持不变。HTTPS Iconify URL 使用相同的严格解析与 ETag／Last-Modified 条件缓存；远程来源由 `sync` 拉取，不纳入本地监听范围。
+
+远程 Iconify 集合及缓存的集合正文限制为 25 MiB UTF-8 数据，HTTP 响应按解压后的实际字节计数。读取响应期间仍保留请求的 30 秒时限与调用方取消能力。响应超限会失败，不替换缓存或产物。`iconctl cache diagnose --strict` 将超限缓存报告为无效；在线同步会重新拉取，离线同步会失败。本地 Iconify 文件不受此上限影响。详见[远程限制与缓存诊断](apps/website/zh/quick-start.md#检查远程-iconify-缓存)。
 
 独立校验一个集合可运行 `iconctl check --input ./icons.json --width 24 --height 24 --json`，不加载配置、不请求来源、不写文件。尺寸规则可省略，`--name` 可覆盖命名正则。失败报告汇总导入、SVG 处理及校验问题，并以状态码 1 退出。详见[校验已有产物](apps/website/zh/quick-start.md#校验已有产物)。
 

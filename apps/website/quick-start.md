@@ -121,6 +121,8 @@ pnpm exec iconctl sync --json
 
 For a remote Iconify source, `pnpm exec iconctl sync --offline` reuses only the validated cache from an earlier online sync and does not fetch that source. Missing or corrupted cache data fails before any source is imported; run a normal online sync once to populate it. Local sources are unchanged, and config-backed `preview` accepts the same flag.
 
+Remote HTTPS Iconify collections are limited to 25 MiB (26,214,400 bytes), counted from the actual response body after HTTP decompression regardless of `Content-Length`. The 30-second request deadline covers both response headers and body; caller cancellation remains active during body and cache reads. Oversized responses fail without falling back to an older cache or replacing the cache and outputs. HTTP error responses read at most a 4 KiB prefix and display at most 300 characters. Local Iconify file sources are unchanged by these limits.
+
 ### Diagnose remote Iconify caches
 
 ```bash
@@ -130,7 +132,7 @@ pnpm exec iconctl cache diagnose --cache-dir .iconctl-cache --url https://cdn.ex
 
 The default command loads the project config to locate `cacheDir`. `--cache-dir` bypasses configuration entirely, including its imports, and cannot be combined with `--config`. Diagnostics read remote Iconify transport caches without requesting sources, repairing caches or changing outputs. `--dry-run` is also read-only.
 
-JSON contains `{ directory, entries, valid, invalid, missing }`. Each entry reports its absolute `file`, `status`, metadata `bytes` and, when readable, `url`, `bodyBytes`, `keyMatches`, `etag`, `lastModified` and `error`. Icon bodies are never included. An empty cache directory reports no entries; `--url` checks the exact URL cache key and explicitly reports `missing` even when that file does not exist. Corrupt UTF-8/JSON, a mismatched URL/key, non-file entries and unusable HTTP validators report `invalid`. `--strict` exits 1 for invalid or missing entries; without it, these findings exit 0. Invalid arguments, configuration errors and unreadable cache directories always exit 1 through the normal CLI error envelope.
+JSON contains `{ directory, entries, valid, invalid, missing }`. Each entry reports its absolute `file`, `status`, metadata `bytes` and, when readable, `url`, `bodyBytes`, `keyMatches`, `etag`, `lastModified` and `error`. Icon bodies are never included. An empty cache directory reports no entries; `--url` checks the exact URL cache key and explicitly reports `missing` even when that file does not exist. Corrupt UTF-8/JSON, a mismatched URL/key, non-file entries and unusable HTTP validators report `invalid`. Cached collection bodies share the 25 MiB UTF-8 limit, and the surrounding metadata JSON has a separate bounded read; exceeding either limit also reports `invalid`. `--strict` exits 1 for invalid or missing entries; without it, these findings exit 0. Invalid arguments, configuration errors and unreadable cache directories always exit 1 through the normal CLI error envelope.
 
 `valid` means the cached response and collection structure are reusable by sync. It does not certify individual icon bodies, selected aliases or project validation rules; use `sync --offline --dry-run` to validate those. Figma caches and the sync completion marker are outside this command's scope. Online sync refetches invalid cache entries without conditional headers, while offline sync requires a valid entry.
 
