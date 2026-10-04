@@ -1,8 +1,7 @@
 import type { CheckCommandOptions } from './check'
 import type { CommandContext } from './failure'
+import type { InitCommandOptions } from './init'
 import type { PreviewCommandOptions } from './preview'
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import process from 'node:process'
 import {
   loadConfig,
@@ -14,6 +13,7 @@ import { runCheck } from './check'
 import { runDiff } from './diff'
 import { reportCliError } from './failure'
 import { runFigmaAuth } from './figma-auth'
+import { runInit } from './init'
 import { runLocalPreview } from './preview'
 import { syncSummary } from './sync-summary'
 import { runWatch } from './watch'
@@ -67,29 +67,6 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
   if (result.diff.changed.length) {
     consola.info(`changed: ${result.diff.changed.join(', ')}`)
   }
-}
-
-function configTemplate(input: { prefix: string, json: string, sourceBlock: string, fixedSize: boolean }) {
-  return `import { defineConfig } from 'iconctl'
-
-export default defineConfig({
-  prefix: ${JSON.stringify(input.prefix)},
-  sources: [
-    ${input.sourceBlock}
-  ],
-  output: {
-    json: ${JSON.stringify(input.json)},
-    svg: 'svg',
-    preview: 'preview.html',
-    // Or ship an installable package:
-    // jsonPackage: { dir: 'packages/icons', name: '@iconify-json/brand' },
-  },
-  validate: {
-    ${input.fixedSize ? '' : '// '}width: 24,
-    ${input.fixedSize ? '' : '// '}height: 24,
-  },
-})
-`
 }
 
 export async function runCli(argv: string[] = process.argv) {
@@ -166,69 +143,14 @@ export async function runCli(argv: string[] = process.argv) {
     }))
 
   cli
-    .command('init', 'Write an iconctl.config.ts in the current directory')
-    .action(action(async () => {
-      const sourceType = await consola.prompt('Icon source', {
-        type: 'select',
-        options: [
-          { label: 'Figma file', value: 'figma' },
-          { label: 'Local SVG directory', value: 'directory' },
-          { label: 'Local Iconify JSON', value: 'iconify' },
-          { label: 'MasterGo file', value: 'mastergo' },
-          { label: 'iconfont Symbol URL or folder', value: 'iconfont' },
-          { label: '即时设计 exported SVG folder', value: 'jsdesign' },
-        ],
-      })
-      const prefix = await consola.prompt('Iconify prefix', { type: 'text', placeholder: 'brand' })
-      const json = await consola.prompt('JSON output path', { type: 'text', placeholder: 'icons.json', default: 'icons.json' })
-      let sourceBlock = `{ type: 'directory', dir: './raw-svg' }`
-      let hint = 'Put SVGs in ./raw-svg, then run `iconctl sync` or `iconctl watch`.'
-      if (sourceType === 'figma') {
-        const file = await consola.prompt('Figma file URL or file key', { type: 'text' })
-        sourceBlock = `{ type: 'figma', file: ${JSON.stringify(file)}, pages: ['Icons'] }`
-        hint = 'Run `iconctl auth figma login` for OAuth with automatic refresh, or set FIGMA_TOKEN, then run `iconctl sync`.'
-      }
-      else if (sourceType === 'mastergo') {
-        const file = await consola.prompt('MasterGo file URL (include layer_id)', { type: 'text' })
-        sourceBlock = `{ type: 'mastergo', file: ${JSON.stringify(file)} }`
-        hint = 'Set MASTERGO_TOKEN, then run `iconctl sync`. Team edition and a team-project file are required.'
-      }
-      else if (sourceType === 'iconfont') {
-        const url = await consola.prompt('iconfont Symbol JS URL (or leave empty for a folder)', { type: 'text' })
-        if (url) {
-          sourceBlock = `{ type: 'iconfont', url: ${JSON.stringify(url)}, stripPrefix: 'icon-' }`
-          hint = 'No token needed for a public Symbol URL. Run `iconctl sync`.'
-        }
-        else {
-          const dir = await consola.prompt('iconfont download folder', { type: 'text', placeholder: './iconfont', default: './iconfont' })
-          sourceBlock = `{ type: 'iconfont', dir: ${JSON.stringify(dir || './iconfont')}, stripPrefix: 'icon-' }`
-        }
-      }
-      else if (sourceType === 'jsdesign') {
-        const dir = await consola.prompt('Exported SVG folder from 即时设计', { type: 'text', placeholder: './jsdesign-svg', default: './jsdesign-svg' })
-        sourceBlock = `{ type: 'jsdesign', dir: ${JSON.stringify(dir || './jsdesign-svg')} }`
-        hint = '即时设计 has no public REST for CLI. Export SVG in the app, then run `iconctl sync`.'
-      }
-      else if (sourceType === 'iconify') {
-        const file = await consola.prompt('Iconify JSON file', { type: 'text', placeholder: './vendor/icons.json', default: './vendor/icons.json' })
-        sourceBlock = `{ type: 'iconify', file: ${JSON.stringify(file || './vendor/icons.json')} }`
-        hint = 'Keep the vendor JSON separate from output paths, then run `iconctl sync` or `iconctl watch`.'
-      }
-      else {
-        const dir = await consola.prompt('SVG directory', { type: 'text', placeholder: './raw-svg', default: './raw-svg' })
-        sourceBlock = `{ type: 'directory', dir: ${JSON.stringify(dir || './raw-svg')} }`
-      }
-      const contents = configTemplate({
-        prefix: prefix || 'brand',
-        json: json || 'icons.json',
-        sourceBlock,
-        fixedSize: sourceType !== 'iconify',
-      })
-      const target = join(process.cwd(), 'iconctl.config.ts')
-      await writeFile(target, contents, 'utf8')
-      consola.success(`Wrote ${target}`)
-      consola.info(hint)
-    }))
+    .command('init', 'Create a new TypeScript config without overwriting existing files')
+    .option('--source <type>', 'directory, iconify, figma, mastergo, iconfont, or jsdesign')
+    .option('--input <value>', 'Source path or Figma/MasterGo file reference')
+    .option('--url <url>', 'iconfont Symbol URL (instead of --input)')
+    .option('--prefix <name>', 'Iconify collection prefix')
+    .option('--json-output <file>', 'Generated output.json path (default: icons.json)')
+    .option('--no-interactive', 'Require source, prefix and input flags; never prompt')
+    .action(action((options: InitCommandOptions) => runInit(options, context)))
 
   cli.help()
   cli.version('0.0.0')

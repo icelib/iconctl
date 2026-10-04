@@ -5,29 +5,6 @@ import { consola } from 'consola'
 import { runCli } from '../src/program'
 
 describe('cli', () => {
-  it('initializes an Iconify JSON source without forcing a 24px canvas', async () => {
-    const cwd = await mkdtemp(path.join(os.tmpdir(), 'iconctl-cli-init-'))
-    const previous = process.cwd()
-    const prompt = vi.spyOn(consola, 'prompt')
-      .mockResolvedValueOnce('iconify')
-      .mockResolvedValueOnce('brand')
-      .mockResolvedValueOnce('out.json')
-      .mockResolvedValueOnce('./vendor/icons.json')
-    process.chdir(cwd)
-    try {
-      await runCli(['node', 'iconctl', 'init'])
-      const contents = await readFile(path.join(cwd, 'iconctl.config.ts'), 'utf8')
-      expect(contents).toContain('type: \'iconify\', file: "./vendor/icons.json"')
-      expect(contents).toContain('// width: 24')
-      expect(contents).toContain('// height: 24')
-    }
-    finally {
-      process.chdir(previous)
-      prompt.mockRestore()
-      await rm(cwd, { recursive: true, force: true })
-    }
-  })
-
   it('prints help without throwing', async () => {
     await expect(runCli(['node', 'iconctl', '--help'])).resolves.toBeUndefined()
   })

@@ -5,6 +5,7 @@ import { consola } from 'consola'
 
 export interface CommandContext {
   phase: 'arguments' | 'configuration' | 'authentication' | 'execution'
+  exitCode?: 1 | 130
 }
 
 interface FailureOptions {
@@ -60,7 +61,7 @@ function checkReport(error: unknown, options: FailureOptions): CheckReport {
 
 /** The only one-shot failure writer. The caller still rejects with the original value. */
 export function reportCliError(error: unknown, command: string | null, options: FailureOptions, context: CommandContext): void {
-  process.exitCode = 1
+  process.exitCode = context.exitCode ?? 1
   const message = errorMessage(error)
   // Runtime watch errors belong to its NDJSON lifecycle. Parser failures have
   // not started that lifecycle and keep their single human-readable diagnostic.

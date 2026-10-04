@@ -29,12 +29,20 @@ pnpm exec iconctl sync
 
 | 命令 | 作用 |
 | --- | --- |
-| `iconctl init` | 写 `iconctl.config.ts` |
+| `iconctl init` | 通过向导或显式参数创建新配置 |
 | `iconctl sync` | 加载来源、清洗、校验、导出 |
 | `iconctl watch` | 持续同步本地 SVG 目录，自动重载配置 |
 | `iconctl check` | 校验配置产物或 `--input icons.json` |
 | `iconctl preview` | 从配置或 `--input icons.json` 生成可离线搜索的画廊 |
 | `iconctl diff <before> <after>` | 比较本地 Iconify JSON，可生成离线 HTML 差异报告 |
+
+在脚本中显式指定来源、位置和前缀：
+
+```bash
+pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
+```
+
+`init` 创建新的 `iconctl.config.ts`，已有目标不会被覆盖。用 `--config ./config/brand.config.ts` 选择其他 `.ts` 目标，用 `--json-output ./generated/icons.json` 设置生成集合的路径。`--json` 禁用提示并返回一个结果对象；`--dry-run` 只验证，不写入任何文件或目录。初始化只创建配置，鉴权与 `sync` 需分别执行。配置位于子目录时，相对路径仍以当前目录为基准。六种来源、iconfont `--url`、必填参数和取消行为详见[脚本化初始化](apps/website/zh/quick-start.md#脚本化初始化)。
 
 `preview.html` 可离线搜索完整 Iconify 名称或工具类，并复制 `brand:arrow-left` 或 `i-brand-arrow-left`。剪贴板受限时会提供可选择的文本供手动复制；禁用 JavaScript 后仍展示全部图标。类名快捷复制要求前缀和名称均由小写字母、数字和分隔它们的单个连字符组成，且使用方已配置图标工具。不带 `--input` 的 `iconctl preview` 会运行 sync，生成时可能访问配置的来源。
 

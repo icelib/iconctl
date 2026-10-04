@@ -29,12 +29,20 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 
 | Command | Purpose |
 | --- | --- |
-| `iconctl init` | Write `iconctl.config.ts` |
+| `iconctl init` | Create a new config interactively or from explicit options |
 | `iconctl sync` | Load sources, clean, validate, export |
 | `iconctl watch` | Continuously sync local SVG folders and reload config |
 | `iconctl check` | Validate configured output or `--input icons.json` |
 | `iconctl preview` | Write a searchable offline gallery from config or `--input icons.json` |
 | `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML report |
+
+For scripts, provide a source, location and prefix:
+
+```bash
+pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
+```
+
+`init` creates a new `iconctl.config.ts` without overwriting an existing target. Use `--config ./config/brand.config.ts` for another `.ts` target and `--json-output ./generated/icons.json` to set the generated collection path. `--json` disables prompts and returns one result object; `--dry-run` validates without writing any files or directories. Initialization only creates the config; run authentication and `sync` separately. Relative paths still use the current directory when the config is nested. See [scriptable initialization](apps/website/quick-start.md#scriptable-initialization) for all six sources, iconfont `--url`, required options and cancellation.
 
 `preview.html` works offline: search full Iconify names or utility classes, then copy `brand:arrow-left` or `i-brand-arrow-left`. Clipboard restrictions show a selectable manual-copy fallback. All icons remain visible when JavaScript is disabled. Class shortcuts require lowercase letters/digits separated by single hyphens in both prefix and name, and a configured icon utility consumer. Without `--input`, `iconctl preview` runs sync and can contact your configured sources.
 

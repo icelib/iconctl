@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   return consumer
@@ -97,6 +97,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
     process.stdout.write(sprite.stdout)
     const preview = await run(node, [join(consumer, 'preview-consumer.mjs'), mode], consumer)
     process.stdout.write(preview.stdout)
+    const initialized = await run(node, [join(consumer, 'init-consumer.mjs'), mode], consumer)
+    process.stdout.write(initialized.stdout)
   }
   await check(consumer, 'bin', 'startup')
   const evaluated = await run(node, ['--input-type=module', '--eval', `

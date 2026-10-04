@@ -122,11 +122,11 @@ describe('central CLI failure boundary', () => {
     expect(['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal))).toEqual(listeners)
   })
 
-  it('reports init fatal JSON without changing interactive success', async () => {
-    const error = new Error('Prompt failed')
-    vi.spyOn(consola, 'prompt').mockRejectedValue(error)
-    await expect(runCli(['node', 'iconctl', 'init', '--json'])).rejects.toBe(error)
-    expect(report()).toEqual({ success: false, command: 'init', error: { name: 'Error', message: error.message, phase: 'execution' } })
+  it('reports missing non-interactive init flags without prompting', async () => {
+    const prompt = vi.spyOn(consola, 'prompt')
+    await expect(runCli(['node', 'iconctl', 'init', '--json'])).rejects.toThrow('Non-interactive init requires')
+    expect(report()).toMatchObject({ success: false, command: 'init', error: { phase: 'arguments' } })
+    expect(prompt).not.toHaveBeenCalled()
   })
 
   it('retains check report fields and copies the same safe issues into its envelope', async () => {

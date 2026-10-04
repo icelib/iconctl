@@ -52,7 +52,7 @@ describe('built CLI process boundary', () => {
 
   async function runEntry(entry: string, args: string[]) {
     return new Promise<{ code: number | string | null, stdout: string, stderr: string }>((resolveRun, reject) => {
-      execFile(process.execPath, [entry, ...args], {
+      const child = execFile(process.execPath, [entry, ...args], {
         cwd,
         timeout: 10000,
         env: {
@@ -72,12 +72,94 @@ describe('built CLI process boundary', () => {
           resolveRun({ code: error?.code ?? 0, stdout, stderr })
         }
       })
+      child.stdin?.end()
     })
   }
 
   async function run(...args: string[]) {
     return runEntry(executable, args)
   }
+
+  describe('safe initialization through the built entry points', () => {
+    const flags = ['--source', 'directory', '--input', './source', '--prefix', 'brand']
+
+    it.each(['packaged', 'development'])('creates a usable config from the %s entry with closed stdin', async (entry) => {
+      await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("init must not execute configuration")')
+      const result = await runEntry(entry === 'packaged' ? executable : join(fixture, 'cli/dist/dev.mjs'), ['init', ...flags, '--config', 'nested/config.ts', '--no-interactive', '--json'])
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toEqual({ configFile: join(cwd, 'nested/config.ts'), sourceType: 'directory', prefix: 'brand', outputFiles: [join(cwd, 'nested/config.ts')] })
+      expect(await readdir(join(cwd, 'nested'))).toEqual(['config.ts'])
+      await mkdir(join(cwd, 'node_modules'))
+      await symlink(join(fixture, 'cli'), join(cwd, 'node_modules/iconctl'), 'dir')
+      const synced = await run('sync', '--config', 'nested/config.ts', '--dry-run', '--json')
+      expect(synced.code).toBe(0)
+      expect(synced.stderr).toBe('')
+      expect(JSON.parse(synced.stdout)).toMatchObject({ prefix: 'brand', complete: true, added: ['good'], outputFiles: [] })
+    })
+
+    it('never prompts when required flags are missing and stdin is closed', async () => {
+      const result = await run('init', '--json')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'init', error: { phase: 'arguments', message: expect.stringContaining('--source') } })
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'source'])
+    })
+
+    it('checks future config/output case aliases through the real bin without writing probes', async () => {
+      const result = await run('init', ...flags, '--config', 'abc.ts', '--json-output', 'ABC.TS', '--dry-run', '--json')
+      expect(result.stderr).toBe('')
+      if (process.platform === 'darwin' || process.platform === 'win32') {
+        expect(result.code).toBe(1)
+        expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'init', error: { phase: 'arguments', message: expect.stringContaining('conflicts') } })
+      }
+      else {
+        expect(result.code).toBe(0)
+        expect(JSON.parse(result.stdout)).toMatchObject({ dryRun: true, outputFiles: [] })
+      }
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'source'])
+    })
+
+    it('performs a zero-write dry-run and protects an existing target', async () => {
+      const result = await run('init', ...flags, '--config', 'new/nested/config.ts', '--dry-run', '--json')
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ configFile: join(cwd, 'new/nested/config.ts'), dryRun: true, outputFiles: [] })
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'source'])
+      await writeFile(join(cwd, 'iconctl.config.ts'), 'existing bytes')
+      const existing = await run('init', ...flags, '--dry-run', '--json')
+      expect(existing.code).toBe(1)
+      expect(existing.stderr).toBe('')
+      expect(JSON.parse(existing.stdout)).toMatchObject({ success: false, command: 'init', error: { phase: 'execution', message: expect.stringContaining('Config already exists') } })
+      expect(await readFile(join(cwd, 'iconctl.config.ts'), 'utf8')).toBe('existing bytes')
+    })
+
+    it.each([
+      ['--source'],
+      ['--source', 'unknown'],
+      [...flags, '--continue'],
+      [...flags, '--force'],
+      [...flags, '--source', 'iconify'],
+      [...flags, '--config', 'config.json'],
+      [...flags, '--url', 'https://example.invalid/symbol.js'],
+    ])('reports one argument failure for %j', async (...options) => {
+      const result = await run('init', ...options, '--json')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'init', error: { phase: 'arguments' } })
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'source'])
+    })
+
+    it('lets exactly one concurrent process initialize a target', async () => {
+      const results = await Promise.all([run('init', ...flags, '--json'), run('init', ...flags, '--json')])
+      expect(results.map(result => result.code).sort()).toEqual([0, 1])
+      for (const result of results) {
+        expect(result.stderr).toBe('')
+        expect(JSON.parse(result.stdout)).toMatchObject(result.code === 0 ? { outputFiles: [join(cwd, 'iconctl.config.ts')] } : { success: false, error: { message: expect.stringContaining('Config already exists') } })
+      }
+      expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'iconctl.config.ts', 'source'])
+    })
+  })
 
   it.each(['sync', 'preview'])('emits one fatal JSON report and no duplicate stderr for %s', async (command) => {
     await writeFile(join(cwd, 'source', 'bad.svg'), 'not an SVG')

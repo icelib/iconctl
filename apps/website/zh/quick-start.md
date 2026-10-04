@@ -12,6 +12,8 @@ pnpm add -D iconctl
 pnpm exec iconctl init
 ```
 
+在交互终端中，向导只询问尚未提供的值，支持本地目录、Iconify JSON、Figma、MasterGo、iconfont 和即时设计来源。初始化只创建配置，不获取图标、不执行鉴权、不创建来源目录、不运行同步；输入文件可在之后准备。取消提示不会写入配置，退出码为 130。
+
 或手写 `iconctl.config.ts`：
 
 ```ts
@@ -44,6 +46,56 @@ export default defineConfig({
 ```ts
 sources: [{ type: 'directory', dir: './raw-svg' }]
 ```
+
+### 脚本化初始化
+
+脚本和 CI 可显式提供参数：
+
+```bash
+pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
+```
+
+`--no-interactive`、`--json` 或非交互终端都会禁用提示。此时必须提供 `--source`、`--prefix` 和来源位置（`--input`，远程 iconfont 使用 `--url`）；缺少必填值以状态码 1 失败。在交互终端中，已提供的值会保留，只询问缺少的字段。
+
+| 选项 | 含义 |
+| --- | --- |
+| `--source <type>` | `directory`、`iconify`、`figma`、`mastergo`、`iconfont` 或 `jsdesign` |
+| `--input <value>` | `directory`、`jsdesign` 和本地 `iconfont` 的目录；`iconify` 的本地 JSON 文件；`figma` 的文件 URL／key；`mastergo` 包含 `layer_id` 的文件 URL |
+| `--url <url>` | 远程 iconfont Symbol JS URL；仅适用于 `iconfont`，不能与 `--input` 同用 |
+| `--prefix <name>` | Iconify 前缀；禁用提示时必填 |
+| `--json-output <file>` | 生成配置中的 `output.json`，默认为 `icons.json` |
+| `--config <file>` | 新建的 TypeScript 配置目标，默认为 `./iconctl.config.ts`，必须以 `.ts` 结尾 |
+| `--no-interactive` | 禁用提示，不会自动填充必填的来源信息 |
+| `--json` | 禁用提示，向 stdout 输出且仅输出一个成功或失败 JSON 对象 |
+| `--dry-run` | 验证计划和目标，不创建文件、目录、临时文件或缓存 |
+
+远程 iconfont 使用 `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`；已下载的 iconfont SVG 使用 `--source iconfont --input ./iconfont --prefix brand`。生成的 iconfont 配置保留 `stripPrefix: 'icon-'`。
+
+向导保留原有默认值：前缀 `brand`、本地目录 `./raw-svg`、Iconify 文件 `./vendor/icons.json`、iconfont 目录 `./iconfont`、即时设计目录 `./jsdesign-svg`。生成的 SVG 仍输出到 `svg`，预览仍输出到 `preview.html`。Iconify 初始化不设置宽高校验，保留集合的原始尺寸；其他来源保留模板的 24 × 24 默认校验。请将 SVG 输入与生成目录分开。配置或 Iconify 输入与计划中的 JSON、SVG、预览输出冲突时，初始化会拒绝创建；已有文件的别名也会检查。
+
+在 macOS 和 Windows 上，即使路径尚不存在，仅字母大小写不同也会保守地按同一位置处理。请勿仅靠大小写隔离输入、配置和输出路径；Linux 保留大小写区分。
+
+所有相对路径都以当前工作目录为基准；即使 `--config` 指向子目录，来源和输出路径的基准也不改变。例如，始终在项目根目录运行：
+
+```bash
+pnpm exec iconctl init --source iconify --input ./vendor/icons.json --prefix brand --json-output ./generated/icons.json --config ./config/brand.config.ts --no-interactive --json
+pnpm exec iconctl sync --config ./config/brand.config.ts
+```
+
+`init` 绝不覆盖指定的精确目标，已有文件、目录或符号链接都会拒绝。其他进程在发布前创建的目标同样会保留。没有 `--force` 选项。已有项目请直接编辑配置；需要另一份模板时，使用新的 `--config` 目标。初始化不加载或迁移已有配置。`--continue` 不适用于初始化，会被拒绝。
+
+成功 JSON 包含配置绝对路径和创建的文件：
+
+```json
+{
+  "configFile": "/project/iconctl.config.ts",
+  "sourceType": "directory",
+  "prefix": "brand",
+  "outputFiles": ["/project/iconctl.config.ts"]
+}
+```
+
+添加 `--dry-run --json` 可在零写入的情况下验证同一计划，结果增加 `dryRun: true`，并返回 `outputFiles: []`。目标已存在时仍会失败；dry-run 不会为后续执行预留目标。失败使用[通用 JSON 失败报告](#json-失败报告)，其中 `command: "init"`。
 
 ## 3. Token
 
@@ -104,7 +156,7 @@ Sprite 与 JSON、独立 SVG、类型、预览和 changelog 一起参与已有[�
 
 ### JSON 失败报告
 
-`sync`、`preview`、`diff`、`check` 和 `auth` 启用 `--json` 后，致命失败会向 stdout 输出一份 JSON 报告，退出码为 1；CLI 不会在 stderr 重复打印同一错误。例如，同步校验失败会保留已知的来源坐标：
+`init`、`sync`、`preview`、`diff`、`check` 和 `auth` 启用 `--json` 后，致命失败会向 stdout 输出一份 JSON 报告，退出码为 1；CLI 不会在 stderr 重复打印同一错误。例如，同步校验失败会保留已知的来源坐标：
 
 ```json
 {
@@ -133,7 +185,7 @@ Sprite 与 JSON、独立 SVG、类型、预览和 changelog 一起参与已有[�
 
 成功 JSON 格式保持不变，包括显式 `--continue` 得到的部分成功结果。 合法的 `diff --check` 比较发现变化时，仍输出原有差异报告并以 1 退出，不属于致命错误。失败的 `check` 报告保留原有顶层 `prefix`、`count`、`source`、`valid`、`issues`，增加 `success`、`command` 和 `error`；`error.issues` 与顶层 `issues` 内容相同。使用严格 schema 的消费者需要允许这些新增失败字段。其他命令此前在致命失败时不输出 JSON，现在可直接解析失败报告。
 
-`init --json` 的致命失败也使用这一报告，但初始化仍是交互命令，不提供成功 JSON 协议。Watch 保留下文的独立 NDJSON 生命周期。`--no-json` 或 `--json=false` 使用人类可读诊断。作为库调用 `runCli()` 时，报告输出后仍会 reject 原始错误对象。
+`init --json` 为非交互模式，成功时使用[初始化结果](#脚本化初始化)。Watch 保留下文的独立 NDJSON 生命周期。`--no-json` 或 `--json=false` 使用人类可读诊断。作为库调用 `runCli()` 时，报告输出后仍会 reject 原始错误对象。
 
 ### 同步完整性与取消
 

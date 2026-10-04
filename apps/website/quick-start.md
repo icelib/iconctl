@@ -12,6 +12,8 @@ pnpm add -D iconctl
 pnpm exec iconctl init
 ```
 
+In a terminal, the wizard asks only for missing values. It supports directory, Iconify JSON, Figma, MasterGo, iconfont and 即时设计 sources. Initialization creates only the config: it does not fetch icons, authenticate, create source folders or run a sync. You can create the input files afterward. Cancelling a prompt writes no config and exits with status 130.
+
 Or write `iconctl.config.ts` yourself:
 
 ```ts
@@ -44,6 +46,56 @@ A local folder is the zero-token path and produces the same Iconify JSON:
 ```ts
 sources: [{ type: 'directory', dir: './raw-svg' }]
 ```
+
+### Scriptable initialization
+
+Supply explicit values for scripts and CI:
+
+```bash
+pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
+```
+
+`--no-interactive`, `--json`, or running without an interactive terminal disables all prompts. Supply `--source`, `--prefix` and the source location (`--input`, or `--url` for remote iconfont); missing required values fail with status 1. In an interactive terminal, supplied values are retained and only missing fields are prompted.
+
+| Option | Meaning |
+| --- | --- |
+| `--source <type>` | `directory`, `iconify`, `figma`, `mastergo`, `iconfont` or `jsdesign` |
+| `--input <value>` | Local folder for `directory`, `jsdesign` or local `iconfont`; local JSON file for `iconify`; file URL/key for `figma`; file URL including `layer_id` for `mastergo` |
+| `--url <url>` | Remote iconfont Symbol JS URL; only for `iconfont`, and cannot be combined with `--input` |
+| `--prefix <name>` | Iconify prefix; required without prompts |
+| `--json-output <file>` | Generated config's `output.json`; defaults to `icons.json` |
+| `--config <file>` | New TypeScript config target; defaults to `./iconctl.config.ts` and must end in `.ts` |
+| `--no-interactive` | Disable prompts; does not fill in required source values |
+| `--json` | Disable prompts and print exactly one success or failure JSON object to stdout |
+| `--dry-run` | Validate the plan and target without creating files, directories, temporary files or caches |
+
+For remote iconfont, use `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`. For downloaded iconfont SVGs, use `--source iconfont --input ./iconfont --prefix brand` instead. The generated iconfont config keeps `stripPrefix: 'icon-'`.
+
+The wizard retains its defaults: prefix `brand`, directory input `./raw-svg`, Iconify input `./vendor/icons.json`, iconfont folder `./iconfont`, and 即时设计 folder `./jsdesign-svg`. Generated SVG output remains `svg` and preview output remains `preview.html`. Iconify initialization preserves native collection dimensions by leaving width and height validation unset; other sources keep the 24 × 24 template defaults. Keep SVG inputs separate from generated output folders. Initialization rejects a config or Iconify input that overlaps its planned JSON, SVG or preview outputs, including existing file aliases.
+
+On macOS and Windows, paths that differ only in letter case are conservatively treated as the same location, even before they exist. Do not use letter case alone to separate inputs, configs or outputs. Linux retains case-sensitive comparison.
+
+All relative paths use the current working directory, including source and output paths when `--config` points into a subdirectory. For example, run both commands from the project root:
+
+```bash
+pnpm exec iconctl init --source iconify --input ./vendor/icons.json --prefix brand --json-output ./generated/icons.json --config ./config/brand.config.ts --no-interactive --json
+pnpm exec iconctl sync --config ./config/brand.config.ts
+```
+
+`init` never overwrites its exact target, including an existing file, directory or symbolic link. A target created by another process before publication is also preserved. There is no `--force` option. For an existing project, edit its config; to create another template, choose a new `--config` target. Initialization does not load or migrate existing configurations. `--continue` is not applicable to initialization and is rejected.
+
+Successful JSON contains the config's absolute path and the created file:
+
+```json
+{
+  "configFile": "/project/iconctl.config.ts",
+  "sourceType": "directory",
+  "prefix": "brand",
+  "outputFiles": ["/project/iconctl.config.ts"]
+}
+```
+
+Add `--dry-run --json` to validate the same plan with zero writes. The result adds `dryRun: true` and has `outputFiles: []`. An existing target still fails; dry-run does not reserve it for a later invocation. Failures use the [JSON failure report](#json-failures) with `command: "init"`.
 
 ## 3. Token
 
@@ -104,7 +156,7 @@ The sprite joins JSON, individual SVGs, types, preview and changelog in the exis
 
 ### JSON failures
 
-Fatal failures from `sync`, `preview`, `diff`, `check` and `auth` with `--json` write one JSON report to stdout and exit with status 1. The CLI does not repeat the same error on stderr. For example, a sync validation failure includes the known source coordinates:
+Fatal failures from `init`, `sync`, `preview`, `diff`, `check` and `auth` with `--json` write one JSON report to stdout and exit with status 1. The CLI does not repeat the same error on stderr. For example, a sync validation failure includes the known source coordinates:
 
 ```json
 {
@@ -133,7 +185,7 @@ Fatal failures from `sync`, `preview`, `diff`, `check` and `auth` with `--json` 
 
 Successful JSON stays unchanged, including explicitly continued partial results. A valid `diff --check` comparison with changes still emits the normal diff report and exits 1; it is not a fatal error. Failed `check` reports retain their original top-level `prefix`, `count`, `source`, `valid` and `issues` and add `success`, `command` and `error`; `error.issues` contains the same issues as the top-level field. Consumers with strict schemas should allow these added failure fields. Fatal JSON previously left stdout empty for other commands; consumers can now parse the failure report.
 
-`init --json` uses the same fatal report, but initialization remains interactive and has no successful JSON protocol. Watch keeps its separate NDJSON lifecycle described below. `--no-json` or `--json=false` selects human diagnostics. Library callers of `runCli()` still receive the original rejected error after it has been reported.
+`init --json` is noninteractive and uses the [initialization result](#scriptable-initialization) on success. Watch keeps its separate NDJSON lifecycle described below. `--no-json` or `--json=false` selects human diagnostics. Library callers of `runCli()` still receive the original rejected error after it has been reported.
 
 ### Sync integrity and cancellation
 
