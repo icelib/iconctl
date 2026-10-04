@@ -1,6 +1,6 @@
 import type { PreflightItem } from '../src/preflight'
-import { visibleNamesJson } from '../src/copy-names-format'
-import { CopyNamesUI } from '../src/copy-names-ui'
+import { visibleNamesJson, visibleNodeIdsJson } from '../src/copy-visible-json-format'
+import { CopyVisibleJsonUI } from '../src/copy-visible-json-ui'
 import { canSubmit, inspectComponents } from '../src/preflight'
 import { PreflightView } from '../src/preflight-view'
 
@@ -35,6 +35,7 @@ it('uses the shared intersection view and allows review of names with errors wit
   view.capture(items)
   const filtered = view.visible({ issueType: 'duplicate-name', search: 'ARROW', problemsOnly: true })
   expect(visibleNamesJson(filtered)).toMatchObject({ json: '[\n  "arrow-left"\n]\n', componentCount: 2, uniqueCount: 1, duplicateCount: 1 })
+  expect(visibleNodeIdsJson(filtered)).toEqual({ json: '[\n  "1:1",\n  "1:2"\n]\n', componentCount: 2 })
   expect(JSON.parse(visibleNamesJson(view.visible({ issueType: 'all', search: '', problemsOnly: false })).json))
     .toEqual(['arrow-filled', 'arrow-left', 'brand-ok'])
   expect(canSubmit(items)).toBe(false)
@@ -82,6 +83,9 @@ function deferred() {
 function fixture(writer: ((text: string) => Promise<void>) | null = () => Promise.resolve()) {
   const current = { active: true, current: true, scanId: 1 as number | undefined, items: [item('b'), item('a'), item('a')], serverNaming: false }
   const controls = {
+    content: new Control(),
+    scope: new Control(),
+    textLabel: new Control(),
     button: new Control(),
     summary: new Control(),
     help: new Control(),
@@ -92,9 +96,12 @@ function fixture(writer: ((text: string) => Promise<void>) | null = () => Promis
     select: new Control(),
   }
   const clipboard = writer ? { writeText: vi.fn(writer) } : undefined
-  const controller = new CopyNamesUI({
+  const controller = new CopyVisibleJsonUI({
     current: () => current,
     clipboard: () => clipboard,
+    content: controls.content as unknown as HTMLSelectElement,
+    scope: controls.scope as unknown as HTMLElement,
+    textLabel: controls.textLabel as unknown as HTMLElement,
     button: controls.button as unknown as HTMLButtonElement,
     summary: controls.summary as unknown as HTMLElement,
     help: controls.help as unknown as HTMLElement,
@@ -247,7 +254,144 @@ it.each(['resolve', 'reject'] as const)('releases local references on disposal a
   f.controller.change()
   f.controls.button.click()
   f.controls.select.click()
+  f.controls.content.dispatchEvent(new Event('change'))
   expect(JSON.stringify(f.controls)).toBe(disposed)
   expect(f.controls.text.focus).not.toHaveBeenCalled()
   expect(f.clipboard!.writeText).toHaveBeenCalledTimes(1)
+})
+
+it('copies exact sorted node IDs even with missing or duplicate names without modifying the view', () => {
+  const ids = ['2:10', '1:2', 'I1:2;3:4', '"<script>\n界💡', ' 5:6 ']
+  const items = ids.map(id => item(null, id))
+  const before = JSON.stringify(items)
+  expect(visibleNodeIdsJson(items)).toEqual({ json: `${JSON.stringify([...ids].sort(), null, 2)}\n`, componentCount: 5 })
+  expect(JSON.stringify(items)).toBe(before)
+  expect(() => visibleNamesJson(items)).toThrow('no local name')
+})
+
+it.each([null, undefined, 5, '', ' \n '])('rejects the whole ID view for a missing ID: %j', (id) => {
+  expect(() => visibleNodeIdsJson([item('valid', '1:1'), { ...item('invalid'), id } as PreflightItem])).toThrow('missing or duplicate node IDs')
+})
+
+it('rejects duplicate IDs without changing the existing name format contract', () => {
+  const items = [item('same', '1:1'), item('same', '1:1')]
+  expect(() => visibleNodeIdsJson(items)).toThrow('duplicate node IDs')
+  expect(visibleNamesJson(items)).toMatchObject({ componentCount: 2, uniqueCount: 1, duplicateCount: 1 })
+})
+
+it('enforces ID item and exact UTF-8 JSON byte limits without truncation', () => {
+  expect(() => visibleNodeIdsJson([])).toThrow('No visible components')
+  const items = Array.from({ length: 5000 }, (_, index) => item(null, `1:${index}`))
+  expect(visibleNodeIdsJson(items).componentCount).toBe(5000)
+  expect(() => visibleNodeIdsJson([...items, item(null, '1:5000')])).toThrow('exceeds 5000')
+  const limit = 1024 * 1024
+  const id = '界'.repeat(Math.floor((limit - 9) / 3)) + 'a'.repeat((limit - 9) % 3)
+  expect(new TextEncoder().encode(visibleNodeIdsJson([item(null, id)]).json).byteLength).toBe(limit)
+  expect(() => visibleNodeIdsJson([item(null, `${id}a`)])).toThrow('exceeds 1 MiB')
+  expect(() => visibleNodeIdsJson([item(null, '"'.repeat(limit / 2))])).toThrow('exceeds 1 MiB')
+})
+
+function content(f: ReturnType<typeof fixture>, mode: 'names' | 'node-ids') {
+  f.controls.content.value = mode
+  f.controls.content.dispatchEvent(new Event('change'))
+}
+
+it('recomputes the same scan for IDs when names are missing and restores name restrictions on return', async () => {
+  const f = fixture()
+  f.current.items = [item(null, '1:2'), item('same', '1:1')]
+  f.current.serverNaming = true
+  f.controller.change()
+  expect(f.controls.button.disabled).toBe(true)
+  content(f, 'node-ids')
+  expect(f.controls.button.disabled).toBe(false)
+  expect(f.controls.button.textContent).toBe('Copy visible node IDs JSON')
+  expect(f.controls.summary.textContent).toBe('2 visible components → 2 Figma node IDs.')
+  expect(f.controls.scope.textContent).toContain('same file')
+  expect(f.controls.warning.hidden).toBe(true)
+  f.controls.button.click()
+  expect(f.clipboard!.writeText).toHaveBeenCalledExactlyOnceWith('[\n  "1:1",\n  "1:2"\n]\n')
+  await Promise.resolve()
+  expect(f.controls.status.textContent).toBe('Copied 2 Figma node IDs from the current filtered view.')
+  content(f, 'names')
+  expect(f.controls.status.textContent).toBe('')
+  expect(f.controls.button.disabled).toBe(true)
+  expect(f.controls.warning.hidden).toBe(false)
+  expect(f.controls.help.textContent).toContain('no local name')
+  f.controller.dispose()
+})
+
+it.each(['names', 'node-ids'] as const)('retains one physical write through %s content ABA and stale rejection', async (mode) => {
+  const gate = deferred()
+  const f = fixture(() => gate.promise)
+  f.current.items = [item('two', '1:2'), item('one', '1:1')]
+  content(f, mode)
+  f.controls.button.click()
+  content(f, mode === 'names' ? 'node-ids' : 'names')
+  f.controls.button.click()
+  content(f, mode)
+  f.controls.button.click()
+  expect(f.clipboard!.writeText).toHaveBeenCalledTimes(1)
+  expect(f.controls.button.disabled).toBe(true)
+  gate.reject()
+  await gate.promise.catch(() => {})
+  expect(f.controls.status.textContent).toBe('')
+  expect(f.controls.fallback.hidden).toBe(true)
+  expect(f.controls.button.disabled).toBe(false)
+  f.controller.dispose()
+})
+
+it('a late successful name write only unlocks the new ID mode, then an explicit click copies IDs', async () => {
+  const gate = deferred()
+  const f = fixture(() => gate.promise)
+  f.current.items = [item('home', '2:1')]
+  f.controller.change()
+  f.controls.button.click()
+  content(f, 'node-ids')
+  expect(f.controls.button.disabled).toBe(true)
+  expect(f.controls.text.value).toBe('')
+  gate.resolve()
+  await gate.promise
+  expect(f.controls.status.textContent).toBe('')
+  expect(f.controls.button.disabled).toBe(false)
+  f.controls.button.click()
+  expect(f.clipboard!.writeText).toHaveBeenLastCalledWith('[\n  "2:1"\n]\n')
+  await Promise.resolve()
+  expect(f.controls.status.textContent).toBe('Copied 1 Figma node ID from the current filtered view.')
+  f.controller.dispose()
+})
+
+it('manual fallback always matches current content and mode switching does not move focus', () => {
+  const f = fixture(null)
+  f.current.items = [item('home', '1:2')]
+  f.controller.change()
+  f.controls.button.click()
+  expect(f.controls.text.value).toBe('[\n  "home"\n]\n')
+  content(f, 'node-ids')
+  expect(f.controls.text.value).toBe('')
+  expect(f.controls.fallback.hidden).toBe(true)
+  expect(f.controls.textLabel.textContent).toBe('Visible Figma node IDs JSON')
+  f.controls.button.click()
+  expect(f.controls.text.value).toBe('[\n  "1:2"\n]\n')
+  expect(f.controls.fallback.hidden).toBe(false)
+  expect(f.controls.text.focus).not.toHaveBeenCalled()
+  f.controls.select.click()
+  expect(f.controls.text.select).toHaveBeenCalledTimes(1)
+  content(f, 'names')
+  expect(f.controls.text.value).toBe('')
+  expect(f.controls.textLabel.textContent).toBe('Visible local names JSON')
+  f.controller.dispose()
+})
+
+it('stale ID scans and duplicate IDs refuse forced copy clicks', () => {
+  const f = fixture()
+  content(f, 'node-ids')
+  expect(f.controls.help.textContent).toContain('duplicate node IDs')
+  f.controls.button.click()
+  f.current.items = [item(null, '1:1')]
+  f.current.current = false
+  f.controller.change()
+  expect(f.controls.help.textContent).toBe('Rescan with current rules before copying node IDs.')
+  f.controls.button.click()
+  expect(f.clipboard!.writeText).not.toHaveBeenCalled()
+  f.controller.dispose()
 })

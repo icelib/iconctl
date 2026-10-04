@@ -43,6 +43,10 @@ const text = (p: Plugin) => p.host.ui.getByLabel('Visible local names JSON', { e
 const selectText = (p: Plugin) => p.host.ui.getByRole('button', { name: 'Select JSON', exact: true })
 const search = (p: Plugin) => p.host.ui.getByLabel('Search preflight', { exact: true })
 const category = (p: Plugin) => p.host.ui.getByRole('combobox', { name: 'Issue type', exact: true })
+const copyContent = (p: Plugin) => p.host.ui.getByRole('combobox', { name: 'Copy JSON content', exact: true })
+const idButton = (p: Plugin) => p.host.ui.getByRole('button', { name: 'Copy visible node IDs JSON', exact: true })
+const idStatus = (p: Plugin) => p.host.ui.getByLabel('Node IDs copy status', { exact: true })
+const idText = (p: Plugin) => p.host.ui.getByLabel('Visible Figma node IDs JSON', { exact: true })
 const latest = (p: Plugin) => p.host.responses.filter(message => message.type === 'preflight').at(-1)! as Message & { items: Item[] }
 const json = (names: string[]) => `${JSON.stringify(names, null, 2)}\n`
 
@@ -69,6 +73,13 @@ async function copy(p: Plugin, names: string[]) {
   await button(p).click()
   await expect(button(p)).toBeEnabled()
   expect((await p.clipboard.evidence()).writes.at(-1)!.value).toBe(json(names))
+  expect(activity(p)).toEqual(before)
+}
+async function copyIds(p: Plugin, ids: string[]) {
+  const before = activity(p)
+  await idButton(p).click()
+  await expect(idButton(p)).toBeEnabled()
+  expect((await p.clipboard.evidence()).writes.at(-1)!.value).toBe(json(ids))
   expect(activity(p)).toEqual(before)
 }
 function hold(p: Plugin, predicate: (message: Message) => boolean) {
@@ -114,6 +125,20 @@ test.describe('native Clipboard API', () => {
     await plugin.host.flush()
     await copy(plugin, ['arrow-left'])
     expect(await plugin.clipboard.readOwnNativeWrite()).toBe(json(['arrow-left']))
+    const beforeMode = activity(plugin)
+    await copyContent(plugin).selectOption('node-ids')
+    expect(activity(plugin)).toEqual(beforeMode)
+    await copyIds(plugin, ['1:1', '2:1'])
+    expect(await plugin.clipboard.readOwnNativeWrite()).toBe(json(['1:1', '2:1']))
+    await expect(idStatus(plugin)).toHaveText('Copied 2 Figma node IDs from the current filtered view.')
+    await search(plugin).fill('1:1')
+    await copyIds(plugin, ['1:1'])
+    expect(await plugin.clipboard.readOwnNativeWrite()).toBe(json(['1:1']))
+    await category(plugin).selectOption('canvas-size')
+    await copyIds(plugin, ['1:1'])
+    await copyContent(plugin).selectOption('names')
+    await expect(status(plugin)).toBeEmpty()
+    await copy(plugin, ['arrow-left'])
     await expect(plugin.host.ui.getByRole('button', { name: 'Sync to console', exact: true })).toBeDisabled()
     await expect(plugin.host.ui.getByRole('button', { name: 'Export SVG ZIP', exact: true })).toBeDisabled()
     expect((await plugin.clipboard.evidence()).writes.every(write => write.activation && write.settled === 'success')).toBe(true)
@@ -142,8 +167,157 @@ test.describe('real iframe Permissions Policy', () => {
     expect(await text(plugin).evaluate(element => [(element as HTMLTextAreaElement).selectionStart, (element as HTMLTextAreaElement).selectionEnd])).toEqual([0, json(['actions-filled', 'arrow', 'nested-icon']).length])
     await page.locator('iframe').screenshot({ path: info.outputPath('policy-denied-manual-selection.png') })
     expect((await plugin.clipboard.evidence()).writes).toHaveLength(1)
+    await copyContent(plugin).focus()
+    await page.keyboard.press('f')
+    await page.keyboard.press('Tab')
+    await expect(copyContent(plugin)).toHaveValue('node-ids')
+    await expect(idText(plugin)).toBeHidden()
+    await idButton(plugin).focus()
+    await page.keyboard.press('Enter')
+    await expect(idText(plugin)).toHaveValue(json(['1:1', '2:1', '3:1']))
+    await expect(idText(plugin)).toHaveAttribute('readonly', '')
+    await expect(idButton(plugin)).toBeFocused()
+    await selectText(plugin).focus()
+    await page.keyboard.press('Enter')
+    await expect(idText(plugin)).toBeFocused()
+    expect(await idText(plugin).evaluate(element => [(element as HTMLTextAreaElement).selectionStart, (element as HTMLTextAreaElement).selectionEnd])).toEqual([0, json(['1:1', '2:1', '3:1']).length])
+    expect(await plugin.host.ui.locator('html').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await page.locator('iframe').screenshot({ path: info.outputPath('policy-denied-node-ids-420.png') })
+    expect((await plugin.clipboard.evidence()).writes.at(-1)).toMatchObject({ value: json(['1:1', '2:1', '3:1']), settled: 'failure', error: 'NotAllowedError', activation: true })
+    expect(activity(plugin)).toEqual(before)
+    await copyContent(plugin).selectOption('names')
+    await expect(text(plugin)).toHaveValue('')
+    await expect(text(plugin)).toBeHidden()
   })
 })
+
+test('copies node IDs from the accepted non-draft view even when local names are missing or server-only', async ({ plugin }) => {
+  plugin.host.setContext({ namingMode: 'server' })
+  await plugin.host.dispatch({ type: 'console-status' })
+  await plugin.host.flush()
+  const legacy = structuredClone(latest(plugin))
+  delete legacy.rulesRequestId
+  legacy.items[0]!.iconName = null
+  await plugin.host.send(legacy)
+  await expect(button(plugin)).toBeDisabled()
+  const before = activity(plugin)
+  await copyContent(plugin).selectOption('node-ids')
+  await expect(plugin.host.ui.locator('#copy-names-warning')).toBeHidden()
+  await copyIds(plugin, ['1:1', '2:1', '3:1'])
+  expect(activity(plugin)).toEqual(before)
+  await copyContent(plugin).selectOption('names')
+  await expect(button(plugin)).toBeDisabled()
+  await expect(plugin.host.ui.locator('#copy-names-help')).toContainText('1 visible component has no local name')
+  await expect(plugin.host.ui.locator('#copy-names-warning')).toBeVisible()
+  await copyContent(plugin).selectOption('node-ids')
+  await search(plugin).fill('no-node-matches')
+  await expect(idButton(plugin)).toBeDisabled()
+  await idButton(plugin).dispatchEvent('click')
+  expect((await plugin.clipboard.evidence()).writes).toHaveLength(1)
+})
+
+test('rejects a complete malformed ID view while preserving legacy names and JSON-safe ID text', async ({ plugin }) => {
+  const original = structuredClone(latest(plugin))
+  delete original.rulesRequestId
+  for (const id of ['', original.items[1]!.id]) {
+    const malformed = structuredClone(original)
+    malformed.items[0]!.id = id
+    await plugin.host.send(malformed)
+    await copyContent(plugin).selectOption('node-ids')
+    await expect(idButton(plugin)).toBeDisabled()
+    await expect(plugin.host.ui.locator('#copy-names-help')).toContainText('missing or duplicate node IDs')
+    await idButton(plugin).dispatchEvent('click')
+    await copyContent(plugin).selectOption('names')
+    await copy(plugin, ['actions-filled', 'arrow', 'nested-icon'])
+  }
+  const special = structuredClone(original)
+  const id = '"<script data-injected="id">\n界💡'
+  special.items[0]!.id = id
+  await plugin.host.send(special)
+  await copyContent(plugin).selectOption('node-ids')
+  await search(plugin).fill('data-injected')
+  await plugin.clipboard.setMode('reject')
+  await idButton(plugin).click()
+  await expect(idText(plugin)).toHaveValue(json([id]))
+  await expect(plugin.host.ui.locator('[data-injected], #copy-names-fallback script')).toHaveCount(0)
+  expect((await plugin.clipboard.evidence()).writes).toHaveLength(3)
+})
+
+for (const initial of ['names', 'node-ids'] as const) {
+  for (const success of [true, false]) {
+    test(`keeps a single physical clipboard write through ${initial} mode ABA and delayed ${success ? 'success' : 'rejection'}`, async ({ plugin }) => {
+      await copyContent(plugin).selectOption(initial)
+      const copyAction = plugin.host.ui.locator('#copy-visible-names')
+      const feedback = plugin.host.ui.locator('#copy-names-status')
+      const fallback = plugin.host.ui.locator('#copy-names-json')
+      await plugin.clipboard.setMode('pending')
+      await copyAction.click()
+      const captured = initial === 'names' ? ['actions-filled', 'arrow', 'nested-icon'] : ['1:1', '2:1', '3:1']
+      expect((await plugin.clipboard.evidence()).writes[0]!.value).toBe(json(captured))
+      const before = activity(plugin)
+      const other = initial === 'names' ? 'node-ids' : 'names'
+      for (const next of [other, initial, other]) {
+        await copyContent(plugin).selectOption(next)
+        await expect(copyContent(plugin)).toBeEnabled()
+        await expect(copyAction).toBeDisabled()
+        await copyAction.dispatchEvent('click')
+        await expect(feedback).toBeEmpty()
+        await expect(fallback).toHaveValue('')
+      }
+      expect(activity(plugin)).toEqual(before)
+      expect((await plugin.clipboard.evidence()).writes).toHaveLength(1)
+      await plugin.clipboard.settle(0, success)
+      await expect(copyAction).toBeEnabled()
+      await expect(feedback).toBeEmpty()
+      await expect(fallback).toBeHidden()
+      await plugin.clipboard.setMode('success')
+      if (other === 'names') {
+        await copy(plugin, ['actions-filled', 'arrow', 'nested-icon'])
+      }
+      else { await copyIds(plugin, ['1:1', '2:1', '3:1']) }
+      expect((await plugin.clipboard.evidence()).writes).toHaveLength(2)
+      expect((await plugin.clipboard.evidence()).peak).toBe(1)
+    })
+  }
+}
+
+for (const navigation of ['Locate', 'Select visible components'] as const) {
+  test(`keeps pending ${navigation} alive across copyMode changes while the clipboard remains locked`, async ({ plugin }) => {
+    await mixed(plugin)
+    await category(plugin).selectOption('duplicate-name')
+    await plugin.clipboard.setMode('pending')
+    await button(plugin).click()
+    const gate = plugin.host.holdLookup()
+    try {
+      if (navigation === 'Locate') {
+        await plugin.host.ui.getByRole('button', { name: 'Locate Arrow Left', exact: true }).click()
+      }
+      else {
+        await plugin.host.ui.getByRole('button', { name: navigation, exact: true }).click()
+      }
+      await expect.poll(() => gate.started).toBe(true)
+      const before = { activity: activity(plugin), lookups: [...plugin.host.lookups], viewport: structuredClone({ zoom: plugin.host.host.viewport.zoom, center: plugin.host.host.viewport.center, scrolls: plugin.host.host.viewport.scrolls }) }
+      await copyContent(plugin).selectOption('node-ids')
+      await copyContent(plugin).selectOption('names')
+      await copyContent(plugin).selectOption('node-ids')
+      expect({ activity: activity(plugin), lookups: plugin.host.lookups, viewport: { zoom: plugin.host.host.viewport.zoom, center: plugin.host.host.viewport.center, scrolls: plugin.host.host.viewport.scrolls } }).toEqual(before)
+      await expect(idButton(plugin)).toBeDisabled()
+      gate.resolve(plugin.host.arrow)
+      await expect.poll(() => plugin.host.first.selection.map(node => node.id)).toEqual(navigation === 'Locate' ? ['1:1'] : ['1:1', '2:1'])
+      await expect(plugin.host.ui.getByLabel('Navigation status', { exact: true })).toContainText(navigation === 'Locate' ? 'Located' : 'Selected 2 visible components')
+      expect(plugin.host.host.viewport.scrolls).toEqual(navigation === 'Locate' ? [['1:1']] : [])
+      expect(plugin.host.host.viewport.zoom).toBe(before.viewport.zoom)
+      expect(plugin.host.host.viewport.center).toEqual(before.viewport.center)
+      expect(plugin.host.requests.filter(message => message.type === 'cancel-navigation')).toEqual(before.activity.requests.filter(message => message.type === 'cancel-navigation'))
+      await plugin.clipboard.settle(0, false)
+      await expect(idStatus(plugin)).toBeEmpty()
+      await expect(idText(plugin)).toBeHidden()
+      await plugin.clipboard.setMode('success')
+      await copyIds(plugin, ['1:1', '2:1'])
+    }
+    finally { gate.resolve(plugin.host.arrow) }
+  })
+}
 
 for (const mode of ['missing', 'throw', 'reject'] as const) {
   test(`provides inert complete JSON for ${mode} capability with long provisional names and explicit selection`, async ({ page, plugin }, info) => {
@@ -316,10 +490,12 @@ test('keeps the physical lock across Rescan and actual page A to B to A without 
   await copy(plugin, ['actions-filled', 'arrow', 'nested-icon'])
 })
 
-for (const success of [true, false]) {
-  test(`never mutates disposed UI or focus after pagehide and late ${success ? 'success' : 'rejection'}`, async ({ plugin }) => {
+for (const [mode, success] of [['names', true], ['names', false], ['node-ids', true], ['node-ids', false]] as const) {
+  test(`never mutates disposed ${mode} UI or focus after pagehide and late ${success ? 'success' : 'rejection'}`, async ({ plugin }) => {
+    await copyContent(plugin).selectOption(mode)
+    const copyAction = plugin.host.ui.locator('#copy-visible-names')
     await plugin.clipboard.setMode('pending')
-    await button(plugin).click()
+    await copyAction.click()
     await search(plugin).focus()
     await plugin.host.ui.locator('body').evaluate(() => {
       window.dispatchEvent(new Event('pagehide'))
@@ -330,7 +506,8 @@ for (const success of [true, false]) {
     })
     plugin.host.closeHost()
     await plugin.clipboard.settle(0, success)
-    await button(plugin).dispatchEvent('click')
+    await copyAction.dispatchEvent('click')
+    await copyContent(plugin).dispatchEvent('change')
     const result = await plugin.host.ui.locator('body').evaluate(() => {
       const state = (window as unknown as { afterHide: { writes: string[], observer: MutationObserver, active: Element } }).afterHide
       state.observer.disconnect()
@@ -360,6 +537,8 @@ test('leaves a native Locate in progress and both captured report formats comple
       await plugin.host.ui.getByRole('button', { name: `Export ${format.toUpperCase()} report`, exact: true }).click()
       await expect.poll(() => gate.held.length).toBe(1)
       await copy(plugin, ['arrow-left'])
+      await copyContent(plugin).selectOption('node-ids')
+      await copyIds(plugin, ['1:1'])
       const path = await download(page, info, `subset-copy-complete-report.${format}`, gate.release)
       const content = await readFile(path, 'utf8')
       if (format === 'json') {
@@ -373,6 +552,7 @@ test('leaves a native Locate in progress and both captured report formats comple
         expect(content).toContain('64×16')
       }
       expect(content).not.toMatch(/fixture-device-token|fixture-github-token/)
+      await copyContent(plugin).selectOption('names')
     }
     finally {
       gate.restore()
@@ -394,6 +574,8 @@ test('keeps the complete actual native SVG export alive while a subset copy rema
     await expect(status(plugin)).toBeEmpty()
     await expect(button(plugin)).toBeDisabled()
     expect((await plugin.clipboard.evidence()).active).toBe(1)
+    await copyContent(plugin).selectOption('node-ids')
+    await expect(idButton(plugin)).toBeDisabled()
     native.resolve(rawSvg)
     await expect.poll(() => gate.held[0]?.state).toBe('ready')
     gate.release()
@@ -409,10 +591,12 @@ test('keeps the complete actual native SVG export alive while a subset copy rema
     expect(plugin.host.exports).toHaveLength(3)
     expect(plugin.host.peak()).toBe(1)
     await plugin.clipboard.settle(0, true)
-    await expect(button(plugin)).toBeEnabled()
-    await expect(status(plugin)).toBeEmpty()
+    await expect(idButton(plugin)).toBeEnabled()
+    await expect(idStatus(plugin)).toBeEmpty()
     expect((await plugin.clipboard.evidence()).completedPayload).toBe(json(['arrow']))
     await plugin.clipboard.setMode('success')
+    await copyIds(plugin, ['1:1'])
+    await copyContent(plugin).selectOption('names')
     await copy(plugin, ['arrow'])
     await expect(status(plugin)).toHaveText('Copied 1 unique local names from 1 visible components.')
   }
@@ -429,13 +613,17 @@ test.describe('restored task', () => {
     const before = activity(plugin)
     await plugin.clipboard.setMode('pending')
     await button(plugin).click()
+    await copyContent(plugin).selectOption('node-ids')
     expect(activity(plugin)).toEqual(before)
     plugin.host.job!.resolve(Response.json({ status: 'succeeded', stage: 'complete' }))
     await expect(plugin.host.ui.locator('#console-status')).toContainText('succeeded · complete')
     await expect(plugin.host.ui.getByRole('link', { name: 'Open task ↗', exact: true })).toBeVisible()
-    await expect(button(plugin)).toBeDisabled()
+    await expect(idButton(plugin)).toBeDisabled()
     await plugin.clipboard.settle(0, true)
-    await expect(button(plugin)).toBeEnabled()
+    await expect(idButton(plugin)).toBeEnabled()
+    await expect(idStatus(plugin)).toBeEmpty()
+    await plugin.clipboard.setMode('success')
+    await copyIds(plugin, ['1:1', '2:1', '3:1'])
     expect(plugin.host.network.filter(request => request.url.endsWith('/jobs/running-task'))).toHaveLength(1)
   })
 })

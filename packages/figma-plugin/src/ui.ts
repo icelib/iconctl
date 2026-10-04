@@ -3,7 +3,7 @@ import type { IssueType } from './preflight-view'
 import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
 import type { HandoffFile } from './svg-handoff-format'
-import { CopyNamesUI } from './copy-names-ui'
+import { CopyVisibleJsonUI } from './copy-visible-json-ui'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
 import { issueType, PreflightView } from './preflight-view'
@@ -112,9 +112,12 @@ const handoffUI = new SvgHandoffUI({
   help: document.querySelector<HTMLElement>('#svg-handoff-help')!,
   status: document.querySelector<HTMLElement>('#svg-handoff-status')!,
 })
-const copyNamesUI = new CopyNamesUI({
+const copyVisibleJsonUI = new CopyVisibleJsonUI({
   current: () => ({ active: uiActive, current: currentPreflight, scanId, items: visibleItems(), serverNaming: handoffRules?.rules.namingMode === 'server' }),
   clipboard: () => navigator.clipboard,
+  content: document.querySelector<HTMLSelectElement>('#copy-json-content')!,
+  scope: document.querySelector<HTMLElement>('#copy-names-scope')!,
+  textLabel: document.querySelector<HTMLElement>('#copy-json-label')!,
   button: document.querySelector<HTMLButtonElement>('#copy-visible-names')!,
   summary: document.querySelector<HTMLElement>('#copy-names-summary')!,
   help: document.querySelector<HTMLElement>('#copy-names-help')!,
@@ -243,7 +246,7 @@ function updateSubmit() {
     ? consoleBusy || !consoleConnected
     : githubBusy)
   handoffUI.update()
-  copyNamesUI.update()
+  copyVisibleJsonUI.update()
 }
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
@@ -362,7 +365,7 @@ previousProblem.addEventListener('click', () => stepProblem(-1))
 nextProblem.addEventListener('click', () => stepProblem(1))
 selectVisibleBtn.addEventListener('click', selectVisible)
 window.addEventListener('pagehide', () => {
-  copyNamesUI.dispose()
+  copyVisibleJsonUI.dispose()
   handoffUI.dispose()
   setLive(false)
   uiActive = false
@@ -413,7 +416,7 @@ function render() {
   updateSubmit()
 }
 function changeView() {
-  copyNamesUI.change()
+  copyVisibleJsonUI.change()
   clearNavigation()
   navigationStatus.textContent = ''
   navigationStatus.className = ''
@@ -457,7 +460,7 @@ for (const scope of ['settings', 'preferences'] as const) {
 }
 function invalidatePreflight(text: string, error = false) {
   currentPreflight = false
-  copyNamesUI.change()
+  copyVisibleJsonUI.change()
   clearNavigation()
   rulesValidity.textContent = 'Scan out of date. Rescan or refresh project rules before using these results.'
   updateSubmit()
@@ -628,7 +631,7 @@ window.onmessage = (event: MessageEvent<{
     handoffRules = message.appliedRules
     renderRules(message.appliedRules)
     currentPreflight = true
-    copyNamesUI.change()
+    copyVisibleJsonUI.change()
     reportPending = undefined
     reportRequest++
     reportAvailable = message.reportAvailable === true && scanId !== undefined

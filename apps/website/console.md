@@ -255,6 +255,20 @@ Automatic clipboard access depends on the Figma browser environment. If unavaila
 
 Copying leaves Locate, problem navigation, task tracking and report/SVG exports running. Reports and SVG handoffs retain their complete-page scope and eligibility, including hidden errors. No host message, network request, task or storage write is added by copying. Rebuild the plugin to use the action; no server or report-schema changes are required.
 
+### Copy visible node IDs
+
+Choose **Figma node IDs** in **Copy JSON content**, then **Copy visible node IDs JSON** to share the current filtered components even when their local names are missing, invalid, duplicated or provisional. Local names remains the default. Both modes use the latest accepted scan and exclude drafts; copying does not rescan or change canvas selection or zoom.
+
+The ID array preserves each ID exactly, sorts by character order and ends with a newline. Missing or duplicate IDs reject the entire list. Empty views, more than 5000 components or more than 1 MiB of UTF-8 JSON are refused without truncation. These are copy limits, not Figma REST request limits. Use the IDs with their original Figma file, for example:
+
+```ts
+{ type: 'figma', file: 'https://www.figma.com/design/FILE_KEY/Icons', ids: ['1:2', '1:3'] }
+```
+
+The source still needs its file and authentication. `ids` limits the Figma read request; depth, pages, naming hooks and node-tree parsing determine the final sync result. The plugin does not update your source configuration or promise the imported collection will exactly equal the copied list.
+
+Switching copy content clears old feedback and manual JSON while preserving the single pending clipboard write. Wait for that write to settle before explicitly copying the new content; a started native write can still write its captured text. When clipboard access is blocked, use the current mode's readonly JSON and **Select JSON**. Content switching does not cancel Locate or component selection, submit a task, change connection mode, send host/network messages or save a preference. Existing full-page reports and SVG exports keep their scope. Rebuild the plugin; no server upgrade is required.
+
 ## Export a raw SVG handoff
 
 Choose **Export SVG ZIP** to deliver every non-draft component on the current page. The plugin first runs a fresh preflight with the loaded rules; search, Problems only, Issue type and selection do not limit the export. Every icon must pass and every native export must succeed. Errors identify the affected node and keep the download empty; fix the issue and export again. Paired projects use their confirmed rules, while GitHub and unpaired mode use their existing defaults. Refresh unavailable project rules before retrying. Custom server naming hooks require a console sync: download the confirmed snapshot from the console instead.

@@ -277,6 +277,13 @@
     <p id="problem-position" aria-live="polite" aria-atomic="true">Rescan to navigate problems.</p>
     <ul id="list"></ul>
     <p id="navigation-status" role="status" aria-label="Navigation status" aria-live="polite"></p>
+    <label>
+      Copy JSON content
+      <select id="copy-json-content">
+        <option value="names">Local names</option>
+        <option value="node-ids">Figma node IDs</option>
+      </select>
+    </label>
     <button
       id="copy-visible-names"
       type="button"
@@ -293,7 +300,10 @@
     </p>
     <p id="copy-names-status" aria-label="Names copy status" aria-live="polite" aria-atomic="true"></p>
     <div id="copy-names-fallback" hidden>
-      <label>Visible local names JSON<textarea id="copy-names-json" readonly spellcheck="false"></textarea></label>
+      <label
+        ><span id="copy-json-label">Visible local names JSON</span
+        ><textarea id="copy-names-json" readonly spellcheck="false"></textarea>
+      </label>
       <button id="select-names-json" type="button" disabled>Select JSON</button>
     </div>
     <button id="export-report" class="secondary" type="button" disabled>Export JSON report</button>

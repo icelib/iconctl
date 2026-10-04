@@ -13,6 +13,8 @@ Use [Copy visible names JSON](/console#copy-visible-local-names) to share the fi
 
 Use [Select visible components](/console#select-visible-components) to replace the canvas selection with up to 500 components from the filtered list, keeping zoom unchanged. It does not edit nodes or narrow reports and sync.
 
+Use [Copy visible node IDs](./console#copy-visible-node-ids) to share the filtered components as a JSON array for the original file’s Figma source `ids`, including components whose local names are unavailable. Copy content switching keeps pending navigation and selection running.
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.
