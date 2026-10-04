@@ -185,3 +185,35 @@ Use **Download all SVG** (「下载全部 SVG」) in a snapshot's artifacts sect
 Archives support snapshot documents up to 8 MiB, at most 5000 SVGs, 1 MiB per SVG and 5 MiB of SVG data in total. Files are stored without compression. Larger snapshots remain available through individual artifact downloads. Snapshots without stored SVG output, including check/dry-run results or SVG output being disabled, have no archive to download.
 
 Download progress and errors stay in the snapshot review. An error can be retried by clicking the download button again. Changing the snapshot or comparison, switching projects or leaving the review cancels a pending download, so a late response cannot start a download for a different review. “Download started” means the browser received the download; it does not confirm that you saved the file.
+
+## Export a raw SVG handoff
+
+Choose **Export SVG ZIP** to deliver every non-draft component on the current page. The plugin first runs a fresh preflight with the loaded rules; search, Problems only and selection do not limit the export. Every icon must pass and every native export must succeed. Errors identify the affected node and keep the download empty; fix the issue and export again. Paired projects use their confirmed rules, while GitHub and unpaired mode use their existing defaults. Refresh unavailable project rules before retrying. Custom server naming hooks require a console sync: download the confirmed snapshot from the console instead.
+
+The ZIP contains only `raw-svg/<icon-name>.svg`, with normalized component-set variant names. It contains raw Figma SVGs, before iconctl optimization, `currentColor` conversion or server naming. Figma exports the complete component bounds and outlines text, retaining the document color profile and default stroke simplification. Portable ASCII names are required; reserved names such as `con` and paths longer than 240 characters are refused rather than renamed. Limits are 5000 SVGs, 1 MiB per SVG, 5 MiB of SVG content and 8 MiB for the final ZIP. No partial archive is downloaded.
+
+Extract the ZIP into a working directory and keep the input separate from generated output. For example, save this as `iconctl.config.ts` next to `raw-svg/`:
+
+```ts
+import { defineConfig } from '@iconctl/core'
+
+export default defineConfig({
+  prefix: 'design',
+  sources: [{ type: 'directory', dir: 'raw-svg' }],
+  output: {
+    json: 'icons.json',
+    svg: 'svg',
+    types: 'icons.d.ts',
+    preview: 'preview.html',
+  },
+})
+```
+
+```bash
+pnpm exec iconctl sync --dry-run
+pnpm exec iconctl watch
+```
+
+When receiving a replacement ZIP, replace only the owned input folder so removed icons do not remain there. Match any project-specific dimensions in the engineering config. The same SVG-only archive can be submitted to an existing runner ZIP source with `dir: 'raw-svg'`.
+
+A temporary page-edit listener protects this export even when Live preflight is off. Received page edits, page/mode/project changes, manual Rescan, rule refresh, Cancel or closing the plugin discard the export. Figma's current native export cannot be interrupted: Cancel stops subsequent components and waits for the pending operation before permitting another export. This is event- and node-validated handoff, not an atomic Figma document snapshot. No network request, storage write, task creation or automatic sync is performed; current task tracking and separate feedback continue. Rebuild the plugin to use this button; no console upgrade or data migration is required.

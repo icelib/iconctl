@@ -4,6 +4,8 @@ Figma is one `iconctl` source. Designers maintain a library file, then press **P
 
 The [Figma plugin’s Live preflight](/console#figma-plugin) can recheck the current page after edits using loaded project rules. It is opt-in for each session and never submits or downloads automatically.
 
+For a local engineering handoff, use [Export SVG ZIP](/console#export-a-raw-svg-handoff). It exports the complete validated current page as raw SVGs that work with a `directory` source and `iconctl watch`, without a REST token or remote task.
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.

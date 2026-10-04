@@ -8,6 +8,7 @@ import { PreflightNavigation } from './navigation'
 import { inspectComponents } from './preflight'
 import { appliedRules, PreflightReport } from './report'
 import { PluginSettings } from './settings'
+import { SvgHandoff } from './svg-handoff'
 
 function collectComponents(
   node: SceneNode,
@@ -46,7 +47,9 @@ const navigation = new PreflightNavigation({
   post: message => figma.ui.postMessage(message),
 })
 const reports = new PreflightReport({ currentPage: () => figma.currentPage, post: message => figma.ui.postMessage(message) })
+let handoff: SvgHandoff | undefined
 function invalidateScan(text: string, error = false) {
+  handoff?.invalidate(text)
   reports.invalidate()
   navigation.invalidate(text, error)
 }
@@ -80,8 +83,14 @@ const consoleSession = new PluginConsole({
   },
   scan: scanPage,
   invalidate: invalidateScan,
-  localScanStateChanged: () => live?.stateChanged(),
-  connectionReplaced: () => live?.setEnabled(false),
+  localScanStateChanged() {
+    handoff?.invalidate('Project rules changed. SVG export cancelled.')
+    live?.stateChanged()
+  },
+  connectionReplaced() {
+    handoff?.invalidate('Project connection changed. SVG export cancelled.')
+    live?.setEnabled(false)
+  },
   resetProject() {
     if (reports.invalidateProject()) {
       navigation.invalidate('Project connection changed. Rescan to use the current rules.')
@@ -92,6 +101,15 @@ live = new LivePreflight({
   currentPage: () => figma.currentPage,
   state: () => consoleSession.localScanState,
   scan: () => consoleSession.tryLiveRescan(),
+  invalidate: invalidateScan,
+  post: message => figma.ui.postMessage(message),
+})
+handoff = new SvgHandoff({
+  currentPage: () => figma.currentPage,
+  state: () => consoleSession.localScanState,
+  scan: () => ({ ...consoleSession.captureLocalScan(), scanId: navigation.scanId }),
+  inspect: scanPage,
+  lookup: id => figma.getNodeByIdAsync(id),
   invalidate: invalidateScan,
   post: message => figma.ui.postMessage(message),
 })
@@ -108,12 +126,14 @@ function rescan(mode?: 'console' | 'github') {
 rescan()
 const settings = new PluginSettings({ storage: figma.clientStorage, post: message => figma.ui.postMessage(message) })
 figma.on('currentpagechange', () => {
+  handoff?.invalidate('Page changed. SVG export cancelled.')
   reports.invalidate()
   navigation.invalidate()
   live?.pageChanged()
 })
 figma.on('close', () => {
   closed = true
+  handoff?.dispose()
   live?.dispose()
   navigation.dispose()
   reports.dispose()
@@ -139,6 +159,26 @@ figma.ui.onmessage = async (message: {
   if (message.type === 'set-live-preflight') {
     if (typeof message.enabled === 'boolean' && Number.isSafeInteger(message.requestId)) {
       live?.setEnabled(message.enabled, message.requestId)
+    }
+    return
+  }
+  if (message.type.endsWith('-svg-handoff')) {
+    if (!Number.isSafeInteger(message.requestId)) {
+      return
+    }
+    if (message.type === 'export-svg-handoff') {
+      await handoff?.start(message.requestId!)
+    }
+    else if (message.type === 'cancel-svg-handoff') {
+      handoff?.cancel(message.requestId)
+    }
+    else if (Number.isSafeInteger(message.scanId)) {
+      if (message.type === 'download-svg-handoff') {
+        handoff?.deliver(message.requestId!, message.scanId!)
+      }
+      else if (message.type === 'finish-svg-handoff') {
+        handoff?.finish(message.requestId!, message.scanId!)
+      }
     }
     return
   }

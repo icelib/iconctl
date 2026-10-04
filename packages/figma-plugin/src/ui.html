@@ -96,13 +96,16 @@
       }
       #navigation-status,
       #report-status,
-      #rules-status {
+      #rules-status,
+      #svg-handoff-help,
+      #svg-handoff-status {
         margin: 4px 0;
         overflow-wrap: anywhere;
       }
       #navigation-status.err,
       #report-status.err,
-      #rules-status.err {
+      #rules-status.err,
+      #svg-handoff-status.err {
         color: #c00;
       }
       #navigation-status.ok,
@@ -230,6 +233,12 @@
     <button id="export-report" class="secondary" type="button" disabled>Export JSON report</button>
     <button id="export-html-report" class="secondary" type="button" disabled>Export HTML report</button>
     <p id="report-status" aria-live="polite" aria-atomic="true">Rescan to prepare a complete report.</p>
+    <div class="problem-controls" role="group" aria-label="SVG handoff">
+      <button id="export-svg-handoff" class="secondary" type="button" disabled>Export SVG ZIP</button>
+      <button id="cancel-svg-handoff" class="secondary" type="button" disabled>Cancel SVG export</button>
+    </div>
+    <p id="svg-handoff-help">Rescan the page with current rules before exporting SVGs.</p>
+    <p id="svg-handoff-status" aria-label="SVG handoff status" aria-live="polite" aria-atomic="true"></p>
     <div class="row">
       <button id="publish" disabled>Sync to console</button>
       <button id="rescan" class="secondary" type="button">Rescan</button>

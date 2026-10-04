@@ -209,3 +209,35 @@ pnpm --filter @iconctl/console exec wrangler rollback <previous-version-id> --en
 ZIP 下载支持最多 8 MiB 的快照文档、5000 个 SVG、单文件 1 MiB、SVG 总大小 5 MiB，文件使用不压缩的 ZIP 存储方式。超出范围时仍可逐个下载产物。仅校验、dry-run 或关闭 SVG 输出等没有已存 SVG 的快照不提供 ZIP。
 
 下载进度和错误显示在当前快照旁，失败后再次点击按钮即可重试。切换快照、比较基准、项目或离开预览会取消未完成的下载，迟到响应不会替其他预览发起下载。「已发起下载」表示下载已交给浏览器，不代表文件已保存到本地。
+
+## 导出原始 SVG 交接包
+
+点击 **Export SVG ZIP**，导出当前页的全部非草稿组件。插件先用已加载规则重新预检整页；搜索、Problems only 和当前选择不会缩小导出范围。所有图标通过预检且原生导出全部成功后才下载。失败会显示对应节点，不下载部分内容；修复后可重新导出。已配对项目使用确认过的项目规则，GitHub 与未配对模式沿用各自默认规则；项目规则不可用时先刷新。配置了服务端命名 hook 的项目需先同步到控制台，再下载确认过的快照。
+
+ZIP 只含 `raw-svg/<图标名>.svg`，组件集变体按标准规则命名。这些是 Figma 原始 SVG，尚未经过 iconctl 优化、`currentColor` 转换和服务端命名。Figma 导出完整组件边界，将文字转为轮廓，保留文档色彩配置与默认描边简化。文件名必须是可移植的 ASCII 名称；`con` 等保留名与超过 240 字符的完整路径会明确拒绝，不自动改名。最多 5000 个 SVG，单文件 1 MiB、SVG 内容合计 5 MiB、最终 ZIP 8 MiB，任何超限均取消整个导出。
+
+将 ZIP 解压到工程目录，输入与生成目录分别保存。例如在 `raw-svg/` 旁创建 `iconctl.config.ts`：
+
+```ts
+import { defineConfig } from '@iconctl/core'
+
+export default defineConfig({
+  prefix: 'design',
+  sources: [{ type: 'directory', dir: 'raw-svg' }],
+  output: {
+    json: 'icons.json',
+    svg: 'svg',
+    types: 'icons.d.ts',
+    preview: 'preview.html',
+  },
+})
+```
+
+```bash
+pnpm exec iconctl sync --dry-run
+pnpm exec iconctl watch
+```
+
+收到新版 ZIP 后，只替换本交接包所属的输入目录，避免已删除图标残留。工程配置应采用项目所需的尺寸校验。此 ZIP 也可交给现有 runner 的 SVG ZIP 来源，使用 `dir: 'raw-svg'`。
+
+即使 Live preflight 关闭，本次导出也会临时监听页面编辑。收到编辑事件、切页、切换模式或项目、手动 Rescan、刷新规则、Cancel 或关闭插件均使导出失效。Figma 当前原生导出无法强制中断；取消会停止后续组件并丢弃结果，等待进行中的操作结束后才允许重试。这是通过页面事件和节点复核保护的交接操作，不是 Figma 原子文档快照。导出不请求网络、不写存储、不创建任务，也不自动同步；已有任务继续跟踪，并保留独立反馈。重新构建插件即可使用，无需升级控制台或迁移数据。

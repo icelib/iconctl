@@ -98,13 +98,21 @@ export class PluginConsole {
   }
 
   /** A synchronous, cached-rules-only scan cannot connect or disturb a poller. */
+  captureLocalScan() {
+    if (this.localScanState !== 'ready') {
+      throw new Error('Project rules are unavailable. Wait for the current request or refresh project rules.')
+    }
+    const metadata = this.scanMetadata()
+    return { items: this.publishScan(metadata), metadata }
+  }
+
   tryLiveRescan(): LocalScanState | 'published' | 'failed' {
     const state = this.localScanState
     if (state !== 'ready') {
       return state
     }
     try {
-      this.publishScan(this.scanMetadata())
+      this.captureLocalScan()
       return 'published'
     }
     catch {

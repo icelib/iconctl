@@ -21,6 +21,7 @@ export default defineConfig([
   },
   {
     entry: ['./src/ui.ts'],
+    deps: { alwaysBundle: [/^fflate(?:\/|$)/], onlyBundle: ['fflate'] },
     format: ['iife'],
     dts: false,
     clean: false,

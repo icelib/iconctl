@@ -53,6 +53,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "tsd": "pnpm build && tsd --files test-d/**/*.test-d.ts"
   },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
   "devDependencies": {
     "@figma/plugin-typings": "^1.139.0",
     "@iconctl/console-contracts": "workspace:*"

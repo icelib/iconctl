@@ -1,8 +1,10 @@
 import type { PreflightItem } from './preflight'
 import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
+import type { HandoffFile } from './svg-handoff-format'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
+import { SvgHandoffUI } from './svg-handoff-ui'
 
 interface PluginMessage {
   type: string
@@ -16,6 +18,8 @@ interface PluginMessage {
   error?: boolean
   busy?: boolean
   enabled?: boolean
+  state?: string
+  files?: HandoffFile[]
   connected?: boolean
   items?: PreflightItem[]
   scanId?: number
@@ -84,7 +88,16 @@ let rulesRequest = 0
 let rulesPending: number | undefined
 let uiActive = true
 let liveRequest = 0
+let handoffRules: AppliedRules | undefined
 const reportUrls = new Map<string, number | undefined>()
+const handoffUI = new SvgHandoffUI({
+  current: () => ({ active: uiActive, current: currentPreflight, scanId, items, rules: handoffRules }),
+  send: message => parent.postMessage({ pluginMessage: message }, '*'),
+  button: document.querySelector<HTMLButtonElement>('#export-svg-handoff')!,
+  cancel: document.querySelector<HTMLButtonElement>('#cancel-svg-handoff')!,
+  help: document.querySelector<HTMLElement>('#svg-handoff-help')!,
+  status: document.querySelector<HTMLElement>('#svg-handoff-status')!,
+})
 function updateRules() {
   rulesBtn.hidden = modeInput.value !== 'console'
   rulesBtn.disabled = !uiActive || !rulesPaired || consoleBusy || rulesPending !== undefined
@@ -203,6 +216,7 @@ function updateSubmit() {
   publishBtn.disabled = !uiActive || !currentPreflight || !canSubmit(items) || (modeInput.value === 'console'
     ? consoleBusy || !consoleConnected
     : githubBusy)
+  handoffUI.update()
 }
 function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
@@ -306,6 +320,7 @@ function stepProblem(direction: 1 | -1) {
 previousProblem.addEventListener('click', () => stepProblem(-1))
 nextProblem.addEventListener('click', () => stepProblem(1))
 window.addEventListener('pagehide', () => {
+  handoffUI.dispose()
   setLive(false)
   uiActive = false
   liveInput.disabled = true
@@ -399,6 +414,7 @@ rulesBtn.addEventListener('click', () => {
     return
   }
   rulesPending = ++rulesRequest
+  handoffUI.cancel('Project rules are being refreshed.')
   invalidatePreflight('Refreshing project rules…')
   rulesStatus.textContent = 'Refreshing project rules…'
   rulesStatus.className = ''
@@ -423,6 +439,7 @@ function readSettings() {
 }
 parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 rescanBtn.addEventListener('click', () => {
+  handoffUI.cancel('A new scan was requested.')
   invalidatePreflight('Rescanning page…')
   parent.postMessage({ pluginMessage: { type: 'rescan', mode: modeInput.value } }, '*')
 })
@@ -443,6 +460,7 @@ publishBtn.addEventListener('click', async () => {
         return
       }
       consoleBusy = true
+      handoffUI.cancel('Console sync started.')
       updateSubmit()
       parent.postMessage({ pluginMessage: { type: 'console-sync' } }, '*')
       return
@@ -483,6 +501,10 @@ window.onmessage = (event: MessageEvent<{
   }
   const message = event.data.pluginMessage
   if (!message) {
+    return
+  }
+  if (message.type.startsWith('svg-handoff-')) {
+    handoffUI.receive(message)
     return
   }
   if (message.type === 'live-preflight-state' && message.requestId === liveRequest) {
@@ -545,6 +567,7 @@ window.onmessage = (event: MessageEvent<{
     navigationStatus.textContent = ''
     navigationStatus.className = ''
     items = message.items
+    handoffRules = message.appliedRules
     renderRules(message.appliedRules)
     currentPreflight = true
     reportPending = undefined
@@ -585,6 +608,7 @@ window.onmessage = (event: MessageEvent<{
   }
 }
 modeInput.addEventListener('change', () => {
+  handoffUI.cancel('Connection mode changed.')
   clearRulesRequest()
   invalidatePreflight('Rescanning page…')
   const consoleMode = modeInput.value === 'console'
@@ -599,6 +623,7 @@ modeInput.addEventListener('change', () => {
 document
   .querySelector('#connect')!
   .addEventListener('click', () => {
+    handoffUI.cancel('Project connection changed.')
     setLive(false)
     clearRulesRequest()
     rulesPaired = false
@@ -609,6 +634,7 @@ document
 document
   .querySelector('#disconnect')!
   .addEventListener('click', () => {
+    handoffUI.cancel('Project connection changed.')
     setLive(false)
     clearRulesRequest()
     rulesPaired = false

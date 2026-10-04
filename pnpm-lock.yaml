@@ -427,6 +427,10 @@ importers:
         version: 4.1.4
 
   packages/figma-plugin:
+    dependencies:
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
     devDependencies:
       '@figma/plugin-typings':
         specifier: ^1.139.0

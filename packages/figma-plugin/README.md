@@ -55,3 +55,35 @@ Use **Export JSON report** to download the complete latest successful page scan,
 Use **Export HTML report** for a standalone page you can read and print offline. It includes the same complete captured scan as JSON, with every component, draft, issue and applied rule. Use the browser’s Find to locate names or node IDs. The file has no scripts, external resources or embedded SVG, and component text is escaped. Both export formats keep the same scan timestamp and invalidation rules; exporting one temporarily disables both buttons, and a failed download can be retried. The plugin saves the file without opening a browser tab.
 
 This is a local page preflight: server validation is still required, and names are provisional when a custom naming hook runs on the server. Repeated exports keep the same scan timestamp and content. Rescan after editing components; switching pages or modes, changing the project connection or a failed scan disables the old report. Invalidated scans also block submission until a new scan succeeds. Export is available even when errors block submission. A download failure offers an explicit retry without changing filters or workflow status. Rebuild the plugin to use reporting; no server changes or stored-data migration are needed.
+
+## Export a raw SVG handoff
+
+Choose **Export SVG ZIP** to deliver every non-draft component on the current page. The plugin first runs a fresh preflight with the loaded rules; search, Problems only and selection do not limit the export. Every icon must pass and every native export must succeed. Errors identify the affected node and keep the download empty; fix the issue and export again. Paired projects use their confirmed rules, while GitHub and unpaired mode use their existing defaults. Refresh unavailable project rules before retrying. Custom server naming hooks require a console sync: download the confirmed snapshot from the console instead.
+
+The ZIP contains only `raw-svg/<icon-name>.svg`, with normalized component-set variant names. It contains raw Figma SVGs, before iconctl optimization, `currentColor` conversion or server naming. Figma exports the complete component bounds and outlines text, retaining the document color profile and default stroke simplification. Portable ASCII names are required; reserved names such as `con` and paths longer than 240 characters are refused rather than renamed. Limits are 5000 SVGs, 1 MiB per SVG, 5 MiB of SVG content and 8 MiB for the final ZIP. No partial archive is downloaded.
+
+Extract the ZIP into a working directory and keep the input separate from generated output. For example, save this as `iconctl.config.ts` next to `raw-svg/`:
+
+```ts
+import { defineConfig } from '@iconctl/core'
+
+export default defineConfig({
+  prefix: 'design',
+  sources: [{ type: 'directory', dir: 'raw-svg' }],
+  output: {
+    json: 'icons.json',
+    svg: 'svg',
+    types: 'icons.d.ts',
+    preview: 'preview.html',
+  },
+})
+```
+
+```bash
+pnpm exec iconctl sync --dry-run
+pnpm exec iconctl watch
+```
+
+When receiving a replacement ZIP, replace only the owned input folder so removed icons do not remain there. Match any project-specific dimensions in the engineering config. The same SVG-only archive can be submitted to an existing runner ZIP source with `dir: 'raw-svg'`.
+
+A temporary page-edit listener protects this export even when Live preflight is off. Received page edits, page/mode/project changes, manual Rescan, rule refresh, Cancel or closing the plugin discard the export. Figma's current native export cannot be interrupted: Cancel stops subsequent components and waits for the pending operation before permitting another export. This is event- and node-validated handoff, not an atomic Figma document snapshot. No network request, storage write, task creation or automatic sync is performed; current task tracking and separate feedback continue. Rebuild the plugin to use this button; no console upgrade or data migration is required.
