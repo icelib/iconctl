@@ -11,5 +11,8 @@
   "include": [
     "test",
     "vitest.worker.config.ts"
+  ],
+  "exclude": [
+    "test/browser"
   ]
 }

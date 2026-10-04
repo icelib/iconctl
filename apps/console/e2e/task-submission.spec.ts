@@ -1,5 +1,5 @@
 import type { ConsoleState, Job, Project } from '@iconctl/console-contracts'
-import type { Page } from '@playwright/test'
+import type { Page, Request } from '@playwright/test'
 import { test as base, expect } from '@playwright/test'
 import { discardDraft } from './draft-navigation'
 
@@ -50,6 +50,7 @@ interface Gate {
   entered: boolean
   settled: boolean
   request?: Captured
+  transport?: Request
   promise: Promise<Reply>
   release: (reply: Reply) => void
 }
@@ -102,6 +103,7 @@ const test = base.extend<{ submissionApi: SubmissionApi }>({
           expect(request.headers()['x-csrf-token']).toBe('submission-csrf')
         }
         gate.request = captured
+        gate.transport = request
         gate.entered = true
         const reply = await gate.promise
         if (method === 'POST' && (reply.status ?? 200) < 400) {
@@ -155,9 +157,10 @@ async function begin(page: Page, api: SubmissionApi, operation: Operation) {
 }
 async function answer(page: Page, gate: Gate, reply: Reply) {
   await expect.poll(() => gate.entered).toBe(true)
-  const response = page.waitForResponse(response => new URL(response.url()).pathname === gate.path && response.request().method() === gate.method)
+  // Cancellation is a terminal transport result too; bind to this exact read.
+  const response = gate.transport!.response()
   gate.release(reply)
-  await (await response).finished()
+  await (await response)?.finished()
   await page.clock.runFor(50)
 }
 function result(operation: Operation, extra: Partial<Job> = {}) {

@@ -348,7 +348,7 @@ for (const status of ['queued', 'running'] as const) {
       release: new Promise<void>((resolve) => { releaseState = resolve }),
     }
     const reads = consoleApi.reads
-    const staleResponse = page.waitForResponse('**/api/state')
+    const staleRequest = page.waitForRequest('**/api/state')
     await page.clock.fastForward(10_000)
     await expect.poll(() => consoleApi.reads).toBeGreaterThan(reads)
     await row.getByRole('button', { name: '重试', exact: true }).click()
@@ -358,7 +358,7 @@ for (const status of ['queued', 'running'] as const) {
     await expect(row).toBeFocused()
     await expect(row.getByRole('button', { name: '重试', exact: true })).toHaveCount(0)
     releaseState()
-    await (await staleResponse).finished()
+    await (await (await staleRequest).response())?.finished()
     await page.clock.runFor(100)
     await expectFilters(page)
     await expect(row).toContainText(status === 'queued' ? '等待执行' : '运行中')

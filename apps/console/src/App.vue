@@ -24,6 +24,7 @@ import { createSourceUpload } from './features/projects/source-upload'
 import { createReleaseReview } from './features/review/release-review'
 import { createSnapshotDownload } from './features/review/snapshot-download'
 import { createSnapshotReview } from './features/review/snapshot-review'
+import { createWorkspaceRefresh } from './features/workspace/workspace-refresh'
 
 type View = 'projects' | 'config' | 'preview' | 'history' | 'connections'
 const navigation: { id: View, name: string, symbol: string }[] = [
@@ -49,15 +50,24 @@ const data = ref<ConsoleState>({
   pairings: [],
   devices: [],
 })
-const busy = ref(false)
-const ready = ref(false)
+const mutating = ref(false)
+const workspace = createWorkspaceRefresh<ConsoleState>({
+  initialize: initializeSession,
+  read: signal => api<ConsoleState>('state', undefined, 'GET', { signal }),
+  commit: applyWorkspace,
+  automatic: () => !mutating.value && document.visibilityState === 'visible',
+  visibilityTarget: document,
+  onlineTarget: window,
+})
+const workspaceState = workspace.state
+const ready = computed(() => workspaceState.value.ready)
+const busy = computed(() => mutating.value || !ready.value)
 const error = ref('')
 const notice = ref('')
 const linkedJobId = new URLSearchParams(location.search).get('job')
 const linkedJobError = ref('')
 const linkedJobLocated = ref(false)
 let locatingLinkedJob = false
-let stateRequest = 0
 const selectedId = ref('')
 function blank(): ProjectInput {
   return {
@@ -77,7 +87,7 @@ const editor = createProjectEditor({
     ? api<Project>(`projects/${project.id}`, { project: input, revision: project.revision }, 'PUT')
     : api<Project>('projects', input),
   committed(project, current) {
-    stateRequest++
+    workspace.invalidate()
     data.value.projects = upsertSavedProject(data.value.projects, project)
     if (current) {
       selectedId.value = project.id
@@ -194,7 +204,7 @@ async function revealJob(job: Job, automatic = false) {
 function recordSubmittedJob(job: Job) {
   // The mutation response is authoritative, including a retry's new attempt.
   // Discard any older state request still in flight before displaying it.
-  stateRequest++
+  workspace.invalidate()
   data.value.jobs = upsertSubmittedJob(data.value.jobs, job)
 }
 const sourceType = ref<Source['type']>('figma')
@@ -317,23 +327,35 @@ async function locateLinkedJob(automatic = false) {
     locatingLinkedJob = false
   }
 }
-async function refresh(selectDefault = true) {
-  const request = ++stateRequest
-  const state = await api<ConsoleState>('state')
-  if (request !== stateRequest) {
-    return
-  }
+function applyWorkspace(state: ConsoleState, selectDefault: boolean) {
   for (const project of data.value.projects) {
     state.projects = upsertSavedProject(state.projects, project)
   }
   data.value = state
   editor.observe(state.projects)
+  // Navigation has its own draft/focus lifetime and must not hold the next
+  // network refresh or an editor's explicit read waiting for a decision.
+  void selectWorkspace(selectDefault)
+}
+async function selectWorkspace(selectDefault: boolean) {
   if (linkedJobId && !linkedJobLocated.value) {
     await locateLinkedJob(true)
   }
-  if (selectDefault && !selectedId.value && data.value.projects[0]) {
+  if (!disposed && selectDefault && !selectedId.value && data.value.projects[0]) {
     selectedId.value = data.value.projects[0].id
   }
+}
+async function refresh(selectDefault = true) {
+  await workspace.refresh(selectDefault)
+}
+async function refreshAfterMutation() {
+  workspace.invalidate()
+  // The write succeeded. Its recovery must retry only the read, with the
+  // workspace message preserving the mutation's own success/error state.
+  await refresh().catch(() => undefined)
+}
+function retryWorkspace() {
+  void refresh().catch(() => undefined)
 }
 async function locatePublication() {
   const job = latePublication.value
@@ -345,7 +367,7 @@ async function perform(action: () => Promise<void>) {
   if (busy.value) {
     return
   }
-  busy.value = true
+  mutating.value = true
   error.value = ''
   notice.value = ''
   try {
@@ -355,7 +377,7 @@ async function perform(action: () => Promise<void>) {
     error.value = cause instanceof Error ? cause.message : '操作失败，请重试'
   }
   finally {
-    busy.value = false
+    mutating.value = false
   }
 }
 function applyEdit(project?: Project) {
@@ -402,12 +424,12 @@ async function save() {
   if (busy.value || uploading.value) {
     return
   }
-  busy.value = true
+  mutating.value = true
   try {
     await editor.save()
   }
   finally {
-    busy.value = false
+    mutating.value = false
   }
 }
 function addSource() {
@@ -484,12 +506,12 @@ async function submitTask(action: () => Promise<Job>, message: string) {
   if (busy.value || uploading.value) {
     return
   }
-  busy.value = true
+  mutating.value = true
   try {
     await submission.submit(action, message)
   }
   finally {
-    busy.value = false
+    mutating.value = false
   }
 }
 async function install() {
@@ -501,7 +523,7 @@ async function install() {
       `projects/${selectedId.value}/install`,
       {},
     )
-    await refresh()
+    await refreshAfterMutation()
     notice.value = `安装 PR 已创建：${result.url}`
   })
 }
@@ -566,28 +588,28 @@ async function connectFigma(connectionId?: string) {
 async function disconnect(id: string) {
   await perform(async () => {
     await api(`connections/${id}`, undefined, 'DELETE')
-    await refresh()
+    await refreshAfterMutation()
   })
 }
 async function connectMastergo() {
   await perform(async () => {
     await api('connections/mastergo', mastergo)
     mastergo.token = ''
-    await refresh()
+    await refreshAfterMutation()
   })
 }
 async function approvePairing() {
   await perform(async () => {
     await api('pairings/approve', pairing)
     pairing.code = ''
-    await refresh()
+    await refreshAfterMutation()
     notice.value = '插件已连接，仅能同步所选项目'
   })
 }
 async function revoke(id: string) {
   await perform(async () => {
     await api(`devices/${id}`, undefined, 'DELETE')
-    await refresh()
+    await refreshAfterMutation()
   })
 }
 async function retry(job: Job) {
@@ -600,7 +622,7 @@ async function restoreFile(event: Event) {
   }
   await perform(async () => {
     const count = await restoreBackup(file)
-    await refresh()
+    await refreshAfterMutation()
     notice.value = `已恢复 ${count} 条记录；请核对 R2 产物并重新连接来源授权`
   })
 }
@@ -619,28 +641,16 @@ async function logout() {
     },
   })
 }
-let poll: ReturnType<typeof setInterval> | undefined
-onMounted(async () => {
-  await perform(async () => {
-    await initializeSession()
-    await refresh()
-    ready.value = true
-  })
-  poll = setInterval(() => {
-    if (ready.value && !busy.value && document.visibilityState === 'visible') {
-      refresh().catch(() => undefined)
-    }
-  }, 10_000)
-})
+onMounted(retryWorkspace)
 onUnmounted(() => {
   disposed = true
+  workspace.dispose()
   svgDownload.dispose()
   uploads.dispose()
   draftNavigation.dispose()
   window.removeEventListener('beforeunload', protectDocumentLeave)
   editor.dispose()
   submission.dispose()
-  clearInterval(poll)
   review.invalidate(true)
   publication.dispose()
 })
@@ -774,7 +784,17 @@ onUnmounted(() => {
           定位发布任务
         </button>
       </div>
-      <p v-if="!ready && !error" class="loading">
+      <div v-if="workspaceState.error" role="alert" aria-label="工作空间连接状态" class="message error workspace-status">
+        <div>
+          <strong>{{ ready ? '工作空间暂未更新，保留上次读取的状态。' : '工作空间加载失败。' }}</strong>
+          <p>{{ workspaceState.error }}</p>
+          <small v-if="workspaceState.lastUpdated">上次更新：{{ date(workspaceState.lastUpdated) }}</small>
+        </div>
+        <button type="button" :disabled="workspaceState.pending" @click="retryWorkspace">
+          {{ workspaceState.pending ? '正在重试…' : '重新读取工作空间' }}
+        </button>
+      </div>
+      <p v-if="!ready && !workspaceState.error" class="loading">
         正在载入工作空间…
       </p>
 
@@ -1418,7 +1438,7 @@ onUnmounted(() => {
       <section v-if="view === 'history'">
         <div class="section-heading">
           <h2>任务记录</h2>
-          <button :disabled="busy" @click="perform(refresh)">
+          <button :disabled="busy || workspaceState.pending" @click="retryWorkspace">
             刷新状态
           </button>
         </div>

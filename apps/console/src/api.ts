@@ -9,11 +9,14 @@ interface RequestOptions {
   idempotencyKey?: string
 }
 
-async function readResponse<T>(response: Response): Promise<T> {
+async function readResponse<T>(response: Response, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted()
   if (response.status === 401) {
     location.assign('/login')
   }
-  return await readApiResponse<T>(response)
+  const value = await readApiResponse<T>(response)
+  signal?.throwIfAborted()
+  return value
 }
 
 export async function api<T>(
@@ -33,10 +36,11 @@ export async function api<T>(
     signal: options.signal,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
-  return await readResponse<T>(response)
+  return await readResponse<T>(response, options.signal)
 }
-export async function initializeSession() {
-  const session = await api<{ csrf: string }>('session')
+export async function initializeSession(signal?: AbortSignal) {
+  const session = await api<{ csrf: string }>('session', undefined, 'GET', { signal })
+  signal?.throwIfAborted()
   csrf = session.csrf
 }
 export async function upload(file: File, signal?: AbortSignal) {
@@ -48,7 +52,7 @@ export async function upload(file: File, signal?: AbortSignal) {
     signal,
   })
   signal?.throwIfAborted()
-  const result = await readResponse<{ id: string }>(response)
+  const result = await readResponse<{ id: string }>(response, signal)
   return result.id
 }
 

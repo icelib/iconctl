@@ -656,6 +656,18 @@ label {
   border: 1px solid #bfd9cb;
 }
 
+.workspace-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workspace-status p {
+  margin: 4px 0;
+}
+
 .loading {
   color: var(--muted);
 }

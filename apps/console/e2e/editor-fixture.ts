@@ -1,5 +1,5 @@
 import type { ConsoleState, Project, ProjectInput } from '@iconctl/console-contracts'
-import type { Page } from '@playwright/test'
+import type { Page, Request } from '@playwright/test'
 import { test as base, expect } from '@playwright/test'
 
 export const id = (value: number) => `00000000-0000-4000-8000-${value.toString(16).padStart(12, '0')}`
@@ -53,6 +53,7 @@ export interface Gate {
   entered: boolean
   settled: boolean
   request?: Captured
+  transport?: Request
   promise: Promise<Reply>
   release: (reply: Reply) => void
 }
@@ -111,6 +112,7 @@ export const test = base.extend<{ editorApi: EditorApi }>({
       if (gate) {
         // Capture before awaiting: later input must not mutate the request body.
         gate.request = captured
+        gate.transport = request
         gate.entered = true
         const reply = await gate.promise
         if (/^\/api\/projects(?:\/[^/]+)?$/.test(path) && (reply.status ?? 200) < 400) {
@@ -149,9 +151,10 @@ export async function open(page: Page, project = alpha) {
 }
 export async function answer(page: Page, gate: Gate, reply: Reply) {
   await expect.poll(() => gate.entered).toBe(true)
-  const response = page.waitForResponse(response => new URL(response.url()).pathname === gate.path && response.request().method() === gate.method)
+  // Cancellation is a terminal transport result too; bind to this exact read.
+  const response = gate.transport!.response()
   gate.release(reply)
-  await (await response).finished()
+  await (await response)?.finished()
   await page.clock.runFor(50)
 }
 export async function save(page: Page, gate: Gate) {

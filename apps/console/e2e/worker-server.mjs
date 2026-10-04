@@ -102,6 +102,14 @@ async function main() {
       outboundService(request) {
         const url = new URL(request.url)
         if (url.origin === 'https://api.github.com') {
+          if (process.argv[2] === 'release-comparison' && request.method === 'GET') {
+            if (url.pathname === '/repos/fixture/icons/installation') {
+              return WorkerResponse.json({ id: 456, permissions: { contents: 'write', actions: 'write', pull_requests: 'write', workflows: 'write' } })
+            }
+            if (url.pathname === '/repos/fixture/icons') {
+              return WorkerResponse.json({ id: 123, default_branch: 'main' })
+            }
+          }
           if (request.method === 'POST' && url.pathname === '/app/installations/456/access_tokens') {
             return WorkerResponse.json({ token: 'fixture-installation-token' })
           }

@@ -53,6 +53,14 @@ This source uses only repository files and needs no source credentials or upload
 
 After upgrading the console, create and merge an updated runner installation PR in each target repository before selecting this source. The workflow pins its executor commit; older pinned runners do not recognize `type: "iconify"`.
 
+### Recover workspace loading
+
+If the first session or workspace read fails, use **Read workspace again** (「重新读取工作空间」) without reloading the page. Session setup is retried when it has not completed or an authentication failure has invalidated it. Project actions become available after the first successful workspace read. An expired login still opens the login page and stops automatic retries. If you cancel that navigation and sign in elsewhere, manual recovery first obtains the new session and CSRF token.
+
+After loading, a failed refresh keeps the last displayed workspace and shows when it was read. The same retry action is available in every view. Recovery preserves your project, draft, task filters and keyboard focus; it never resubmits a save, task, device revocation or other successful write. A successful write always requires a fresh state read, so an older pending poll cannot restore the previous state.
+
+Automatic reads run one at a time, normally 10 seconds after the previous attempt finishes. A session/state attempt times out after 30 seconds. Transient failures retry after 10, 20, 40 and at most 60 seconds; a successful read restores the normal cadence. Manual retry bypasses this delay. Automatic reads pause while the page is hidden or a mutation is pending; returning to the page or receiving a browser online event requests one catch-up read when eligible. Explicit post-save reads remain available. Leaving the console cancels its pending reads and timers; late responses cannot update a new session or send it to login.
+
 ### Save project configuration
 
 Saving captures the current project's configuration and revision. You can keep typing or navigate while it is pending. Later edits remain marked as unsaved; a delayed result from another editing session updates the project list without changing your current project or draft. A newly created project adopts its server ID only in the original editor, so the next save updates it instead of creating it again.
