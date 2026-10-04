@@ -34,6 +34,24 @@ Import a vendor collection or the `icons.json` from an installed `@iconify-json/
 
 Local Iconify collection files must be valid UTF-8. One leading UTF-8 BOM is accepted; malformed byte sequences are rejected instead of being replaced. Valid Unicode, including non-ASCII names and a literal replacement character, is preserved. This encoding rule covers local Iconify collection inputs.
 
+For a collection published over the network, use an HTTPS URL instead of `file`:
+
+```ts
+{
+  type: 'iconify',
+  url: 'https://cdn.example.com/icons.json',
+}
+```
+
+Remote collections are fetched during sync with a 30-second timeout and strict
+HTTPS-only URL validation (credentials and redirects are rejected). Responses
+are cached below `cacheDir` using the URL as the cache key. When the server
+returns `ETag` or `Last-Modified`, the next sync sends conditional headers and
+reuses a validated body on `304 Not Modified`. A missing or corrupt cached body
+never gets used for a `304`; fix the endpoint or clear the cache and retry.
+Remote Iconify sources have no local watch root, so `iconctl watch` continues to
+observe local sources and configuration changes without polling the endpoint.
+
 Aliases are resolved through their full parent chain and flattened into independent icons, including horizontal/vertical flips, quarter-turn rotations and inherited dimensions. Missing dimensions default to Iconify's 16×16. Selected hidden icons are imported too; their `hidden` flag and collection/search metadata are not copied to generated outputs. All imported SVGs use the normal cleanup, color conversion and validation pipeline. Set `color: false` to retain vendor colors, and choose canvas validation that fits the vendor set.
 
 Unreadable files, invalid JSON, malformed collection structure and invalid default dimensions stop the source even with `--continue`. Invalid selected entries, broken/cyclic aliases, missing explicit selections and API `not_found` entries produce per-icon issues. Alias failures include the ordered path from the selected name to the missing or invalid entry, which makes chained aliases actionable to repair. The default sync preserves previous outputs; `--continue` exports available icons with `complete: false`, unreliable deletions and no changelog update. `--dry-run` and caller cancellation follow the existing sync contract.

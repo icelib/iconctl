@@ -49,6 +49,7 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         cwd: options.cwd,
         prefix: options.config.prefix,
         skipPrefix: options.config.validate.skipPrefix,
+        cacheDir: options.config.cacheDir,
         ...cancellation,
       })
     case 'directory':

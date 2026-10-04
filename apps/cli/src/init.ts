@@ -57,22 +57,22 @@ function sourceType(value: unknown): SourceType {
   return value as SourceType
 }
 
-function symbolUrl(value: unknown): string {
+function remoteUrl(value: unknown, label: string, httpsOnly = true): string {
   const url = text(value, 'url').trim()
   try {
     const parsed = new URL(url)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    if ((parsed.protocol === 'https:' || (!httpsOnly && parsed.protocol === 'http:')) && parsed.hostname) {
       return url
     }
   }
   catch {}
-  throw new IconctlError('--url must be an HTTP or HTTPS iconfont Symbol URL.')
+  throw new IconctlError(`--url must be an ${httpsOnly ? 'HTTPS' : 'HTTP or HTTPS'} ${label} URL.`)
 }
 
 function sourceConfig(type: SourceType, input: unknown, url: unknown): SourceConfig {
   switch (type) {
     case 'directory': return { type, dir: localPath(input, 'input') }
-    case 'iconify': return { type, file: localPath(input, 'input') }
+    case 'iconify': return { type, ...(url !== undefined ? { url: remoteUrl(url, 'Iconify JSON') } : { file: localPath(input, 'input') }) }
     case 'jsdesign': return { type, dir: localPath(input, 'input') }
     case 'figma': {
       const file = text(input, 'input')
@@ -80,7 +80,7 @@ function sourceConfig(type: SourceType, input: unknown, url: unknown): SourceCon
       return { type, file, pages: ['Icons'] }
     }
     case 'mastergo': return { type, file: text(input, 'input') }
-    case 'iconfont': return { type, ...(url !== undefined ? { url: symbolUrl(url) } : { dir: localPath(input, 'input') }), stripPrefix: 'icon-' }
+    case 'iconfont': return { type, ...(url !== undefined ? { url: remoteUrl(url, 'iconfont Symbol', false) } : { dir: localPath(input, 'input') }), stripPrefix: 'icon-' }
   }
 }
 
@@ -129,8 +129,8 @@ async function collect(options: InitCommandOptions, interactive: boolean, contex
       ],
     }))
   }
-  if (url !== undefined && type !== 'iconfont') {
-    throw new IconctlError('--url is only supported with --source iconfont.')
+  if (url !== undefined && type !== 'iconfont' && type !== 'iconify') {
+    throw new IconctlError('--url is only supported with --source iconfont or iconify.')
   }
   if (prefix === undefined) {
     prefix = await ask('Iconify prefix', { type: 'text', placeholder: 'brand', default: 'brand' }) || 'brand'
@@ -203,9 +203,11 @@ async function validateLocations(plan: InitPlan, target: string) {
     throw new IconctlError('--config conflicts with a generated output path. Choose a separate config location.')
   }
   if (plan.source.type === 'iconify') {
-    const input = await initLocation(resolve(plan.source.file.trim()))
-    if (await sameInitLocation(input, target) || await sameInitLocation(input, json) || await sameInitLocation(input, preview) || contains(svg, input)) {
-      throw new IconctlError('Iconify --input conflicts with --config or a generated output path. Choose separate paths.')
+    if (plan.source.file) {
+      const input = await initLocation(resolve(plan.source.file.trim()))
+      if (await sameInitLocation(input, target) || await sameInitLocation(input, json) || await sameInitLocation(input, preview) || contains(svg, input)) {
+        throw new IconctlError('Iconify --input conflicts with --config or a generated output path. Choose separate paths.')
+      }
     }
   }
   if ('dir' in plan.source && plan.source.dir) {
@@ -222,7 +224,7 @@ function hint(plan: InitPlan) {
     case 'mastergo': return 'Set MASTERGO_TOKEN before syncing. Team edition and a team-project file are required.'
     case 'iconfont': return 'Use a public Symbol URL or local download folder, then sync.'
     case 'jsdesign': return 'Export SVGs from 即时设计 into the configured folder, then sync.'
-    case 'iconify': return 'Keep the vendor JSON separate from output paths, then sync or watch.'
+    case 'iconify': return plan.source.url ? 'The HTTPS collection is fetched with conditional caching during sync.' : 'Keep the vendor JSON separate from output paths, then sync or watch.'
     case 'directory': return 'Put SVGs in the configured source directory, then sync or watch.'
   }
 }

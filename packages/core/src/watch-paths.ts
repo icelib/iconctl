@@ -365,7 +365,11 @@ export async function validateWatchInputs(paths: WatchLocations, signal?: AbortS
 }
 
 export async function watchPaths(config: WatchInputDescriptor, cwd: string, configFiles: string[], signal?: AbortSignal): Promise<WatchPaths> {
-  const sourceFiles = [...new Set(config.sources.filter(source => source.type === 'iconify').map(source => resolve(cwd, source.file!)))]
+  // Remote Iconify collections are fetched during each sync and have no local
+  // path to observe. They must not accidentally resolve their URL as a file.
+  const sourceFiles = [...new Set(config.sources
+    .filter(source => source.type === 'iconify' && source.file)
+    .map(source => resolve(cwd, source.file!)))]
   const roots = [...new Set(config.sources.flatMap((source) => {
     if (source.type === 'iconify') {
       return []

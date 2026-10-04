@@ -19,7 +19,10 @@ export interface DirectorySourceConfig {
 
 export interface IconifySourceConfig {
   type: 'iconify'
-  file: string
+  /** Local collection path. Exactly one of `file` and `url` is required. */
+  file?: string
+  /** HTTPS collection endpoint. Exactly one of `file` and `url` is required. */
+  url?: string
   include?: string[]
   namePrefix?: string
 }
@@ -72,7 +75,8 @@ export interface ResolvedDirectorySourceConfig {
 
 export interface ResolvedIconifySourceConfig {
   type: 'iconify'
-  file: string
+  file?: string
+  url?: string
   include?: string[]
   namePrefix: string
 }

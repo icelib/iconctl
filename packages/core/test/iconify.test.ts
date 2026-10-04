@@ -1,6 +1,6 @@
 import type { IconctlConfig } from '../src'
 import { Buffer } from 'node:buffer'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers'
@@ -32,6 +32,83 @@ it('accepts a UTF-8 BOM in a vendor collection file', async () => {
   await writeFile(join(cwd, 'vendor.json'), `\uFEFF${JSON.stringify(vendor)}`)
   const result = await sync({ cwd, config: configuration(), dryRun: true })
   expect(Object.keys(result.json.icons)).toEqual(['home'])
+})
+
+it('loads a remote Iconify collection and reuses a valid body on 304', async () => {
+  const url = 'https://cdn.example.test/vendor.json'
+  const requests: Request[] = []
+  const responses = [
+    new Response(`\uFEFF${JSON.stringify(vendor)}`, { status: 200, headers: [['etag', '"v1"'], ['last-modified', 'Mon, 01 Jan 2024 00:00:00 GMT']] }),
+    new Response(null, { status: 304 }),
+  ]
+  vi.stubGlobal('fetch', vi.fn(async (_input: string | URL, init?: RequestInit) => {
+    requests.push(new Request(url, init))
+    return responses.shift()!
+  }))
+  const config = configuration({
+    cacheDir: '.cache',
+    sources: [{ type: 'iconify', url }],
+  })
+  const first = await sync({ cwd, config, dryRun: true })
+  expect(first.json.icons).toHaveProperty('home')
+  const second = await sync({ cwd, config, dryRun: true })
+  expect(second.json.icons).toHaveProperty('home')
+  expect(requests).toHaveLength(2)
+  expect(requests[1]!.headers.get('If-None-Match')).toBe('"v1"')
+  expect(requests[1]!.headers.get('If-Modified-Since')).toBe('Mon, 01 Jan 2024 00:00:00 GMT')
+  expect((await readdir(join(cwd, '.cache', 'iconify-v1'))).length).toBe(1)
+})
+
+it('fetches changed remote collections and ignores malformed cache metadata', async () => {
+  const url = 'https://cdn.example.test/vendor.json'
+  const first = JSON.stringify(vendor)
+  const changed = JSON.stringify({ prefix: 'vendor', icons: { account: { body } } })
+  const requests: Request[] = []
+  const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+    requests.push(new Request(url, init))
+    return requests.length === 1
+      ? new Response(first, { status: 200, headers: { ETag: '"v1"' } })
+      : new Response(changed, { status: 200, headers: { ETag: '"v2"' } })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const config = configuration({ cacheDir: 'remote-cache', sources: [{ type: 'iconify', url }] })
+  expect(Object.keys((await sync({ cwd, config, dryRun: true })).json.icons)).toEqual(['home'])
+  expect(Object.keys((await sync({ cwd, config, dryRun: true })).json.icons)).toEqual(['account'])
+  expect(requests[1]!.headers.get('If-None-Match')).toBe('"v1"')
+
+  // A corrupt cache is ignored, so the next request is unconditional and can
+  // repair it instead of accepting an invalid 304 body.
+  const files = await readdir(join(cwd, 'remote-cache', 'iconify-v1'))
+  await writeFile(join(cwd, 'remote-cache', 'iconify-v1', files[0]!), '{not-json')
+  await sync({ cwd, config, dryRun: true })
+  expect(requests[2]!.headers.get('If-None-Match')).toBeNull()
+})
+
+it('rejects a 304 response when the cached body is unavailable', async () => {
+  const url = 'https://cdn.example.test/vendor.json'
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 304 })))
+  await expect(sync({ cwd, config: configuration({ sources: [{ type: 'iconify', url }] }), dryRun: true })).rejects.toThrow('304')
+})
+
+it('rejects malformed remote JSON without writing a cache entry', async () => {
+  const url = 'https://cdn.example.test/malformed.json'
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('\uFEFF{"prefix":"vendor","icons":[]}', { status: 200 })))
+  const config = configuration({ cacheDir: 'malformed-cache', sources: [{ type: 'iconify', url }] })
+  await expect(sync({ cwd, config, dryRun: true })).rejects.toThrow('Cannot parse remote Iconify JSON')
+  await expect(readdir(join(cwd, 'malformed-cache'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('cancels a remote Iconify request', async () => {
+  const controller = new AbortController()
+  vi.stubGlobal('fetch', vi.fn(async (_input: string | URL, init?: RequestInit) => {
+    await new Promise<void>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal!.reason), { once: true })
+    })
+    return new Response(JSON.stringify(vendor))
+  }))
+  const pending = sync({ cwd, config: configuration({ sources: [{ type: 'iconify', url: 'https://cdn.example.test/vendor.json' }] }), signal: controller.signal, dryRun: true })
+  setImmediate(() => controller.abort())
+  await expect(pending).rejects.toBeInstanceOf(IconctlAbortError)
 })
 
 it('rejects malformed UTF-8 before resolving an Iconify source', async () => {

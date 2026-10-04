@@ -39,6 +39,21 @@ describe('config', () => {
     expect(resolved.sources.map(item => item.type)).toEqual(['mastergo', 'iconfont', 'jsdesign'])
   })
 
+  it('accepts an HTTPS Iconify URL and rejects unsafe or ambiguous sources', () => {
+    expect(resolveConfig({
+      prefix: 'brand',
+      sources: [{ type: 'iconify', url: 'https://cdn.example.test/icons.json?set=brand' }],
+    }).sources).toEqual([{
+      type: 'iconify',
+      url: 'https://cdn.example.test/icons.json?set=brand',
+      namePrefix: '',
+    }])
+    expect(() => resolveConfig({ prefix: 'brand', sources: [{ type: 'iconify', file: 'icons.json', url: 'https://example.test/icons.json' }] })).toThrow('exactly one')
+    expect(() => resolveConfig({ prefix: 'brand', sources: [{ type: 'iconify' }] })).toThrow('exactly one')
+    expect(() => resolveConfig({ prefix: 'brand', sources: [{ type: 'iconify', url: 'http://example.test/icons.json' }] })).toThrow('HTTPS')
+    expect(() => resolveConfig({ prefix: 'brand', sources: [{ type: 'iconify', url: 'https://user:pass@example.test/icons.json' }] })).toThrow('without credentials')
+  })
+
   it('resolves jsonPackage objects', () => {
     const resolved = resolveConfig({
       prefix: 'brand',

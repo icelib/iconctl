@@ -121,8 +121,24 @@ function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): E
 function resolveSource(source: SourceConfig): ResolvedSourceConfig {
   switch (source.type) {
     case 'iconify': {
-      if (typeof source.file !== 'string' || !source.file.trim() || /^[a-z][\w+.-]*:\/\//i.test(source.file)) {
-        throw new IconctlError('iconctl iconify source needs a local `file` path')
+      const file = typeof source.file === 'string' ? source.file.trim() : ''
+      const url = typeof source.url === 'string' ? source.url.trim() : ''
+      if ((file && url) || (!file && !url)) {
+        throw new IconctlError('iconctl iconify source needs exactly one of `file` or `url`')
+      }
+      if (file && /^[a-z][\w+.-]*:\/\//i.test(file)) {
+        throw new IconctlError('iconctl iconify `file` must be a local path; use `url` for a remote collection')
+      }
+      if (url) {
+        try {
+          const parsed = new URL(url)
+          if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !parsed.hostname) {
+            throw new Error('invalid')
+          }
+        }
+        catch {
+          throw new IconctlError('iconctl iconify `url` must be an HTTPS URL without credentials')
+        }
       }
       if (source.include !== undefined && (!Array.isArray(source.include) || source.include.some(name => typeof name !== 'string' || !name))) {
         throw new IconctlError('iconctl iconify `include` must be an array of nonempty icon names')
@@ -132,7 +148,7 @@ function resolveSource(source: SourceConfig): ResolvedSourceConfig {
       }
       return {
         type: 'iconify',
-        file: source.file.trim(),
+        ...(file ? { file } : { url }),
         namePrefix: source.namePrefix ?? '',
         ...(source.include !== undefined ? { include: [...new Set(source.include)] } : {}),
       }
