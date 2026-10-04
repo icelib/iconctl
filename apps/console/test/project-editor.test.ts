@@ -320,6 +320,17 @@ it('keeps a failed reconciliation dismissible so the read can be retried', async
   expect(editor.state.value.reconciliation?.serverRevision).toBe(2)
 })
 
+it('keeps whole-draft reload mutually exclusive with an open reconciliation', async () => {
+  const { editor, refresh } = setup()
+  editor.open(project())
+  refresh.mockResolvedValue([{ ...project('A', 2), prefix: 'server' }])
+  await editor.reconcile()
+  const calls = refresh.mock.calls.length
+  await editor.reload()
+  expect(refresh).toHaveBeenCalledTimes(calls)
+  expect(editor.state.value.reconciliation).toBeDefined()
+})
+
 it('does not start reconciliation while an upload or save owns the physical mutation lock', async () => {
   let blocked = true
   const { editor, refresh } = setup()

@@ -957,7 +957,7 @@ onUnmounted(() => {
             <button type="button" :disabled="busy || uploading || editorState.refreshing || !!editorState.reconciliation" @click="editor.reconcile()">
               核对并保留草稿
             </button>
-            <button type="button" :disabled="busy || editorState.refreshing" @click="editor.reload()">
+            <button type="button" :disabled="busy || editorState.refreshing || !!editorState.reconciliation" @click="editor.reload()">
               载入最新配置
             </button>
           </div>

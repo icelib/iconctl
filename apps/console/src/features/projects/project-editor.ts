@@ -157,7 +157,7 @@ export function createProjectEditor(options: EditorOptions) {
     const request = generation
     const project = state.value.project
     const before = JSON.stringify(draft)
-    if (disposed || saving || options.reconcileBlocked?.() || state.value.refreshing || !project) {
+    if (disposed || saving || reconciling || state.value.reconciliation || options.reconcileBlocked?.() || state.value.refreshing || !project) {
       return
     }
     const latest = await refresh(request)
