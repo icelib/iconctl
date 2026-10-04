@@ -31,4 +31,7 @@ it('keeps missing and empty legacy source metadata distinct', () => {
   expect(projectSnapshotSources(undefined)).toBeUndefined()
   expect(projectSnapshotSources(null)).toBeUndefined()
   expect(projectSnapshotSources([])).toEqual([])
+  expect(projectSnapshotSources([null])).toEqual([
+    { index: 0, type: '未记录类型', fileKey: '未记录', status: 'unknown' },
+  ])
 })
