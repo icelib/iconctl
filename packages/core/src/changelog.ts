@@ -79,8 +79,10 @@ export async function writeChangelog(file: string, diff: IconDiff, date = change
   try {
     existing = await readFile(file, 'utf8')
   }
-  catch {
-    existing = ''
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
   }
   const next = mergeChangelog(existing, diff, date)
   if (!next) {

@@ -151,8 +151,18 @@ export function generateIconNameTypes(prefix: string, names: string[]): string {
 }
 
 export async function readPreviousIconJson(file: string): Promise<IconifyJSON | undefined> {
+  let contents: Uint8Array
   try {
-    return JSON.parse(decodeUtf8(await readFile(file))) as IconifyJSON
+    contents = await readFile(file)
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw error
+  }
+  try {
+    return JSON.parse(decodeUtf8(contents)) as IconifyJSON
   }
   catch {
     return undefined

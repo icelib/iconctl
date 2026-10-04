@@ -217,7 +217,9 @@ it.each(['icons.json', 'types.ts', 'svg/home.svg', 'svg/.iconctl-manifest.json',
   await rm(join(cwd, path))
   await mkdir(join(cwd, path))
   await expect(sync({ cwd, config })).rejects.toThrow()
-  expect(depths).toEqual(['3', '3'])
+  // A primary JSON directory fails while reading the previous collection;
+  // other managed paths are rejected during the later transaction check.
+  expect(depths).toEqual(path === 'icons.json' ? ['3'] : ['3', '3'])
   expect((await lstat(join(cwd, path))).isDirectory()).toBe(true)
   expect(await snapshot(otherFiles)).toEqual(before)
   expect(await readFile(metaPath(), 'utf8')).toBe(marker)
