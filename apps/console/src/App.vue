@@ -26,6 +26,8 @@ import { createTaskSubmission } from './features/history/task-submission'
 import { createDraftNavigation } from './features/projects/draft-navigation'
 import { createProjectEditor, upsertSavedProject } from './features/projects/project-editor'
 import { createSourceUpload } from './features/projects/source-upload'
+import { createComparisonReportDownload } from './features/review/comparison-report-download'
+import ComparisonReportDownloads from './features/review/ComparisonReportDownloads.vue'
 import { createReleaseReview } from './features/review/release-review'
 import { createSnapshotDownload } from './features/review/snapshot-download'
 import { createSnapshotReview } from './features/review/snapshot-review'
@@ -249,6 +251,12 @@ const snapshotId = computed(() => reviewState.value.committed?.id ?? '')
 const comparisonTarget = computed(() => reviewState.value.committed?.compareTo ?? '')
 const svgDownload = createSnapshotDownload(downloadSnapshotSvg, downloadBlob)
 const svgDownloadState = svgDownload.state
+const reportDownload = createComparisonReportDownload({
+  current: () => preview.value,
+  blocked: () => view.value !== 'preview' || !!reviewState.value.pending,
+  save: downloadBlob,
+})
+const reportDownloadState = reportDownload.state
 const svgFiles = computed(() => Object.keys(preview.value?.content.files ?? {}).filter(name => name.startsWith('svg/') && /\.svg$/i.test(name)))
 const latePublication = ref<Job>()
 const publication = createReleaseReview({
@@ -280,11 +288,13 @@ watch(
 )
 watch(selectedId, () => {
   svgDownload.invalidate()
+  reportDownload.invalidate()
   review.invalidate(true)
   publication.close()
 }, { flush: 'sync' })
 watch(view, () => {
   svgDownload.invalidate()
+  reportDownload.invalidate()
   review.invalidate()
   publication.close()
   editor.invalidate()
@@ -565,6 +575,7 @@ async function openSnapshot(id: string, compareTo = '') {
       view.value = 'preview'
       publication.close()
       svgDownload.invalidate()
+      reportDownload.invalidate()
       void review.open(id, compareTo)
       return true
     },
@@ -684,6 +695,7 @@ onUnmounted(() => {
   historyReveal.dispose()
   attemptViews.clear()
   svgDownload.dispose()
+  reportDownload.dispose()
   uploads.dispose()
   draftNavigation.dispose()
   window.removeEventListener('beforeunload', protectDocumentLeave)
@@ -1350,6 +1362,7 @@ onUnmounted(() => {
           <p v-if="!iconNames.length" class="help">
             没有符合条件的图标。
           </p>
+          <ComparisonReportDownloads :disabled="!!reviewState.pending" :state="reportDownloadState" @download="reportDownload.start" />
           <div class="artifact-list">
             <h3>下载产物</h3>
             <button

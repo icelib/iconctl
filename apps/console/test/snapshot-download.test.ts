@@ -102,7 +102,7 @@ it('disposes before the network settles and prevents new downloads', async () =>
   expect(save).not.toHaveBeenCalled()
 })
 
-it.each(['none', 'create', 'append', 'click'])('removes the temporary link and revokes the Blob URL after %s failure', (failure) => {
+it.each(['none', 'create', 'append', 'click', 'remove', 'revoke'])('removes the temporary link and revokes the Blob URL after %s failure', (failure) => {
   const link = {
     append: vi.fn(() => {
       if (failure === 'append') {
@@ -114,11 +114,19 @@ it.each(['none', 'create', 'append', 'click'])('removes the temporary link and r
         throw new Error('click')
       }
     }),
-    remove: vi.fn(),
+    remove: vi.fn(() => {
+      if (failure === 'remove') {
+        throw new Error('remove')
+      }
+    }),
   }
   const target = {
     createObjectURL: vi.fn(() => 'blob:test'),
-    revokeObjectURL: vi.fn(),
+    revokeObjectURL: vi.fn(() => {
+      if (failure === 'revoke') {
+        throw new Error('revoke')
+      }
+    }),
     createLink: vi.fn(() => {
       if (failure === 'create') {
         throw new Error('create')
