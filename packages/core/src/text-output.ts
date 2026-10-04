@@ -4,7 +4,7 @@ import { IconctlError } from './errors'
 import { canonicalTarget, OutputTransaction } from './output-transaction'
 
 interface TextOutputOptions {
-  label: 'Report' | 'Sprite' | 'Types'
+  label: 'Report' | 'Sprite' | 'Types' | 'Markdown report'
   inputs?: readonly string[]
   dryRun?: boolean
 }

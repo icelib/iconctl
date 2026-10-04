@@ -357,6 +357,7 @@ Compare two local Iconify JSON files without loading configuration, credentials 
 ```bash
 pnpm exec iconctl diff before.json after.json
 pnpm exec iconctl diff before.json after.json --html reports/diff.html
+pnpm exec iconctl diff before.json after.json --markdown reports/diff.md
 pnpm exec iconctl diff before.json after.json --json --check
 pnpm exec iconctl diff before.json after.json --html reports/diff.html --dry-run
 ```
@@ -367,17 +368,20 @@ Prefix changes are reported independently: matching local names remain unchanged
 
 `--json` prints one object with `before` and `after` (absolute `file` and `prefix`), `prefixChanged`, `hasChanges`, sorted `added`, `removed`, `changed`, `unchanged` arrays, and `outputFiles`. This does not change `sync --json`. `--dry-run` performs the comparison and destination checks, reports `dryRun: true` and `outputFiles: []`, and creates no files, directories or caches.
 
-The HTML report works offline with name search, change filters, counts and before/after images. It contains no external assets. Metadata is escaped, SVG bodies are isolated as image documents, and a Content Security Policy permits only the report's fixed script and styles. The ordinary `preview` gallery uses the same image isolation and alias rendering. A report cannot replace either input, including through a symlink or hard-link alias. Reports use staged replacement; serialize writes to the same destination.
+The HTML report works offline with name search, change filters, counts and before/after images. It contains no external assets. Metadata is escaped, SVG bodies are isolated as image documents, and a Content Security Policy permits only the report's fixed script and styles. The Markdown report is deterministic and suitable for attaching to a pull request or reviewing in a terminal. The ordinary `preview` gallery uses the same image isolation and alias rendering. A report cannot replace either input, including through a symlink or hard-link alias. Reports use staged replacement; serialize writes to the same destination.
 
 The APIs are available from both `iconctl` and `@iconctl/core`:
 
 ```ts
-import { compareIconSets, diffIconSets, renderDiffHtml, writeDiffHtml } from 'iconctl'
+import { compareIconSets, diffIconSets, renderDiffHtml, renderDiffMarkdown, writeDiffHtml, writeDiffMarkdown } from 'iconctl'
 
 const comparison = compareIconSets(beforeJson, afterJson)
 console.log(comparison.hasChanges, comparison.prefixChanged)
 const html = renderDiffHtml(comparison)
 await writeDiffHtml('reports/diff.html', comparison, {
+  inputs: ['before.json', 'after.json'],
+})
+await writeDiffMarkdown('reports/diff.md', comparison, {
   inputs: ['before.json', 'after.json'],
 })
 // Existing synchronous API keeps its four-array result shape.

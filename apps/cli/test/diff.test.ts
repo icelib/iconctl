@@ -61,6 +61,14 @@ describe('offline diff CLI', () => {
     expect(await readFile(report, 'utf8')).toContain('Prefix changed')
   })
 
+  it('writes a deterministic Markdown report alongside JSON output', async () => {
+    await writeFile(after, JSON.stringify({ ...icons, icons: { ...icons.icons, plus: { body: '<path/>' } } }))
+    const report = join(cwd, 'reports', 'diff.md')
+    await runCli(['node', 'iconctl', 'diff', before, after, '--markdown', report, '--json'])
+    expect(JSON.parse(output).outputFiles).toEqual([report])
+    expect(await readFile(report, 'utf8')).toContain('| plus | added |')
+  })
+
   it('detects alias geometry changes and accepts a BOM without touching configuration', async () => {
     await writeFile(join(cwd, 'iconctl.config.mjs'), 'throw new Error("config must not load")')
     await writeFile(after, `\uFEFF${JSON.stringify({ ...icons, aliases: { flipped: { parent: 'arrow', hFlip: true } } })}`)

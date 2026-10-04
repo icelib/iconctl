@@ -3,7 +3,7 @@ import { link, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compareIconSets } from '../src/diff'
-import { renderDiffHtml, writeDiffHtml } from '../src/diff-preview'
+import { renderDiffHtml, renderDiffMarkdown, writeDiffHtml, writeDiffMarkdown } from '../src/diff-preview'
 import { OutputTransaction } from '../src/output-transaction'
 import { renderPreviewHtml } from '../src/preview'
 
@@ -37,6 +37,19 @@ describe('offline HTML', () => {
     expect(images).toHaveLength(2)
     expect(images[1]).toContain('viewBox="0 0 16 24"')
     expect(images[1]).toContain('rotate(90')
+  })
+})
+
+describe('offline Markdown', () => {
+  it('renders a stable review table with escaped cell values', () => {
+    const markdown = renderDiffMarkdown(compareIconSets(
+      { prefix: 'before', icons: { 'unsafe|name': { body: '<path/>' } } },
+      { prefix: 'after', icons: { 'unsafe|name': { body: '<path d="M0 0"/>' } } },
+    ))
+    expect(markdown).toContain('<!-- iconctl diff v1 -->')
+    expect(markdown).toContain('| unsafe\\|name | changed |')
+    expect(markdown).toContain('Before prefix: `before`')
+    expect(markdown).toContain('After prefix: `after`')
   })
 })
 
@@ -97,5 +110,14 @@ describe('writeDiffHtml', () => {
     await expect(writeDiffHtml(output, comparison)).rejects.toThrow('disk failure')
     expect(await readFile(output, 'utf8')).toBe('previous report')
     expect(await readdir(cwd)).toEqual(['icons.json', 'report.html'])
+  })
+
+  it('uses the same conflict and dry-run protections as HTML reports', async () => {
+    const output = join(cwd, 'reports', 'diff.md')
+    await writeDiffMarkdown(output, comparison, { inputs: [input] })
+    expect(await readFile(output, 'utf8')).toContain('# Icon changes')
+    await writeDiffMarkdown(join(cwd, 'new', 'dry-run.md'), comparison, { inputs: [input], dryRun: true })
+    expect(await readdir(cwd)).toEqual(['icons.json', 'reports'])
+    await expect(writeDiffMarkdown(input, comparison, { inputs: [input], dryRun: true })).rejects.toThrow('Markdown report output conflicts with input')
   })
 })

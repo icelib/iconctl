@@ -92,6 +92,7 @@ export async function runCli(argv: string[] = process.argv) {
   cli
     .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')
     .option('--html <path>', 'Write a standalone offline HTML comparison')
+    .option('--markdown <path>', 'Write a deterministic Markdown comparison for code review')
     .option('--check', 'Exit with status 1 when icons or the prefix differ')
     .action(action(runDiff))
 

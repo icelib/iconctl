@@ -34,7 +34,7 @@ Iconify JSON is the engineering source. Figma is one input, not the product.
 | `iconctl watch` | Continuously sync local SVG folders and reload config |
 | `iconctl check` | Validate configured output or `--input icons.json` |
 | `iconctl preview` | Write a searchable offline gallery from config or `--input icons.json` |
-| `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML report |
+| `iconctl diff <before> <after>` | Compare local Iconify JSON and optionally write an offline HTML or Markdown report |
 | `iconctl types` | Generate name types from local Iconify JSON |
 
 For scripts, provide a source, location and prefix:
@@ -63,7 +63,7 @@ Local Iconify collection files are read as UTF-8. One leading UTF-8 BOM is accep
 
 To check a standalone collection, run `iconctl check --input ./icons.json --width 24 --height 24 --json`. This does not load configuration, contact sources or write files. Dimensions are optional; `--name` overrides the naming regex. Failure reports include import, SVG processing and validation issues and exit with status 1. See [artifact checks](apps/website/quick-start.md#check-existing-artifacts).
 
-Review two exported collections with `iconctl diff before.json after.json --html diff.html`. It resolves aliases, inherited dimensions and transforms, reports prefix changes, and needs no configuration or credentials. Add `--check --json` for CI; `--check` exits 1 when icons or their prefix differ. See [offline comparison](apps/website/quick-start.md#offline-comparison) for the report, dry-run and API.
+Review two exported collections with `iconctl diff before.json after.json --html diff.html`. It resolves aliases, inherited dimensions and transforms, reports prefix changes, and needs no configuration or credentials. Use `--markdown diff.md` for a deterministic review table that is easy to attach to a change. Add `--check --json` for CI; `--check` exits 1 when icons or their prefix differ. See [offline comparison](apps/website/quick-start.md#offline-comparison) for the report, dry-run and API.
 
 Generate types from an existing collection with `iconctl types --input ./icons.json`. The default `icons.d.ts` is for type checking; use `--output ./icon-names.ts` for a runtime prefix export. No config or credentials are needed. See [local type generation](apps/website/quick-start.md#generate-types-from-local-json).
 

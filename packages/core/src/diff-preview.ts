@@ -1,6 +1,7 @@
 import type { IconComparisonEntry, IconSetComparison } from './diff'
 import { escapeHtml, htmlDocument, iconImage } from './html'
 import { writeHtmlReport } from './html-output'
+import { writeTextOutput } from './text-output'
 
 const css = `
 :root { font-family: system-ui, sans-serif; color: #172b3a; background: #f4f6f8; }
@@ -67,4 +68,42 @@ export interface WriteDiffHtmlOptions {
 
 export async function writeDiffHtml(file: string, comparison: IconSetComparison, options: WriteDiffHtmlOptions = {}): Promise<void> {
   await writeHtmlReport(file, renderDiffHtml(comparison), options)
+}
+
+function markdownCell(value: string) {
+  return value.replaceAll('\\', '\\\\').replaceAll('|', '\\|').replaceAll('\n', ' ')
+}
+
+function markdownIcon(icon: IconComparisonEntry['before'] | IconComparisonEntry['after']) {
+  if (!icon) {
+    return '—'
+  }
+  const dimensions = `${icon.width} × ${icon.height}${icon.hidden ? ' · hidden' : ''}`
+  return `\`${markdownCell(dimensions)}\``
+}
+
+/** Render a deterministic Markdown summary for code review and offline archives. */
+export function renderDiffMarkdown(comparison: IconSetComparison): string {
+  const { diff } = comparison
+  const lines = [
+    '<!-- iconctl diff v1 -->',
+    '# Icon changes',
+    '',
+    `- Before prefix: \`${markdownCell(comparison.beforePrefix ?? '(empty)')}\``,
+    `- After prefix: \`${markdownCell(comparison.afterPrefix)}\``,
+    `- Prefix changed: **${comparison.prefixChanged ? 'yes' : 'no'}**`,
+    `- Added: **${diff.added.length}** · Changed: **${diff.changed.length}** · Removed: **${diff.removed.length}** · Unchanged: **${diff.unchanged.length}**`,
+    '',
+    '| Icon | Status | Before | After |',
+    '| --- | --- | --- | --- |',
+  ]
+  for (const entry of comparison.icons) {
+    lines.push(`| ${markdownCell(entry.name)} | ${entry.status} | ${markdownIcon(entry.before)} | ${markdownIcon(entry.after)} |`)
+  }
+  lines.push('', '_Compared after resolving Iconify aliases, dimensions and transformations; SVG path text is compared as supplied._', '')
+  return lines.join('\n')
+}
+
+export async function writeDiffMarkdown(file: string, comparison: IconSetComparison, options: WriteDiffHtmlOptions = {}): Promise<void> {
+  await writeTextOutput(file, renderDiffMarkdown(comparison), { ...options, label: 'Markdown report' })
 }

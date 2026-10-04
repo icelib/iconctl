@@ -357,6 +357,7 @@ await writePreviewHtml('reports/preview.html', iconsJson, options)
 ```bash
 pnpm exec iconctl diff before.json after.json
 pnpm exec iconctl diff before.json after.json --html reports/diff.html
+pnpm exec iconctl diff before.json after.json --markdown reports/diff.md
 pnpm exec iconctl diff before.json after.json --json --check
 pnpm exec iconctl diff before.json after.json --html reports/diff.html --dry-run
 ```
@@ -367,17 +368,20 @@ pnpm exec iconctl diff before.json after.json --html reports/diff.html --dry-run
 
 `--json` 输出一个对象，包含 `before`、`after`（绝对 `file` 路径和 `prefix`）、`prefixChanged`、`hasChanges`、排序后的 `added`、`removed`、`changed`、`unchanged` 数组及 `outputFiles`，不改变 `sync --json`。`--dry-run` 执行比较和目标路径检查，返回 `dryRun: true`、`outputFiles: []`，不创建文件、目录或缓存。
 
-HTML 报告可离线搜索名称、筛选变化、查看数量和前后预览，无外部资源。元数据经过转义，SVG body 作为独立图片文档展示，内容安全策略只允许报告固定的脚本和样式。普通 `preview` 画廊也使用相同的图片隔离和别名渲染。报告不能覆盖任一输入，包括符号链接或硬链接别名；写入使用暂存替换，同一目标请串行写入。
+HTML 报告可离线搜索名称、筛选变化、查看数量和前后预览，无外部资源。元数据经过转义，SVG body 作为独立图片文档展示，内容安全策略只允许报告固定的脚本和样式。Markdown 报告保持确定性，适合附在 PR 或在终端审阅。普通 `preview` 画廊也使用相同的图片隔离和别名渲染。报告不能覆盖任一输入，包括符号链接或硬链接别名；写入使用暂存替换，同一目标请串行写入。
 
 `iconctl` 和 `@iconctl/core` 均提供以下 API：
 
 ```ts
-import { compareIconSets, diffIconSets, renderDiffHtml, writeDiffHtml } from 'iconctl'
+import { compareIconSets, diffIconSets, renderDiffHtml, renderDiffMarkdown, writeDiffHtml, writeDiffMarkdown } from 'iconctl'
 
 const comparison = compareIconSets(beforeJson, afterJson)
 console.log(comparison.hasChanges, comparison.prefixChanged)
 const html = renderDiffHtml(comparison)
 await writeDiffHtml('reports/diff.html', comparison, {
+  inputs: ['before.json', 'after.json'],
+})
+await writeDiffMarkdown('reports/diff.md', comparison, {
   inputs: ['before.json', 'after.json'],
 })
 // 已有同步 API 保持四个数组的返回结构。
