@@ -15,7 +15,7 @@ import { diffIconSets } from './diff'
 import { IconctlSyncError } from './errors'
 import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } from './export'
 import { captureOutputProof, matchesOutputProof } from './output-proof'
-import { OutputTransaction } from './output-transaction'
+import { OutputTransaction, validateOutputTargets } from './output-transaction'
 import { renderPreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
 import { loadSources, mergeLoadedSources } from './sources/load'
@@ -282,6 +282,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     }
   }
   else {
+    await validateOutputTargets([...outputTargets(config, cwd), { path: cacheMetaFile }], options.signal)
     await generateOutputs(iconSet, config, { cwd, dryRun: true, ...cancellation })
   }
 

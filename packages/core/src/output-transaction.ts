@@ -46,7 +46,7 @@ export async function canonicalTarget(path: string): Promise<{ path: string, par
 }
 
 interface NormalizedTarget extends OutputTarget {
-  path: string
+  requested: string
   parent: string
 }
 
@@ -55,7 +55,7 @@ interface NormalizedTarget extends OutputTarget {
  * directory. Dry-run callers use this to exercise the same destination
  * checks as publication while keeping the filesystem untouched.
  */
-export async function validateOutputTargets(targets: readonly OutputTarget[], signal?: AbortSignal): Promise<void> {
+export async function validateOutputTargets(targets: readonly OutputTarget[], signal?: AbortSignal): Promise<NormalizedTarget[]> {
   const normalized: NormalizedTarget[] = []
   for (const target of targets) {
     await checkpoint(signal)
@@ -74,8 +74,9 @@ export async function validateOutputTargets(targets: readonly OutputTarget[], si
         throw new IconctlError(`Conflicting output targets: ${other.path} and ${canonical.path}`)
       }
     }
-    normalized.push({ ...target, ...canonical })
+    normalized.push({ ...target, ...canonical, requested: absolute })
   }
+  return normalized
 }
 
 /** Stage related paths together, so nested outputs cannot overwrite each other at commit. */
@@ -87,26 +88,9 @@ export class OutputTransaction {
 
   static async create(targets: OutputTarget[], signal?: AbortSignal): Promise<OutputTransaction> {
     const transaction = new OutputTransaction()
-    const normalized: NormalizedTarget[] = []
-    for (const target of targets) {
-      await checkpoint(signal)
-      const absolute = resolve(target.path)
-      const canonical = await canonicalTarget(absolute)
-      if (await exists(canonical.path)) {
-        const stat = await lstat(canonical.path)
-        if (stat.isSymbolicLink() || (target.directory ? !stat.isDirectory() : !stat.isFile())) {
-          throw new IconctlError(`Output target has the wrong file type: ${absolute}`)
-        }
-      }
-      for (const other of normalized) {
-        if (canonical.path === other.path
-          || (!other.directory && contains(other.path, canonical.path))
-          || (!target.directory && contains(canonical.path, other.path))) {
-          throw new IconctlError(`Conflicting output targets: ${other.path} and ${canonical.path}`)
-        }
-      }
-      transaction.paths.set(absolute, canonical.path)
-      normalized.push({ ...target, ...canonical })
+    const normalized = await validateOutputTargets(targets, signal)
+    for (const target of normalized) {
+      transaction.paths.set(target.requested, target.path)
     }
     const roots = normalized.filter((target, index) => !normalized.some((other, otherIndex) =>
       otherIndex !== index && ((other.directory && other.path !== target.path && contains(other.path, target.path))

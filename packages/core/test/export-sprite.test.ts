@@ -106,6 +106,32 @@ it('validates output collisions during dry-run without creating staging files', 
   expect(await readdir(cwd)).toEqual([])
 })
 
+it.each(['svg/home.svg', 'svg/.iconctl-manifest.json', 'pkg/index.js', 'pkg/icons.json'])('validates generated-file conflicts during dry-run: %s', async (sprite) => {
+  const cfg = config({ svg: 'svg', jsonPackage: { dir: 'pkg' }, sprite })
+  await expect(exportOutputs(icons(), cfg, { cwd, dryRun: true })).rejects.toThrow('Conflicting output targets')
+  expect(await readdir(cwd)).toEqual([])
+})
+
+it('uses canonical destinations to detect nested generated-file conflicts during dry-run', async () => {
+  await mkdir(join(cwd, 'assets/svg'), { recursive: true })
+  await symlink(join(cwd, 'assets'), join(cwd, 'alias'))
+  const cfg = config({ svg: 'assets/svg', sprite: 'alias/svg/home.svg' })
+  await expect(exportOutputs(icons(), cfg, { cwd, dryRun: true })).rejects.toThrow('Conflicting output targets')
+  expect(await readdir(join(cwd, 'assets/svg'))).toEqual([])
+})
+
+it('ignores preview and changelog targets owned by sync in public export dry-runs', async () => {
+  const cfg = config({ preview: 'icons.json', changelog: 'sprite.svg' })
+  expect((await exportOutputs(icons(), cfg, { cwd, dryRun: true })).files).toEqual([])
+  expect(await readdir(cwd)).toEqual([])
+})
+
+it('detects a completion-cache target conflict during sync dry-run', async () => {
+  const cfg = config({ json: '.iconctl-cache/meta.json' })
+  await expect(sync({ cwd, config: cfg, iconSet: icons(), dryRun: true })).rejects.toThrow('Conflicting output targets')
+  expect(await readdir(cwd)).toEqual([])
+})
+
 it('validates output file types during dry-run without replacing a symlink', async () => {
   await writeFile(join(cwd, 'external.svg'), 'user-owned')
   await symlink(join(cwd, 'external.svg'), join(cwd, 'sprite.svg'))

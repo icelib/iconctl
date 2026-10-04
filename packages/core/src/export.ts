@@ -187,42 +187,50 @@ export async function generateOutputs(
 ): Promise<ExportResult> {
   const files: string[] = []
   const json = iconSet.export()
-  const resolve = (file: string) => file.startsWith('/') ? file : join(options.cwd, file)
+  const canonicalPaths = new Map<string, string>()
+  const resolve = (file: string) => {
+    const path = resolvePath(options.cwd, file)
+    return canonicalPaths.get(path) ?? path
+  }
   if (options.dryRun) {
     // Keep dry-run validation side-effect free while checking the same
     // destination conflicts and filesystem types as publication.
-    await validateOutputTargets(outputTargets(config, options.cwd), options.signal)
+    const targets = await validateOutputTargets(outputTargets(config, options.cwd), options.signal)
+    for (const target of targets) {
+      canonicalPaths.set(target.requested, target.path)
+    }
   }
   await checkpoint(options.signal)
   const sprite = config.output.sprite ? await generateSvgSprite(iconSet, options.signal) : undefined
 
+  const svgNames = config.output.svg ? svgOutputNames(iconSet) : []
+  const generatedFiles = new Set<string>()
+  if (config.output.svg) {
+    for (const name of [...svgNames.map(name => `${name}.svg`), svgManifest]) {
+      generatedFiles.add(resolvePath(resolve(config.output.svg), name))
+    }
+  }
+  if (config.output.jsonPackage) {
+    for (const name of jsonPackageFiles) {
+      generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
+    }
+  }
+  for (const file of [config.output.json, config.output.sprite, config.output.types, config.output.preview, config.output.changelog]) {
+    if (!file) {
+      continue
+    }
+    const target = resolvePath(resolve(file))
+    // The package's Iconify JSON can intentionally share the primary JSON
+    // output. All other generated files have distinct contents and owners.
+    const sharedJson = file === config.output.json && config.output.jsonPackage
+      && target === resolvePath(resolve(config.output.jsonPackage.dir), 'icons.json')
+    if (generatedFiles.has(target) && !sharedJson) {
+      throw new IconctlError(`Conflicting output targets: generated file and ${target}`)
+    }
+  }
+
   if (!options.dryRun) {
     await checkpoint(options.signal)
-    const svgNames = config.output.svg ? svgOutputNames(iconSet) : []
-    const generatedFiles = new Set<string>()
-    if (config.output.svg) {
-      for (const name of [...svgNames.map(name => `${name}.svg`), svgManifest]) {
-        generatedFiles.add(resolvePath(resolve(config.output.svg), name))
-      }
-    }
-    if (config.output.jsonPackage) {
-      for (const name of jsonPackageFiles) {
-        generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
-      }
-    }
-    for (const file of [config.output.json, config.output.sprite, config.output.types, config.output.preview, config.output.changelog]) {
-      if (!file) {
-        continue
-      }
-      const target = resolvePath(resolve(file))
-      // The package's Iconify JSON can intentionally share the primary JSON
-      // output. All other generated files have distinct contents and owners.
-      const sharedJson = file === config.output.json && config.output.jsonPackage
-        && target === resolvePath(resolve(config.output.jsonPackage.dir), 'icons.json')
-      if (generatedFiles.has(target) && !sharedJson) {
-        throw new IconctlError(`Conflicting output targets: generated file and ${target}`)
-      }
-    }
     const previous = await readPreviousIconJson(resolve(config.output.json))
     const managed = config.output.svg
       ? await managedSvgFiles(resolve(config.output.svg), previous, options.signal)
@@ -348,12 +356,12 @@ export async function exportOutputs(
   options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
 ): Promise<ExportResult> {
   await checkpoint(options.signal)
-  if (options.dryRun) {
-    return generateOutputs(iconSet, config, options)
-  }
   // Preview and changelog remain sync() responsibilities.
   const { preview: _preview, changelog: _changelog, ...output } = config.output
   const exportConfig = { ...config, output }
+  if (options.dryRun) {
+    return generateOutputs(iconSet, exportConfig, options)
+  }
   const targets = outputTargets(exportConfig, options.cwd)
   const transaction = await OutputTransaction.create(targets, options.signal)
   try {
