@@ -391,16 +391,26 @@ it.each([
   }
   autoReady = true
   watchers[1]!.emit('ready')
-  await until(() => results().length === (separateEdit ? 3 : 2))
+  // Both changes predate the next validated import. The observer revalidates
+  // after handover, so one import covers deletion and the separate SVG edit.
+  await until(() => results().length === 2)
   await setTimeout(350)
-  expect(results()).toHaveLength(separateEdit ? 3 : 2)
-  expect(events.filter(event => event.type === 'start')).toHaveLength(separateEdit ? 3 : 2)
-  expect(Object.keys(results().at(-1)!.result.json.icons)).toEqual(['home'])
+  expect(results()).toHaveLength(2)
+  expect(events.filter(event => event.type === 'start')).toHaveLength(2)
+  expect(Object.keys(results()[1]!.result.json.icons)).toEqual(['home'])
+  expect(sync).toHaveBeenCalledTimes(2)
+  expect(results()[1]!.result.diff).toMatchObject({ removed: ['outer'], changed: separateEdit ? ['home'] : [] })
+  const written = JSON.parse(await readFile(join(cwd, 'icons.json'), 'utf8'))
+  expect(written.icons['home']).toEqual(results()[1]!.result.json.icons['home'])
+  if (separateEdit) {
+    expect(written.icons['home']).not.toEqual(results()[0]!.result.json.icons['home'])
+  }
   await symlink(join(cwd, 'external'), link, 'dir')
   watchers.at(-1)!.emit('raw', 'rename', 'linked', { watchedPath: parent })
-  await until(() => results().length === (separateEdit ? 4 : 3))
-  expect(events.filter(event => event.type === 'start')).toHaveLength(separateEdit ? 4 : 3)
+  await until(() => results().length === 3)
+  expect(events.filter(event => event.type === 'start')).toHaveLength(3)
   expect(results().at(-1)!.result.diff.added).toEqual(['outer'])
+  expect(sync).toHaveBeenCalledTimes(3)
 })
 
 it.each(['starting', 'ready'] as const)('reports an active watcher error while %s instead of swallowing it', async (phase) => {

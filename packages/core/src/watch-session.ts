@@ -1,5 +1,6 @@
 import type { LoadConfigOptions } from './load-config'
 import type { SyncResult } from './sync'
+import type { WatchConfigSnapshot } from './watch-config-snapshot'
 import type { LoadedWatchConfig, WatchRequest, WatchResponse } from './watch-protocol'
 import process from 'node:process'
 import { SHARE_ENV, Worker } from 'node:worker_threads'
@@ -7,7 +8,7 @@ import { IconctlError } from './errors'
 import { packWatchFailure, unpackWatchFailure } from './watch-protocol'
 
 export interface WatchSession {
-  load: (options: LoadConfigOptions, onConfigFile: (file: string) => void) => Promise<LoadedWatchConfig>
+  load: (options: LoadConfigOptions, onConfigFile: (file: string) => void, onConfigRead?: (snapshot: WatchConfigSnapshot) => void) => Promise<LoadedWatchConfig>
   sync: (options: { signal: AbortSignal, dryRun?: boolean, continueOnError?: boolean }) => Promise<SyncResult>
   close: () => Promise<void>
 }
@@ -28,6 +29,7 @@ export function createWatchSession(cwd: string, onFailure: (error: unknown) => v
     reject: (error: unknown) => void
     settled: Promise<unknown>
     onConfigFile?: (file: string) => void
+    onConfigRead?: (snapshot: WatchConfigSnapshot) => void
   }>()
   let nextId = 0
   let failure: unknown
@@ -57,6 +59,10 @@ export function createWatchSession(cwd: string, onFailure: (error: unknown) => v
       request.onConfigFile?.(message.file)
       return
     }
+    if (message.type === 'config-snapshot') {
+      request.onConfigRead?.(message.snapshot)
+      return
+    }
     pending.delete(message.id)
     if (message.type === 'error') {
       try {
@@ -70,7 +76,7 @@ export function createWatchSession(cwd: string, onFailure: (error: unknown) => v
       request.resolve(message.value)
     }
   })
-  const request = (message: WatchRequest, onConfigFile?: (file: string) => void) => {
+  const request = (message: WatchRequest, onConfigFile?: (file: string) => void, onConfigRead?: (snapshot: WatchConfigSnapshot) => void) => {
     if (failed || closing) {
       return Promise.reject(failure ?? new IconctlError('Watch configuration worker is closed.'))
     }
@@ -80,7 +86,7 @@ export function createWatchSession(cwd: string, onFailure: (error: unknown) => v
       resolve = res
       reject = rej
     })
-    pending.set(message.id, { resolve, reject, settled: result.catch(() => {}), ...(onConfigFile ? { onConfigFile } : {}) })
+    pending.set(message.id, { resolve, reject, settled: result.catch(() => {}), ...(onConfigFile ? { onConfigFile } : {}), ...(onConfigRead ? { onConfigRead } : {}) })
     try {
       worker.postMessage(message)
     }
@@ -91,8 +97,8 @@ export function createWatchSession(cwd: string, onFailure: (error: unknown) => v
     return result
   }
   return {
-    async load(options, onConfigFile) {
-      return await request({ id: ++nextId, type: 'load', options }, onConfigFile) as LoadedWatchConfig
+    async load(options, onConfigFile, onConfigRead) {
+      return await request({ id: ++nextId, type: 'load', options }, onConfigFile, onConfigRead) as LoadedWatchConfig
     },
     async sync({ signal, ...options }) {
       const id = ++nextId

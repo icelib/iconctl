@@ -8,10 +8,10 @@ import { watchInputDescriptor } from '../../src/watch-paths'
 export function createWatchSession(cwd: string): WatchSession {
   let config: ResolvedIconctlConfig
   return {
-    async load(options, onConfigFile) {
-      const loaded = await loadConfigDetails(options, true, onConfigFile)
+    async load(options, onConfigFile, onConfigRead) {
+      const loaded = await loadConfigDetails(options, true, onConfigFile, onConfigRead)
       config = loaded.config
-      return { input: watchInputDescriptor(config), files: loaded.files, entryFile: loaded.entryFile }
+      return { input: watchInputDescriptor(config), files: loaded.files, entryFile: loaded.entryFile, configReadSnapshot: loaded.configReadSnapshot }
     },
     async sync(options) {
       return await sync({ cwd, config, ...options })

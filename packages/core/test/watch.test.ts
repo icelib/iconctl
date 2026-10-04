@@ -321,10 +321,15 @@ it('invalidates all path aliases when a directory is removed and rediscovered', 
   const listener = vi.mocked(watchFiles).mock.results[0]!.value
   // Native notifications may use different spellings for the same entry. A
   // moved-out/moved-back directory can retain its inode and birthtime.
+  const original = await stat(join(cwd, 'raw'))
+  await rename(join(cwd, 'raw'), join(cwd, 'parked'))
   listener.emit('all', 'unlinkDir', join(cwd, 'raw'))
-  await until(() => results().length === 2)
+  await until(() => events.some(event => event.type === 'error' && event.phase === 'sync'))
+  await rename(join(cwd, 'parked'), join(cwd, 'raw'))
+  expect((await stat(join(cwd, 'raw'))).ino).toBe(original.ino)
   listener.emit('all', 'addDir', join(cwd, 'alias/raw'), await stat(join(cwd, 'alias/raw')))
-  await until(() => results().length === 3)
+  await until(() => results().length === 2)
+  expect(Object.keys(results()[1]!.result.json.icons)).toEqual(['home'])
 })
 
 it('ignores a late initial link discovery while still observing its target changes', async () => {

@@ -277,6 +277,65 @@ try {
     assert.deepEqual(session.events.filter(event => event.type === 'start').map(event => event.reason), ['initial', 'source', 'config'])
   })
 
+  for (const scope of ['main', 'new-layer']) {
+    await scenario(`async-${scope}-read-boundary`, async ({ write, start, cwd, cleanup }) => {
+      cleanup.push(() => write('release-config', 'released'))
+      const generation = (prefix, blocked) => `
+        import { access, appendFile, writeFile } from 'node:fs/promises'
+        import { setTimeout } from 'node:timers/promises'
+        import { threadId } from 'node:worker_threads'
+        export default async () => {
+          await appendFile(new URL('./config-reads.ndjson', import.meta.url), JSON.stringify({ prefix: ${JSON.stringify(prefix)}, threadId }) + String.fromCharCode(10))
+          if (${blocked}) {
+            const release = new URL('./release-config', import.meta.url)
+            await writeFile(new URL('./config-entered', import.meta.url), 'entered')
+            const deadline = Date.now() + 15000
+            while (!await access(release).then(() => true, () => false)) {
+              if (Date.now() > deadline) throw new Error('Fixture config release was not received')
+              await setTimeout(20)
+            }
+          }
+          return ${settings(JSON.stringify(prefix))}
+        }
+      `
+      const target = scope === 'main' ? 'iconctl.config.mjs' : 'new-layer.mjs'
+      let session
+      let previous
+      if (scope === 'new-layer') {
+        await write('iconctl.config.mjs', `export default ${settings('\'previous\'')}`)
+        session = start()
+        await until(() => results(session).length === 1, 'initial generation before new extends layer', session)
+        previous = await readFile(join(cwd, 'icons.json'), 'utf8')
+        await write(target, generation('stale-layer', true))
+        await write('iconctl.config.mjs', 'export default { extends: ["./new-layer.mjs"] }')
+      }
+      else {
+        await write(target, generation('stale-main', true))
+        session = start()
+      }
+      await until(() => exists(join(cwd, 'config-entered')), 'async configuration is evaluating before its observer exists', session)
+      if (previous !== undefined) {
+        assert.equal(await readFile(join(cwd, 'icons.json'), 'utf8'), previous)
+      }
+      else {
+        assert.equal(await exists(join(cwd, 'icons.json')), false)
+      }
+      await write(target, generation(`fresh-${scope}`, false))
+      await write('release-config', 'released')
+      const expected = scope === 'new-layer' ? ['previous', `fresh-${scope}`] : [`fresh-${scope}`]
+      await until(() => results(session).length === expected.length, 'edited configuration replaces its stale generation before sync', session)
+      assert.deepEqual(results(session).map(event => event.result.prefix), expected)
+      assert.equal(JSON.parse(await readFile(join(cwd, 'icons.json'), 'utf8')).prefix, `fresh-${scope}`)
+      assert.equal(session.events.filter(event => event.type === 'ready').length, expected.length, 'A stale configuration must never become ready')
+      assert.deepEqual(session.events.filter(event => event.type === 'start').map(event => event.reason), scope === 'new-layer' ? ['initial', 'config'] : ['initial'])
+      assert.deepEqual(session.events.filter(event => event.type === 'error'), [])
+      const reads = (await readFile(join(cwd, 'config-reads.ndjson'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+      assert.deepEqual(reads.map(read => read.prefix), [scope === 'new-layer' ? 'stale-layer' : 'stale-main', `fresh-${scope}`])
+      assert(reads.every(read => read.threadId > 0), 'Both evaluations must execute inside real generation Workers')
+      assert.notEqual(reads[0].threadId, reads[1].threadId, 'The stale Worker must be retired before evaluating the replacement')
+    })
+  }
+
   await scenario('concurrent-watch-generations', async ({ write, start, cwd, cleanup }) => {
     const secondCwd = join(cwd, 'second')
     await mkdir(join(secondCwd, 'raw'), { recursive: true })

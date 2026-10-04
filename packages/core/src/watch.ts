@@ -1,13 +1,17 @@
 import type { FSWatcher } from 'chokidar'
 import type { SyncResult } from './sync'
+import type { WatchConfigSnapshot } from './watch-config-snapshot'
 import type { WatchPaths } from './watch-paths'
 import type { WatchSession } from './watch-session'
-import { access, lstat, readlink } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { watch as watchFiles } from 'chokidar'
+import { throwIfAborted } from './abort'
 import { IconctlAbortError } from './errors'
-import { containsPath, isWatchSourceEvent, validateWatchInputs, watchConfigFiles, watchEntryVersion, watchPaths } from './watch-paths'
+import { watchConfigChangedSinceRead } from './watch-config-snapshot'
+import { createWatchObserver } from './watch-observer'
+import { isWatchSourceEvent, validateWatchInputs, watchConfigFiles, watchPaths } from './watch-paths'
 import { createWatchSession } from './watch-session'
 
 export type WatchEvent
@@ -46,6 +50,7 @@ export async function watch(options: WatchOptions): Promise<void> {
   let runId = 0
   let initialized = false
   let closing = false
+  let observer: ReturnType<typeof createWatchObserver>
   const notify = () => wake?.()
   const dirtySource = () => {
     sourceDirty = true
@@ -62,14 +67,27 @@ export async function watch(options: WatchOptions): Promise<void> {
   }
   const stop = () => {
     active?.abort(options.signal?.reason)
+    observer.stop()
     notify()
   }
   const emit = (event: WatchEvent) => options.onEvent(event)
   const failWatcher = (error: unknown) => {
     fatal = error
     active?.abort(error)
+    observer.stop()
     notify()
   }
+  observer = createWatchObserver((configuration) => {
+    if (closing || options.signal?.aborted) {
+      return
+    }
+    if (configuration) {
+      dirtyConfig()
+    }
+    else if (configReady) {
+      dirtySource()
+    }
+  }, failWatcher)
   const closeWatcher = async (listener: FSWatcher) => {
     watchers.delete(listener)
     const closed = listener.close()
@@ -95,8 +113,9 @@ export async function watch(options: WatchOptions): Promise<void> {
     ...next.observedConfigFiles,
   ].map(dirname))].sort()
   const install = async (next: WatchPaths, signal = options.signal) => {
+    await observer.replace(next)
+    throwIfAborted(signal)
     let listener: FSWatcher
-    let starting = true
     try {
       listener = watchFiles(watchedDirectories(next), {
         ignoreInitial: true,
@@ -110,129 +129,26 @@ export async function watch(options: WatchOptions): Promise<void> {
       throw error
     }
     watchers.add(listener)
-    const forgetEntry = (file: string) => {
-      const previous = next.entryVersions.get(file)
-      const aliases = previous === undefined
-        ? [file]
-        : [...next.entryVersions].filter(([, version]) => version === previous).map(([entry]) => entry)
-      for (const alias of aliases) {
-        if (next.links.has(alias) || next.linkTargets.has(alias)) {
-          next.missingLinks.add(alias)
-        }
-        next.linkTargets.delete(alias)
-      }
-      for (const entry of next.entryVersions.keys()) {
-        if (aliases.some(alias => containsPath(alias, entry))) {
-          next.entryVersions.delete(entry)
-        }
-      }
-    }
     listener.on('error', failWatcher)
     listener.on('all', (event, input, stats) => {
       if (closing || !watchers.has(listener)) {
         return
       }
-      // With followSymlinks disabled, Chokidar emits initial link discovery as
-      // add even with ignoreInitial. The following sync validates that snapshot.
-      if (starting && event === 'add' && stats?.isSymbolicLink()) {
-        return
-      }
       const file = resolve(input)
-      const configuration = next.observedConfigFiles.includes(file)
-      if (!configuration && (!configReady || !isWatchSourceEvent(next, event, file, stats?.isSymbolicLink()))) {
-        return
-      }
-      if (event === 'unlink' || event === 'unlinkDir') {
-        // Raw rename and delayed unlink can describe one deletion through
-        // different aliases while a replacement listener is still starting.
-        if (next.missingLinks.has(file)) {
-          return
-        }
-        forgetEntry(file)
-      }
-      else if (stats) {
-        next.missingLinks.delete(file)
-        const version = watchEntryVersion(stats)
-        const previous = next.entryVersions.get(file)
-        next.entryVersions.set(file, version)
-        // Native queues can replay discovery or emit change after a read without
-        // a new input version. Keep same-content saves via mtime/ctime/identity.
-        if (previous === version) {
-          return
-        }
-      }
-      if (configuration) {
-        dirtyConfig()
-      }
-      else {
-        dirtySource()
+      if (next.observedConfigFiles.includes(file) || isWatchSourceEvent(next, event, file, stats?.isSymbolicLink())) {
+        observer.request()
       }
     })
     listener.on('raw', (event, input, details) => {
       const watchedPath = typeof details === 'object' && details !== null && 'watchedPath' in details && typeof details.watchedPath === 'string'
         ? details.watchedPath
         : undefined
-      // Raw change also reports access-time updates from our own reads. Only
-      // rename describes entry topology; normal content changes use all-events.
-      if (event !== 'rename' || starting || closing || !watchers.has(listener) || !input || !watchedPath) {
-        return
+      // File watchers and directory watchers both expose watchedPath. Both forms
+      // are only wake hints; the observer samples actual entries and link states.
+      if (event === 'rename' && !closing && watchers.has(listener) && input && watchedPath
+        && [resolve(watchedPath, input), resolve(dirname(watchedPath), input)].some(file => !next.ignored(file))) {
+        observer.request()
       }
-      const file = resolve(watchedPath, input)
-      if (next.ignored(file)) {
-        return
-      }
-      const configuration = next.observedConfigFiles.includes(file)
-      if (!configuration && (!configReady || (!next.observedSourceFiles.includes(file) && !next.observedRoots.some(root => containsPath(root, file))))) {
-        return
-      }
-      // Chokidar emits no all-event for dangling or self-referential links.
-      // Compare the link itself with the installed snapshot. Raw rename can also
-      // replay an entry's creation from before readiness, which is not a change.
-      void readlink(file).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT' || error.code === 'ENOTDIR' || error.code === 'EINVAL') {
-          return undefined
-        }
-        throw error
-      }).then(async (target) => {
-        let version: string | undefined
-        if (target !== undefined) {
-          const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
-            if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
-              return undefined
-            }
-            throw error
-          })
-          if (info?.isSymbolicLink()) {
-            version = watchEntryVersion(info)
-          }
-          else {
-            target = undefined
-          }
-        }
-        if (closing || !watchers.has(listener)
-          || (next.linkTargets.get(file) === target && (target === undefined || next.entryVersions.get(file) === version))) {
-          return
-        }
-        if (target === undefined) {
-          forgetEntry(file)
-        }
-        else {
-          next.missingLinks.delete(file)
-          next.linkTargets.set(file, target)
-          next.links.add(file)
-          next.entryVersions.set(file, version!)
-        }
-        if (configuration) {
-          dirtyConfig()
-        }
-        else {
-          dirtySource()
-        }
-      }).catch((error: unknown) => {
-        if (!closing && watchers.has(listener)) {
-          failWatcher(error)
-        }
-      })
     })
     try {
       await new Promise<void>((resolveReady, rejectReady) => {
@@ -262,7 +178,6 @@ export async function watch(options: WatchOptions): Promise<void> {
           handlers.aborted()
         }
       })
-      starting = false
     }
     catch (error) {
       await closeWatcher(listener)
@@ -296,18 +211,24 @@ export async function watch(options: WatchOptions): Promise<void> {
         await session?.close()
         session = undefined
         const attemptedFiles = new Set(paths?.configFiles ?? [])
+        let attemptedSnapshot: WatchConfigSnapshot | undefined
         try {
           // Once resolved, deletion must pause watch instead of selecting another config.
           if (initialized && configFile) {
             await access(resolve(cwd, configFile))
           }
           session = createWatchSession(cwd, failWatcher)
-          const loaded = await session.load({ cwd, ...(configFile ? { configFile } : {}) }, file => attemptedFiles.add(file))
+          const loaded = await session.load({ cwd, ...(configFile ? { configFile } : {}) }, file => attemptedFiles.add(file), (snapshot) => {
+            attemptedSnapshot = snapshot
+          })
           const nextPaths = await watchPaths(loaded.input, cwd, loaded.files, options.signal)
           if (revision !== currentRevision || options.signal?.aborted || fatal) {
             continue
           }
           await install(nextPaths)
+          if (await watchConfigChangedSinceRead(loaded.configReadSnapshot, options.signal)) {
+            dirtyConfig()
+          }
           if (revision !== currentRevision || options.signal?.aborted || fatal) {
             continue
           }
@@ -336,6 +257,9 @@ export async function watch(options: WatchOptions): Promise<void> {
             // listener was starting with ignoreInitial. Recheck once after ready.
             configDirty = true
             due = Date.now() + 150
+          }
+          if (attemptedSnapshot && await watchConfigChangedSinceRead(attemptedSnapshot, options.signal)) {
+            dirtyConfig()
           }
           continue
         }
@@ -369,25 +293,42 @@ export async function watch(options: WatchOptions): Promise<void> {
           paths!.entryVersions.set(file, version)
           paths!.linkTargets.set(file, target)
         }
-        let nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
-        while (topology(paths) !== topology(nextPaths)) {
-          await install(nextPaths, active.signal)
-          paths = nextPaths
-          // Discovery runs asynchronously. A new link may appear in an external
-          // directory before its replacement watcher is ready; validate that
-          // graph again before importing or publishing any of its contents.
-          nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
+        while (true) {
+          const before = await observer.check()
+          throwIfAborted(active.signal)
+          let nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
+          while (topology(paths) !== topology(nextPaths)) {
+            await install(nextPaths, active.signal)
+            paths = nextPaths
+            // Establish the new scope before validating it again. Inputs that
+            // change during listener handover must pass a fresh graph check.
+            nextPaths = await validateWatchInputs(paths, active.signal, rememberLink)
+          }
+          const after = await observer.check()
+          throwIfAborted(active.signal)
+          if (before === after) {
+            // Only this unchanged, validated observation is covered by the
+            // upcoming import. Later changes remain queued for another run.
+            sourceDirty = false
+            break
+          }
         }
         const result = await session.sync({
           signal: active.signal,
           ...(options.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
           ...(options.continueOnError !== undefined ? { continueOnError: options.continueOnError } : {}),
         })
+        // Keep the pre-sync baseline: changes made during an import still need
+        // a follow-up, even when no native event arrived before it completed.
+        await observer.check()
         if (!active.signal.aborted) {
           emit({ type: 'result', runId: id, result })
         }
       }
       catch (error) {
+        // The pre-validation sample records the rejected graph. A repair that
+        // arrives while validation/import fails must still queue another run.
+        await observer.check()
         if (!active.signal.aborted) {
           emit({ type: 'error', runId: id, phase: 'sync', fatal: false, error })
         }
@@ -408,6 +349,7 @@ export async function watch(options: WatchOptions): Promise<void> {
     closing = true
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)
+    await observer.close()
     await session?.close()
     await Promise.all([...watchers].map(closeWatcher))
     emit({ type: 'stopped', reason: options.signal?.aborted ? 'aborted' : 'error' })

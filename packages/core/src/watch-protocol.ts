@@ -1,5 +1,6 @@
 import type { LoadConfigOptions } from './load-config'
 import type { SyncResult } from './sync'
+import type { WatchConfigSnapshot } from './watch-config-snapshot'
 import type { WatchInputDescriptor } from './watch-paths'
 import { IconctlAbortError, IconctlError, IconctlSyncError } from './errors'
 
@@ -7,6 +8,7 @@ export interface LoadedWatchConfig {
   input: WatchInputDescriptor
   files: string[]
   entryFile: string
+  configReadSnapshot: WatchConfigSnapshot
 }
 
 export type WatchRequest
@@ -16,6 +18,7 @@ export type WatchRequest
 
 export type WatchResponse
   = | { id: number, type: 'config-file', file: string }
+    | { id: number, type: 'config-snapshot', snapshot: WatchConfigSnapshot }
     | { id: number, type: 'loaded', value: LoadedWatchConfig }
     | { id: number, type: 'result', value: SyncResult }
     | { id: number, type: 'error', error: WatchFailure }

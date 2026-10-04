@@ -31,9 +31,9 @@ port.on('message', (message: WatchRequest) => {
   const execute = async () => {
     if (message.type === 'load') {
       config = undefined
-      const loaded = await loadConfigDetails(message.options, true, file => send({ id: message.id, type: 'config-file', file }))
+      const loaded = await loadConfigDetails(message.options, true, file => send({ id: message.id, type: 'config-file', file }), snapshot => send({ id: message.id, type: 'config-snapshot', snapshot }))
       config = loaded.config
-      send({ id: message.id, type: 'loaded', value: { input: watchInputDescriptor(config), files: loaded.files, entryFile: loaded.entryFile } })
+      send({ id: message.id, type: 'loaded', value: { input: watchInputDescriptor(config), files: loaded.files, entryFile: loaded.entryFile, configReadSnapshot: loaded.configReadSnapshot } })
     }
     else {
       if (!config) {
