@@ -55,13 +55,13 @@ Supply explicit values for scripts and CI:
 pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
 ```
 
-`--no-interactive`, `--json`, or running without an interactive terminal disables all prompts. Supply `--source`, `--prefix` and the source location (`--input`, or `--url` for remote iconfont); missing required values fail with status 1. In an interactive terminal, supplied values are retained and only missing fields are prompted.
+`--no-interactive`, `--json`, or running without an interactive terminal disables all prompts. Supply `--source`, `--prefix` and the source location (`--input`, or `--url` for a remote iconfont or Iconify collection); missing required values fail with status 1. In an interactive terminal, supplied values are retained and only missing fields are prompted.
 
 | Option | Meaning |
 | --- | --- |
 | `--source <type>` | `directory`, `iconify`, `figma`, `mastergo`, `iconfont` or `jsdesign` |
 | `--input <value>` | Local folder for `directory`, `jsdesign` or local `iconfont`; local JSON file for `iconify`; file URL/key for `figma`; file URL including `layer_id` for `mastergo` |
-| `--url <url>` | Remote iconfont Symbol JS URL; only for `iconfont`, and cannot be combined with `--input` |
+| `--url <url>` | Remote iconfont Symbol JS URL or HTTPS Iconify JSON URL; only for `iconfont`/`iconify`, and cannot be combined with `--input` |
 | `--prefix <name>` | Iconify prefix; required without prompts |
 | `--json-output <file>` | Generated config's `output.json`; defaults to `icons.json` |
 | `--config <file>` | New TypeScript config target; defaults to `./iconctl.config.ts` and must end in `.ts` |
@@ -69,7 +69,7 @@ pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-
 | `--json` | Disable prompts and print exactly one success or failure JSON object to stdout |
 | `--dry-run` | Validate the plan and target without creating files, directories, temporary files or caches |
 
-For remote iconfont, use `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`. For downloaded iconfont SVGs, use `--source iconfont --input ./iconfont --prefix brand` instead. The generated iconfont config keeps `stripPrefix: 'icon-'`.
+For remote iconfont, use `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`. For a remote Iconify collection, use `--source iconify --url https://cdn.example.com/icons.json --prefix brand`. For downloaded iconfont SVGs, use `--source iconfont --input ./iconfont --prefix brand` instead. The generated iconfont config keeps `stripPrefix: 'icon-'`.
 
 The wizard retains its defaults: prefix `brand`, directory input `./raw-svg`, Iconify input `./vendor/icons.json`, iconfont folder `./iconfont`, and 即时设计 folder `./jsdesign-svg`. Generated SVG output remains `svg` and preview output remains `preview.html`. Iconify initialization preserves native collection dimensions by leaving width and height validation unset; other sources keep the 24 × 24 template defaults. Keep SVG inputs separate from generated output folders. Initialization rejects a config or Iconify input that overlaps its planned JSON, SVG or preview outputs, including existing file aliases.
 
@@ -233,7 +233,7 @@ pnpm exec iconctl watch
 pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
 ```
 
-Watch supports `directory`, `jsdesign` with `dir`, `iconfont` with `dir` and no `url`, and `iconify` with a local `file`. Figma, MasterGo and remote iconfont URLs require a one-shot `sync`. There is no remote polling or preview server. `init` now defaults to `raw-svg` for source SVGs and `svg` for generated SVGs.
+Watch supports `directory`, `jsdesign` with `dir`, `iconfont` with `dir` and no `url`, and `iconify` with a local `file`. Figma, MasterGo, remote iconfont URLs and remote Iconify URLs require a one-shot `sync`. There is no remote polling or preview server. `init` now defaults to `raw-svg` for source SVGs and `svg` for generated SVGs.
 
 Native filesystem events are wake-up hints. A serialized metadata scan also repeats after a one-second idle interval, so missed notifications still converge to the current local inputs. The 150 ms debounce starts when a change is observed; this fallback does not poll remote sources. Changes during validation trigger another graph check before import, and repairs during a rejected check remain queued. Directory scans verify ancestor identities before descending and discard inconsistent samples. Rejected source links retain metadata checks on their bounded target chain, so repairing an external target can resume validation without editing the link. Stopping watch aborts new sampling and drains pending reads before `stopped`.
 

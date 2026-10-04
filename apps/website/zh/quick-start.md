@@ -55,13 +55,13 @@ sources: [{ type: 'directory', dir: './raw-svg' }]
 pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-interactive --json
 ```
 
-`--no-interactive`、`--json` 或非交互终端都会禁用提示。此时必须提供 `--source`、`--prefix` 和来源位置（`--input`，远程 iconfont 使用 `--url`）；缺少必填值以状态码 1 失败。在交互终端中，已提供的值会保留，只询问缺少的字段。
+`--no-interactive`、`--json` 或非交互终端都会禁用提示。此时必须提供 `--source`、`--prefix` 和来源位置（`--input`，远程 iconfont 或 Iconify 集合使用 `--url`）；缺少必填值以状态码 1 失败。在交互终端中，已提供的值会保留，只询问缺少的字段。
 
 | 选项 | 含义 |
 | --- | --- |
 | `--source <type>` | `directory`、`iconify`、`figma`、`mastergo`、`iconfont` 或 `jsdesign` |
 | `--input <value>` | `directory`、`jsdesign` 和本地 `iconfont` 的目录；`iconify` 的本地 JSON 文件；`figma` 的文件 URL／key；`mastergo` 包含 `layer_id` 的文件 URL |
-| `--url <url>` | 远程 iconfont Symbol JS URL；仅适用于 `iconfont`，不能与 `--input` 同用 |
+| `--url <url>` | 远程 iconfont Symbol JS URL 或 HTTPS Iconify JSON URL；仅适用于 `iconfont`／`iconify`，不能与 `--input` 同用 |
 | `--prefix <name>` | Iconify 前缀；禁用提示时必填 |
 | `--json-output <file>` | 生成配置中的 `output.json`，默认为 `icons.json` |
 | `--config <file>` | 新建的 TypeScript 配置目标，默认为 `./iconctl.config.ts`，必须以 `.ts` 结尾 |
@@ -69,7 +69,7 @@ pnpm exec iconctl init --source directory --input ./raw-svg --prefix brand --no-
 | `--json` | 禁用提示，向 stdout 输出且仅输出一个成功或失败 JSON 对象 |
 | `--dry-run` | 验证计划和目标，不创建文件、目录、临时文件或缓存 |
 
-远程 iconfont 使用 `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`；已下载的 iconfont SVG 使用 `--source iconfont --input ./iconfont --prefix brand`。生成的 iconfont 配置保留 `stripPrefix: 'icon-'`。
+远程 iconfont 使用 `--source iconfont --url https://at.alicdn.com/t/c/font_123456_abcdef.js --prefix brand`；远程 Iconify 集合使用 `--source iconify --url https://cdn.example.com/icons.json --prefix brand`；已下载的 iconfont SVG 使用 `--source iconfont --input ./iconfont --prefix brand`。生成的 iconfont 配置保留 `stripPrefix: 'icon-'`。
 
 向导保留原有默认值：前缀 `brand`、本地目录 `./raw-svg`、Iconify 文件 `./vendor/icons.json`、iconfont 目录 `./iconfont`、即时设计目录 `./jsdesign-svg`。生成的 SVG 仍输出到 `svg`，预览仍输出到 `preview.html`。Iconify 初始化不设置宽高校验，保留集合的原始尺寸；其他来源保留模板的 24 × 24 默认校验。请将 SVG 输入与生成目录分开。配置或 Iconify 输入与计划中的 JSON、SVG、预览输出冲突时，初始化会拒绝创建；已有文件的别名也会检查。
 
@@ -233,7 +233,7 @@ pnpm exec iconctl watch
 pnpm exec iconctl watch --config ./iconctl.config.ts --dry-run --json
 ```
 
-支持 `directory`、带 `dir` 的 `jsdesign`，带 `dir` 且没有 `url` 的 `iconfont`，以及带本地 `file` 的 `iconify`。Figma、MasterGo 和远程 iconfont URL 继续使用单次 `sync`；监听不提供远程轮询或预览服务器。`init` 现在默认把原始 SVG 放在 `raw-svg`，生成 SVG 放在 `svg`。
+支持 `directory`、带 `dir` 的 `jsdesign`，带 `dir` 且没有 `url` 的 `iconfont`，以及带本地 `file` 的 `iconify`。Figma、MasterGo、远程 iconfont URL 和远程 Iconify URL 继续使用单次 `sync`；监听不提供远程轮询或预览服务器。`init` 现在默认把原始 SVG 放在 `raw-svg`，生成 SVG 放在 `svg`。
 
 原生文件系统事件用于唤醒检查；串行元数据扫描还会在上一轮结束后间隔 1 秒重复检查，即使通知丢失也能跟进当前本地输入。150 ms 防抖从观察到变化开始计算；这一补偿机制不会轮询远端来源。校验期间输入变化会在导入前重新检查路径，失败校验期间发生的修复也会保留为下一轮。目录扫描在下探前核对祖先身份，并丢弃不一致的采样。被拒绝的来源链接仍会检查有界目标链的元数据，仅修复外部目标也能恢复校验，无需重新编辑链接。停止监听会取消后续采样，等待已开始的读取结束后再发出 `stopped`。
 

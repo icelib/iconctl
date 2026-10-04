@@ -23,7 +23,7 @@ function remoteCacheFile(cacheDir: string, url: string): string {
 
 async function readRemoteCache(file: string, url: string): Promise<RemoteIconifyCache | undefined> {
   try {
-    const value = JSON.parse(await readFile(file, 'utf8')) as Partial<RemoteIconifyCache>
+    const value = JSON.parse(decodeUtf8(await readFile(file))) as Partial<RemoteIconifyCache>
     if (value.url !== url || typeof value.body !== 'string') {
       return undefined
     }
