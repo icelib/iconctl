@@ -28,6 +28,8 @@ export interface SyncOptions {
   env?: NodeJS.Dict<string>
   dryRun?: boolean
   continueOnError?: boolean
+  /** Use cached remote Iconify collections without making network requests. */
+  offline?: boolean
   iconSet?: IconSet
   figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
 }
@@ -120,6 +122,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       ...(completedOutputs
         ? { figmaIfModifiedSince: previousMeta!.lastModified! }
         : {}),
+      ...(options.offline ? { offline: true } : {}),
     })
 
     await checkpoint(options.signal)

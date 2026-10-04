@@ -8,6 +8,7 @@ export interface PreviewCommandOptions {
   output?: string
   config?: string
   continue?: boolean
+  offline?: boolean
   dryRun?: boolean
   json?: boolean
 }

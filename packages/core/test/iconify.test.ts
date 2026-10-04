@@ -84,6 +84,33 @@ it('fetches changed remote collections and ignores malformed cache metadata', as
   expect(requests[2]!.headers.get('If-None-Match')).toBeNull()
 })
 
+it('uses a validated remote cache in offline mode without contacting the endpoint', async () => {
+  const url = 'https://cdn.example.test/offline.json'
+  const onlineFetch = vi.fn(async () => new Response(JSON.stringify(vendor), { status: 200, headers: { ETag: '"v1"' } }))
+  vi.stubGlobal('fetch', onlineFetch)
+  const config = configuration({ cacheDir: 'offline-cache', sources: [{ type: 'iconify', url }] })
+  await sync({ cwd, config, dryRun: true })
+
+  const offlineFetch = vi.fn(async () => {
+    throw new Error('network must not be used in offline mode')
+  })
+  vi.stubGlobal('fetch', offlineFetch)
+  const result = await sync({ cwd, config, offline: true, dryRun: true })
+  expect(result.json.icons).toHaveProperty('home')
+  expect(offlineFetch).not.toHaveBeenCalled()
+})
+
+it('fails clearly in offline mode when no valid remote cache exists', async () => {
+  const url = 'https://cdn.example.test/missing-cache.json'
+  const fetchMock = vi.fn(async () => {
+    throw new Error('network must not be used in offline mode')
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const config = configuration({ cacheDir: 'missing-cache', sources: [{ type: 'iconify', url }] })
+  await expect(sync({ cwd, config, offline: true, dryRun: true })).rejects.toThrow('offline mode')
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
 it('rejects a 304 response when the cached body is unavailable', async () => {
   const url = 'https://cdn.example.test/vendor.json'
   vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 304 })))

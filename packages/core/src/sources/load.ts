@@ -39,6 +39,7 @@ export interface LoadSourcesOptions {
   env?: NodeJS.Dict<string>
   figmaIfModifiedSince?: string
   figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
+  offline?: boolean
 }
 
 async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
@@ -50,6 +51,7 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         prefix: options.config.prefix,
         skipPrefix: options.config.validate.skipPrefix,
         cacheDir: options.config.cacheDir,
+        ...(options.offline ? { offline: true } : {}),
         ...cancellation,
       })
     case 'directory':

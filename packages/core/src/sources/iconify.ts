@@ -72,10 +72,16 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cwd: string, cacheDir: string, signal?: AbortSignal }): Promise<string> {
+async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cwd: string, cacheDir: string, signal?: AbortSignal, offline?: boolean }): Promise<string> {
   const url = source.url!
   const file = remoteCacheFile(resolve(options.cwd, options.cacheDir), url)
   const cached = await readRemoteCache(file, url)
+  if (options.offline) {
+    if (!cached) {
+      throw new IconctlError(`Remote Iconify JSON at ${url} is unavailable in offline mode. Run sync online first to populate a valid cache.`)
+    }
+    return cached.body
+  }
   const headers = new Headers()
   if (cached?.etag) {
     headers.set('If-None-Match', cached.etag)
@@ -139,12 +145,12 @@ async function loadRemoteBody(source: ResolvedIconifySourceConfig, options: { cw
 
 export async function loadIconifySource(
   source: ResolvedIconifySourceConfig,
-  options: { cwd: string, prefix: string, skipPrefix: string[], cacheDir?: string, signal?: AbortSignal },
+  options: { cwd: string, prefix: string, skipPrefix: string[], cacheDir?: string, signal?: AbortSignal, offline?: boolean },
 ): Promise<LoadedSource> {
   const file = source.file ? resolve(options.cwd, source.file) : undefined
   let body: string
   if (source.url) {
-    body = await loadRemoteBody(source, { cwd: options.cwd, cacheDir: options.cacheDir ?? '.iconctl-cache', ...(options.signal ? { signal: options.signal } : {}) })
+    body = await loadRemoteBody(source, { cwd: options.cwd, cacheDir: options.cacheDir ?? '.iconctl-cache', ...(options.signal ? { signal: options.signal } : {}), ...(options.offline ? { offline: true } : {}) })
   }
   else {
     const bytes = await settleWithAbort(() => readFile(file!, { ...(options.signal ? { signal: options.signal } : {}) }), options.signal)

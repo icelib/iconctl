@@ -119,6 +119,8 @@ CI:
 pnpm exec iconctl sync --json
 ```
 
+For a remote Iconify source, `pnpm exec iconctl sync --offline` reuses only the validated cache from an earlier online sync and does not fetch that source. Missing or corrupted cache data fails before any source is imported; run a normal online sync once to populate it. Local sources are unchanged, and config-backed `preview` accepts the same flag.
+
 ### SVG sprites
 
 Optional `output.sprite: 'icons.svg'` writes a single SVG containing one `<symbol>` per resolved icon, variation or alias, sorted by name. IDs follow `iconctl-${prefix}-${name}`: `brand` + `home` becomes `iconctl-brand-home`. Each symbol has its own `viewBox`; resolved flips, rotations and processed colors, including `currentColor`, are preserved. Internal IDs are rewritten per symbol so gradients, masks and other local references do not collide.

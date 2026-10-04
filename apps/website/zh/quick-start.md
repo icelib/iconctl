@@ -119,6 +119,8 @@ CI：
 pnpm exec iconctl sync --json
 ```
 
+配置使用远程 Iconify 来源时，`pnpm exec iconctl sync --offline` 只复用之前在线同步写入且已通过校验的缓存，不请求该来源。缓存缺失或损坏会在导入来源前明确失败；先执行一次普通在线同步即可建立缓存。本地来源不受影响，配置模式的 `preview` 也接受此选项。
+
 ### SVG sprite
 
 可选配置 `output.sprite: 'icons.svg'` 会生成一份 SVG，按名称排序，为每个已解析的图标、变体或别名生成一个 `<symbol>`。ID 格式为 `iconctl-${prefix}-${name}`，例如前缀 `brand`、名称 `home` 对应 `iconctl-brand-home`。每个 symbol 都有独立的 `viewBox`，保留解析后的翻转、旋转及处理后的颜色，包括 `currentColor`。内部 ID 会按 symbol 重写，避免渐变、遮罩等本地引用相互冲突。

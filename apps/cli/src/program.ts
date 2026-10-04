@@ -28,6 +28,7 @@ interface GlobalOptions {
   dryRun?: boolean
   json?: boolean
   continue?: boolean
+  offline?: boolean
 }
 
 async function loadOptions(options: GlobalOptions, context: CommandContext) {
@@ -88,6 +89,7 @@ export async function runCli(argv: string[] = process.argv) {
   cli.option('--dry-run', 'Validate without writing icon outputs (authentication and caches may update)')
   cli.option('--json', 'Print machine-readable JSON')
   cli.option('--continue', 'Export available icons despite individual import, processing or validation failures')
+  cli.option('--offline', 'Use cached remote Iconify collections instead of fetching them')
 
   cli
     .command('diff <before> <after>', 'Compare two local Iconify JSON files without loading config or remote sources')
@@ -115,6 +117,7 @@ export async function runCli(argv: string[] = process.argv) {
         config,
         ...(options.dryRun ? { dryRun: true } : {}),
         ...(options.continue ? { continueOnError: true } : {}),
+        ...(options.offline ? { offline: true } : {}),
       })
       printSyncResult(result, Boolean(options.json))
     }))
@@ -144,6 +147,7 @@ export async function runCli(argv: string[] = process.argv) {
         config,
         ...(options.dryRun ? { dryRun: true } : {}),
         ...(options.continue ? { continueOnError: true } : {}),
+        ...(options.offline ? { offline: true } : {}),
       })
       printSyncResult(result, Boolean(options.json))
     }))

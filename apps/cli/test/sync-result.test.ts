@@ -41,3 +41,8 @@ it('warns about incomplete syncs and includes the failed node in plain output', 
   expect(warn).toHaveBeenCalledWith(expect.stringContaining('bad (1:2) [download]'))
   expect(success).not.toHaveBeenCalled()
 })
+
+it('forwards offline mode to config-backed syncs', async () => {
+  await runCli(['node', 'iconctl', 'sync', '--offline'])
+  expect(sync).toHaveBeenCalledWith(expect.objectContaining({ offline: true }))
+})
