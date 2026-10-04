@@ -3,6 +3,7 @@
 import type { PreflightInput, PreflightItem, PreflightRules } from './preflight'
 import type { ScanMetadata } from './report'
 import { PluginConsole } from './console'
+import { LivePreflight } from './live-preflight'
 import { PreflightNavigation } from './navigation'
 import { inspectComponents } from './preflight'
 import { appliedRules, PreflightReport } from './report'
@@ -59,6 +60,7 @@ function scanPage(rules?: PreflightRules) {
   return items
 }
 
+let live: LivePreflight | undefined
 const consoleSession = new PluginConsole({
   storage: figma.clientStorage,
   post(message) {
@@ -71,24 +73,36 @@ const consoleSession = new PluginConsole({
       navigation.capture(page.id, items)
       reports.capture(navigation.scanId, page, items, message['metadata'] as ScanMetadata)
       figma.ui.postMessage({ type: 'preflight', items, scanId: navigation.scanId, reportAvailable: true, ...(Number.isSafeInteger(message['rulesRequestId']) ? { rulesRequestId: message['rulesRequestId'] } : {}), appliedRules: appliedRules(message['metadata'] as ScanMetadata) })
+      live?.published()
       return
     }
     figma.ui.postMessage(message)
   },
   scan: scanPage,
   invalidate: invalidateScan,
+  localScanStateChanged: () => live?.stateChanged(),
+  connectionReplaced: () => live?.setEnabled(false),
   resetProject() {
     if (reports.invalidateProject()) {
       navigation.invalidate('Project connection changed. Rescan to use the current rules.')
     }
   },
 })
+live = new LivePreflight({
+  currentPage: () => figma.currentPage,
+  state: () => consoleSession.localScanState,
+  scan: () => consoleSession.tryLiveRescan(),
+  invalidate: invalidateScan,
+  post: message => figma.ui.postMessage(message),
+})
 function rescan(mode?: 'console' | 'github') {
+  live?.manualScan()
   try {
     consoleSession.rescan(mode)
   }
   catch {
     // publishScan already invalidated the old scan and sent recovery feedback.
+    live?.failed()
   }
 }
 rescan()
@@ -96,9 +110,11 @@ const settings = new PluginSettings({ storage: figma.clientStorage, post: messag
 figma.on('currentpagechange', () => {
   reports.invalidate()
   navigation.invalidate()
+  live?.pageChanged()
 })
 figma.on('close', () => {
   closed = true
+  live?.dispose()
   navigation.dispose()
   reports.dispose()
   consoleSession.dispose()
@@ -115,8 +131,15 @@ figma.ui.onmessage = async (message: {
   nodeId?: string
   scanId?: number
   requestId?: number
+  enabled?: boolean
 }) => {
   if (closed) {
+    return
+  }
+  if (message.type === 'set-live-preflight') {
+    if (typeof message.enabled === 'boolean' && Number.isSafeInteger(message.requestId)) {
+      live?.setEnabled(message.enabled, message.requestId)
+    }
     return
   }
   if (message.type === 'cancel-navigation') {

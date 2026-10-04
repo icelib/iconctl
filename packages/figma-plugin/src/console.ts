@@ -1,4 +1,5 @@
 import type { PluginContext } from '@iconctl/console-contracts'
+import type { LocalScanState } from './live-preflight'
 import type { PreflightItem, PreflightRules } from './preflight'
 import type { ScanMetadata } from './report'
 import { canSubmit } from './preflight'
@@ -27,6 +28,8 @@ interface Host {
   scan: (rules?: PreflightRules) => PreflightItem[]
   invalidate?: (text: string, error?: boolean) => void
   resetProject?: () => void
+  localScanStateChanged?: () => void
+  connectionReplaced?: () => void
 }
 class ConsoleError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -58,6 +61,8 @@ export class PluginConsole {
   private rulesEpoch = 0
   private rulesRequest: number | undefined
   private context: PluginContext | undefined
+  private contextPendingGeneration: number | undefined
+  private disposed = false
   private wake: (() => void) | undefined
   private writes: Promise<void> = Promise.resolve()
   private mode: 'console' | 'github' = 'console'
@@ -78,7 +83,52 @@ export class PluginConsole {
     this.wake?.()
     this.wake = undefined
     this.active = false
+    this.contextPendingGeneration = undefined
     return this.generation
+  }
+
+  get localScanState(): LocalScanState {
+    if (this.disposed) {
+      return 'disposed'
+    }
+    if (this.rulesRequest !== undefined || (this.mode === 'console' && this.contextPendingGeneration === this.generation)) {
+      return 'waiting'
+    }
+    return this.mode === 'console' && this.projectRulesStale ? 'stale' : 'ready'
+  }
+
+  /** A synchronous, cached-rules-only scan cannot connect or disturb a poller. */
+  tryLiveRescan(): LocalScanState | 'published' | 'failed' {
+    const state = this.localScanState
+    if (state !== 'ready') {
+      return state
+    }
+    try {
+      this.publishScan(this.scanMetadata())
+      return 'published'
+    }
+    catch {
+      return 'failed'
+    }
+  }
+
+  private beginContextRead(generation: number) {
+    this.check(generation)
+    this.contextPendingGeneration = generation
+    if (this.context || this.paired) {
+      this.projectRulesStale = true
+    }
+    if (this.mode === 'console') {
+      this.host.invalidate?.('Reading project rules…')
+    }
+    this.host.localScanStateChanged?.()
+  }
+
+  private endContextRead(generation: number) {
+    if (this.contextPendingGeneration === generation) {
+      this.contextPendingGeneration = undefined
+      this.host.localScanStateChanged?.()
+    }
   }
 
   private async write(generation: number, action: () => Promise<void>) {
@@ -164,10 +214,18 @@ export class PluginConsole {
   }
 
   rescan(mode = this.mode) {
+    if (this.disposed) {
+      return
+    }
     if (mode !== this.mode) {
       this.cancelRules()
     }
     this.mode = mode
+    this.host.localScanStateChanged?.()
+    if (mode === 'console' && this.localScanState === 'waiting') {
+      this.host.invalidate?.('Reading project rules. Wait for the current request before rescanning.')
+      return
+    }
     if (mode === 'console' && this.projectRulesStale) {
       this.host.invalidate?.('Project rules are unavailable. Refresh project rules before rescanning.', true)
       return
@@ -207,6 +265,7 @@ export class PluginConsole {
     this.rulesRequest = requestId
     this.projectRulesStale = true
     this.host.invalidate?.('Refreshing project rules…')
+    this.host.localScanStateChanged?.()
     reply('accepted', 'Refreshing project rules…')
     this.rulesState()
     try {
@@ -252,6 +311,7 @@ export class PluginConsole {
     finally {
       if (generation === this.generation && epoch === this.rulesEpoch) {
         this.rulesRequest = undefined
+        this.host.localScanStateChanged?.()
         this.rulesState()
         this.host.post({ type: 'console-state', busy: this.active, connected: Boolean(this.context) })
       }
@@ -260,6 +320,7 @@ export class PluginConsole {
 
   private clearContext() {
     this.context = undefined
+    this.host.connectionReplaced?.()
     this.host.resetProject?.()
   }
 
@@ -270,13 +331,18 @@ export class PluginConsole {
     this.context = context
     this.paired = true
     this.projectRulesStale = false
-    this.rescan()
+    // This request owns the freshly read context. Ordinary/manual/live scans
+    // remain blocked until it finishes; keep its rulesRequestId on this result.
+    this.publishScan(this.scanMetadata())
     this.rulesState()
   }
 
   private async refresh(generation: number, device: Device) {
+    this.projectRulesStale = true
+    this.beginContextRead(generation)
     const context = await this.retry(generation, () => this.request<PluginContext>(generation, device.origin, `devices/${device.deviceId}/context`, device.token))
     this.applyContext(device, context)
+    this.endContextRead(generation)
     this.status(`Connected to ${context.name} · revision ${context.revision}${context.namingMode === 'server' ? ' · Custom names are validated by the server.' : ''}`, { origin: device.origin })
     return context
   }
@@ -313,6 +379,7 @@ export class PluginConsole {
     catch (error) {
       this.check(generation)
       if (error instanceof ConsoleError && error.status === 409 && !task.jobId) {
+        this.beginContextRead(generation)
         await this.write(generation, () => this.host.storage.deleteAsync(TASK_KEY))
         await this.refresh(generation, device)
         throw new Error('Project rules or task state changed. Review the refreshed preflight and sync again.')
@@ -328,6 +395,9 @@ export class PluginConsole {
     if (!device) {
       throw new Error('Connect the console first')
     }
+    // A restored device is paired even before its first context has loaded.
+    // Task storage or reconciliation can fail before refresh() is reached.
+    this.projectRulesStale = true
     consoleOrigin(device.origin)
     const task = await this.host.storage.getAsync(TASK_KEY) as Task | undefined
     this.check(generation)
@@ -381,6 +451,9 @@ export class PluginConsole {
     origin?: string
     requestId?: number
   }) {
+    if (this.disposed) {
+      return
+    }
     if (message.type === 'console-refresh-rules') {
       if (Number.isSafeInteger(message.requestId)) {
         await this.refreshRules(message.requestId!)
@@ -396,6 +469,10 @@ export class PluginConsole {
       return
     }
     const generation = this.changeGeneration()
+    if (replacing) {
+      this.host.connectionReplaced?.()
+    }
+    this.beginContextRead(generation)
     this.active = true
     this.status('Connecting…')
     try {
@@ -408,7 +485,7 @@ export class PluginConsole {
           await this.host.storage.deleteAsync(DEVICE_KEY)
           await this.host.storage.deleteAsync(TASK_KEY)
         })
-        this.rescan()
+        this.publishScan(this.scanMetadata())
         if (message.type === 'console-disconnect') {
           this.status('Local connection removed. Revoke the device in the console to invalidate its credential.')
           return
@@ -447,6 +524,7 @@ export class PluginConsole {
     }
     finally {
       if (generation === this.generation) {
+        this.endContextRead(generation)
         this.active = false
         this.rulesState()
         this.host.post({ type: 'console-state', busy: false, connected: Boolean(this.context) })
@@ -454,5 +532,9 @@ export class PluginConsole {
     }
   }
 
-  dispose() { this.changeGeneration() }
+  dispose() {
+    this.disposed = true
+    this.changeGeneration()
+    this.host.localScanStateChanged?.()
+  }
 }

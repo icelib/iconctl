@@ -131,6 +131,8 @@
         margin: 4px 0 0;
       }
       #view-count,
+      #live-preflight-help,
+      #live-preflight-status,
       #problem-position,
       #empty-view {
         color: #555;
@@ -186,6 +188,7 @@
         >GitHub token (Contents: read and write)<input id="token" type="password" placeholder="github_pat_…"
       /></label>
       <label>Event type<input id="event" value="iconctl-publish" /></label>
+      <p id="github-status" aria-live="polite" aria-atomic="true"></p>
       <div id="settings-feedback" class="storage-feedback" hidden>
         <p id="settings-storage-status" aria-live="polite"></p>
         <button id="retry-settings" class="secondary" type="button">Retry settings storage</button>
@@ -199,6 +202,13 @@
       <p id="rules-status" aria-label="Project rules status" aria-live="polite" aria-atomic="true"></p>
     </details>
     <p id="status">Scanning this page…</p>
+    <div class="view-options">
+      <label><input id="live-preflight" type="checkbox" aria-describedby="live-preflight-help" />Live preflight</label>
+    </div>
+    <p id="live-preflight-help">This session only · Current page · Uses loaded rules</p>
+    <p id="live-preflight-status" aria-label="Live preflight status" aria-live="polite" aria-atomic="true">
+      Live preflight is off. Choose Rescan after editing.
+    </p>
     <label>Search preflight<input id="search" type="search" placeholder="Name, node ID or issue" /></label>
     <div class="view-options">
       <label><input id="problems-only" type="checkbox" />Problems only</label>

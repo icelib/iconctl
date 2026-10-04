@@ -15,6 +15,7 @@ interface PluginMessage {
   url?: string
   error?: boolean
   busy?: boolean
+  enabled?: boolean
   connected?: boolean
   items?: PreflightItem[]
   scanId?: number
@@ -40,6 +41,9 @@ const repoInput = document.querySelector<HTMLInputElement>('#repo')!
 const tokenInput = document.querySelector<HTMLInputElement>('#token')!
 const eventInput = document.querySelector<HTMLInputElement>('#event')!
 const statusEl = document.querySelector('#status')!
+const githubStatus = document.querySelector('#github-status')!
+const liveInput = document.querySelector<HTMLInputElement>('#live-preflight')!
+const liveStatus = document.querySelector('#live-preflight-status')!
 const listEl = document.querySelector('#list')!
 const publishBtn = document.querySelector<HTMLButtonElement>('#publish')!
 const rescanBtn = document.querySelector<HTMLButtonElement>('#rescan')!
@@ -79,6 +83,7 @@ let hasRulesState = false
 let rulesRequest = 0
 let rulesPending: number | undefined
 let uiActive = true
+let liveRequest = 0
 const reportUrls = new Map<string, number | undefined>()
 function updateRules() {
   rulesBtn.hidden = modeInput.value !== 'console'
@@ -203,6 +208,20 @@ function setStatus(text: string, kind: 'ok' | 'err' | '' = '') {
   statusEl.textContent = text
   statusEl.className = kind
 }
+function setGithubStatus(text: string, kind: 'ok' | 'err' | '' = '') {
+  githubStatus.textContent = text
+  githubStatus.className = kind
+}
+function setLive(enabled: boolean) {
+  liveInput.checked = enabled
+  liveStatus.textContent = enabled ? 'Starting live preflight…' : 'Live preflight is off. Choose Rescan after editing.'
+  parent.postMessage({ pluginMessage: { type: 'set-live-preflight', enabled, requestId: ++liveRequest } }, '*')
+}
+liveInput.addEventListener('change', () => {
+  if (uiActive) {
+    setLive(liveInput.checked)
+  }
+})
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -287,7 +306,9 @@ function stepProblem(direction: 1 | -1) {
 previousProblem.addEventListener('click', () => stepProblem(-1))
 nextProblem.addEventListener('click', () => stepProblem(1))
 window.addEventListener('pagehide', () => {
+  setLive(false)
   uiActive = false
+  liveInput.disabled = true
   clearNavigation()
   clearRulesRequest()
   updateSubmit()
@@ -409,6 +430,7 @@ publishBtn.addEventListener('click', async () => {
   if (!uiActive) {
     return
   }
+  const actionMode = modeInput.value
   try {
     if (!currentPreflight) {
       throw new Error('Rescan this page before submitting')
@@ -416,7 +438,7 @@ publishBtn.addEventListener('click', async () => {
     if (!canSubmit(items)) {
       throw new Error('Fix all preflight errors before submitting')
     }
-    if (modeInput.value === 'console') {
+    if (actionMode === 'console') {
       if (consoleBusy || !consoleConnected) {
         return
       }
@@ -438,15 +460,18 @@ publishBtn.addEventListener('click', async () => {
     }, '*')
     githubBusy = true
     updateSubmit()
-    setStatus('Dispatching GitHub Action…')
+    setGithubStatus('Dispatching GitHub Action…')
     await dispatchPublish(settings)
-    setStatus(`Workflow started. ${actionsUrl(settings)}`, 'ok')
+    setGithubStatus(`Workflow started. ${actionsUrl(settings)}`, 'ok')
   }
   catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error), 'err')
+    const show = actionMode === 'github' ? setGithubStatus : setStatus
+    show(error instanceof Error ? error.message : String(error), 'err')
   }
   finally {
-    githubBusy = false
+    if (actionMode === 'github') {
+      githubBusy = false
+    }
     updateSubmit()
   }
 })
@@ -459,6 +484,10 @@ window.onmessage = (event: MessageEvent<{
   const message = event.data.pluginMessage
   if (!message) {
     return
+  }
+  if (message.type === 'live-preflight-state' && message.requestId === liveRequest) {
+    liveInput.checked = message.enabled === true
+    liveStatus.textContent = message.text ?? ''
   }
   if (message.type === 'console-status' || message.type === 'console-state') {
     if (message.busy !== undefined) {
@@ -570,6 +599,7 @@ modeInput.addEventListener('change', () => {
 document
   .querySelector('#connect')!
   .addEventListener('click', () => {
+    setLive(false)
     clearRulesRequest()
     rulesPaired = false
     updateRules()
@@ -579,6 +609,7 @@ document
 document
   .querySelector('#disconnect')!
   .addEventListener('click', () => {
+    setLive(false)
     clearRulesRequest()
     rulesPaired = false
     updateRules()

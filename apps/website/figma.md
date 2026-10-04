@@ -2,6 +2,8 @@
 
 Figma is one `iconctl` source. Designers maintain a library file, then press **Publish** in the [iconctl plugin](/publish). Engineering reviews the pull request. Figma Library “Publish” is only for other design files.
 
+The [Figma plugin’s Live preflight](/console#figma-plugin) can recheck the current page after edits using loaded project rules. It is opt-in for each session and never submits or downloads automatically.
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.

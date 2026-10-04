@@ -2,6 +2,8 @@
 
 Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [iconctl 插件](/zh/publish) 里点 **Publish**。工程侧 review PR。Figma 的 Publish Library 只给其他设计稿用。
 
+[Figma 插件的 Live preflight](/zh/console#figma-插件) 可在编辑后使用已加载项目规则重新预检当前页。每次会话需显式开启，不会自动提交或下载。
+
 ## 文件
 
 图标单独放在 Library 文件里，不要画在业务稿中。
