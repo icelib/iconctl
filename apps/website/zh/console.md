@@ -233,6 +233,8 @@ pnpm --filter @iconctl/console exec wrangler rollback <previous-version-id> --en
 
 问题类别只在本次会话中保留，Rescan 与 Live preflight 会沿用选择。所选类别没有匹配项时仍保持选中并显示空态，Other 的最后一个问题解决后也是如此。**Clear filters** 同时清空搜索、Problems only 和类别。更改类别会取消进行中的 Locate、重置上/下问题位置，保留当前扫描、任务跟踪和进行中的报告或 SVG 下载。隐藏的错误仍会阻止新同步与 SVG 交接；JSON/HTML 报告和 SVG ZIP 均保留完整当前页范围。整页健康时，即使筛选列表为空也仍可导出。
 
+使用 **Sort components** 可按 **Page order**、**Local name** 或 **Original name** 排列当前筛选列表。本地名称按捕获的原值比较，空或缺失的名称放在最后；比较区分大小写并遵循 JavaScript 字符顺序。名称相同时依次使用原始名称、节点 ID 和捕获时的页面顺序作为稳定排序。排序只影响当前列表以及 Locate、问题导航和 Select visible components 发出的顺序，不会修改扫描快照、报告或 SVG/任务输出，不保存偏好，也不改变选区集合。排序会清除导航和复制反馈，已经开始的剪贴板写入仍会完成。选项仅在当前插件会话有效，会在重扫和实时预检后保留。
+
 JSON 预检报告继续使用 `schemaVersion: 1` 和原有 `issues` 字符串，只在图标项上可选增加 `diagnostics`，每项仅含 `code`、`message`。当前检查代码为 `name-rule`、`canvas-size`、`duplicate-name`，按顺序对应同索引的原问题；未知代码也保持可读。缺失或不一致的分类数据在报告中省略，在插件里归为 Other。提交资格始终以原问题为准，旧消费者仍可读取不含 diagnostics 的报告。HTML 报告保留原有问题文字和完整捕获扫描。
 
 **Problems only** 会在关闭重开后恢复，搜索文字仅保留在当前会话。GitHub 设置和视图偏好分别恢复，不会覆盖已经编辑的字段。本地存储失败时可使用对应的 **Retry** 按钮，当前会话与任务状态仍可使用；重试保存会采用当前值。重新构建私有插件即可使用这些控件，无需更新服务端或迁移数据。

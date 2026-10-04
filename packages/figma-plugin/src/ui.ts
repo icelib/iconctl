@@ -1,12 +1,12 @@
 import type { PreflightItem } from './preflight'
-import type { IssueType } from './preflight-view'
+import type { IssueType, PreflightSort } from './preflight-view'
 import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
 import type { HandoffFile } from './svg-handoff-format'
 import { CopyVisibleJsonUI } from './copy-visible-json-ui'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
-import { issueType, PreflightView } from './preflight-view'
+import { issueType, preflightSort, PreflightView } from './preflight-view'
 import { SvgHandoffUI } from './svg-handoff-ui'
 import { MAX_VISIBLE_SELECTION, selectionError } from './visible-selection'
 
@@ -64,6 +64,7 @@ const problemPosition = document.querySelector<HTMLElement>('#problem-position')
 const searchInput = document.querySelector<HTMLInputElement>('#search')!
 const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')!
 const issueTypeInput = document.querySelector<HTMLSelectElement>('#issue-type')!
+const sortInput = document.querySelector<HTMLSelectElement>('#sort')!
 const viewCount = document.querySelector<HTMLElement>('#view-count')!
 const emptyView = document.querySelector<HTMLElement>('#empty-view')!
 const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
@@ -79,6 +80,7 @@ const settingsInputs = { repo: repoInput, token: tokenInput, eventType: eventInp
 let editedPreferences = false
 let items: PreflightItem[] = []
 let selectedIssueType: IssueType = 'all'
+let selectedSort: PreflightSort = 'page'
 const preflightView = new PreflightView()
 let scanId: number | undefined
 let navigationRequest = 0
@@ -101,7 +103,7 @@ let uiActive = true
 let liveRequest = 0
 let handoffRules: AppliedRules | undefined
 function visibleItems() {
-  return preflightView.visible({ search: searchInput.value, problemsOnly: problemsInput.checked, issueType: selectedIssueType })
+  return preflightView.visible({ search: searchInput.value, problemsOnly: problemsInput.checked, issueType: selectedIssueType, sort: selectedSort })
 }
 const reportUrls = new Map<string, number | undefined>()
 const handoffUI = new SvgHandoffUI({
@@ -370,6 +372,7 @@ window.addEventListener('pagehide', () => {
   setLive(false)
   uiActive = false
   liveInput.disabled = true
+  sortInput.disabled = true
   clearNavigation()
   clearRulesRequest()
   updateSubmit()
@@ -387,6 +390,7 @@ function renderList() {
     return option
   }))
   issueTypeInput.value = selectedIssueType
+  sortInput.value = selectedSort
   const available = items.filter(item => !item.skipped)
   const visible = visibleItems()
   viewCount.textContent = `Showing ${visible.length} of ${available.length} icons`
@@ -429,6 +433,13 @@ function savePreferences() {
 searchInput.addEventListener('input', changeView)
 issueTypeInput.addEventListener('change', () => {
   selectedIssueType = issueType(issueTypeInput.value)
+  changeView()
+})
+sortInput.addEventListener('change', () => {
+  if (!uiActive) {
+    return
+  }
+  selectedSort = preflightSort(sortInput.value)
   changeView()
 })
 problemsInput.addEventListener('change', () => {

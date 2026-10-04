@@ -249,6 +249,16 @@
       Counts cover all non-draft components. A component can have several issue types. Other includes unclassified
       issues.
     </p>
+    <label
+      >Sort components<select id="sort" aria-describedby="sort-help">
+        <option value="page">Page order</option>
+        <option value="local-name">Local name</option>
+        <option value="original-name">Original name</option>
+      </select></label
+    >
+    <p id="sort-help">
+      Sorting changes only this view. Blank local names stay last; ties keep a stable component order.
+    </p>
     <div class="view-options">
       <label><input id="problems-only" type="checkbox" />Problems only</label>
       <button id="clear-filters" class="secondary" type="button">Clear filters</button>

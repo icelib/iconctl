@@ -8,6 +8,8 @@ For a local engineering handoff, use [Export SVG ZIP](/console#export-a-raw-svg-
 
 Use the plugin’s **Issue type** filter to review naming, canvas size or duplicate-name problems together. It combines with search and Problems only while reports, SVG handoffs and sync eligibility continue using the complete current-page scan. See [plugin review controls](/console#figma-plugin).
 
+Use **Sort components** beside the filters to order the current view by page order, local name or original Figma name. Blank local names stay last; case-sensitive ties use the original name, node ID and captured order. Sorting is session-only and affects review/navigation order, while reports and sync retain their complete scan.
+
 
 Use [Copy visible names JSON](/console#copy-visible-local-names) to share the filtered local preflight names as a deduplicated JSON array. Server-hook names remain provisional; manual selection is available when clipboard access is blocked.
 

@@ -9,9 +9,30 @@ const labels = {
 }
 type IssueCategory = keyof typeof labels
 export type IssueType = 'all' | IssueCategory
+export type PreflightSort = 'page' | 'local-name' | 'original-name'
 
 export function issueType(value: string): IssueType {
   return Object.hasOwn(labels, value) ? value as IssueCategory : 'all'
+}
+
+export function preflightSort(value: string): PreflightSort {
+  return value === 'local-name' || value === 'original-name' ? value : 'page'
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareSortKey(left: string | null | undefined, right: string | null | undefined): number {
+  const leftBlank = left === undefined || left === null || left.trim().length === 0
+  const rightBlank = right === undefined || right === null || right.trim().length === 0
+  if (leftBlank !== rightBlank) {
+    return leftBlank ? 1 : -1
+  }
+  if (leftBlank) {
+    return 0
+  }
+  return compareText(left!, right!)
 }
 
 /** Categorize existing issues without parsing their messages or adding errors. */
@@ -57,10 +78,29 @@ export class PreflightView {
     ]
   }
 
-  visible(filters: { search: string, problemsOnly: boolean, issueType: IssueType }) {
+  visible(filters: { search: string, problemsOnly: boolean, issueType: IssueType, sort?: PreflightSort }) {
     const query = filters.search.trim().toLowerCase()
-    return this.items.filter(item => !item.skipped && (!filters.problemsOnly || item.issues.length > 0)
+    const visible = this.items.filter(item => !item.skipped && (!filters.problemsOnly || item.issues.length > 0)
       && (filters.issueType === 'all' || this.types.get(item)?.has(filters.issueType))
       && [item.id, item.name, item.iconName ?? '', ...item.issues].some(value => value.toLowerCase().includes(query)))
+    if (!filters.sort || filters.sort === 'page') {
+      return visible
+    }
+    // filter made a new array; stable sort keeps capture order for complete ties.
+    return visible.sort((left, right) => {
+      const primary = filters.sort === 'local-name'
+        ? compareSortKey(left.iconName, right.iconName)
+        : compareText(left.name, right.name)
+      if (primary) {
+        return primary
+      }
+      if (filters.sort === 'local-name') {
+        const original = compareText(left.name, right.name)
+        if (original) {
+          return original
+        }
+      }
+      return compareText(left.id, right.id)
+    })
   }
 }
