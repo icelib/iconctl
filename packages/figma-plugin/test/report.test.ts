@@ -165,7 +165,11 @@ describe('complete preflight reports through the actual Figma host', () => {
     expect(Number.isFinite(Date.parse(report.generatedAt))).toBe(true)
     expect(Object.keys(report).sort()).toEqual(['generatedAt', 'items', 'mode', 'page', 'rules', 'rulesSource', 'scanId', 'schemaVersion', 'scope', 'serverValidationRequired', 'summary'].sort())
     for (const item of report.items) {
-      expect(Object.keys(item).sort()).toEqual(['height', 'iconName', 'id', 'issues', 'name', 'skipped', 'width'])
+      expect(Object.keys(item).sort()).toEqual(['diagnostics', 'height', 'iconName', 'id', 'issues', 'name', 'skipped', 'width'])
+      expect(item.diagnostics.map((diagnostic: { message: string }) => diagnostic.message)).toEqual(item.issues)
+      for (const diagnostic of item.diagnostics) {
+        expect(Object.keys(diagnostic).sort()).toEqual(['code', 'message'])
+      }
     }
     page.name = 'Renamed after scan'
     arrow.name = 'Changed after scan'

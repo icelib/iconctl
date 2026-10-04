@@ -6,6 +6,8 @@ The [Figma plugin’s Live preflight](/console#figma-plugin) can recheck the cur
 
 For a local engineering handoff, use [Export SVG ZIP](/console#export-a-raw-svg-handoff). It exports the complete validated current page as raw SVGs that work with a `directory` source and `iconctl watch`, without a REST token or remote task.
 
+Use the plugin’s **Issue type** filter to review naming, canvas size or duplicate-name problems together. It combines with search and Problems only while reports, SVG handoffs and sync eligibility continue using the complete current-page scan. See [plugin review controls](/console#figma-plugin).
+
 ## File
 
 Keep icons in a dedicated library file, not inside product screens.

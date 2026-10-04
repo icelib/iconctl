@@ -7,6 +7,9 @@ Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [ic
 
 需要本地交接时，可使用 [Export SVG ZIP](/zh/console#导出原始-svg-交接包)，将当前页全部通过预检的组件导出为原始 SVG，配合 `directory` 来源与 `iconctl watch` 使用，无需 REST token 或远端任务。
 
+
+插件新增 **Issue type**，可按命名、画布尺寸或重复名称集中审阅，并与搜索、Problems only 叠加。报告、SVG 交接与提交资格仍使用完整当前页扫描，详见[插件审阅控件](/zh/console#figma-插件)。
+
 ## 文件
 
 图标单独放在 Library 文件里，不要画在业务稿中。

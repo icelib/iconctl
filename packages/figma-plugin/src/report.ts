@@ -1,4 +1,5 @@
 import type { PreflightItem, PreflightRules } from './preflight'
+import { captureDiagnostics } from './diagnostics'
 import { DEFAULT_NAME_PATTERN, DEFAULT_SIZE, DEFAULT_SKIP_PREFIX } from './naming'
 import { canSubmit } from './preflight'
 import { renderPreflightHtml } from './report-html'
@@ -63,15 +64,19 @@ export class PreflightReport {
       return
     }
     const overview = appliedRules(metadata)
-    const captured = items.map(item => ({
-      id: item.id,
-      name: item.name,
-      iconName: item.iconName,
-      skipped: item.skipped,
-      width: item.width,
-      height: item.height,
-      issues: [...item.issues],
-    }))
+    const captured = items.map((item) => {
+      const diagnostics = captureDiagnostics(item.issues, item.diagnostics)
+      return {
+        id: item.id,
+        name: item.name,
+        iconName: item.iconName,
+        skipped: item.skipped,
+        width: item.width,
+        height: item.height,
+        issues: [...item.issues],
+        ...(diagnostics ? { diagnostics } : {}),
+      }
+    })
     // Construct the report explicitly. Device credentials, tasks and arbitrary
     // context/settings fields must never enter the serialized snapshot.
     const report: PreflightDocument = {

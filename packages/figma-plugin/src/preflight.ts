@@ -1,3 +1,4 @@
+import type { PreflightDiagnostic } from './diagnostics'
 import {
   DEFAULT_NAME_PATTERN,
   DEFAULT_SIZE,
@@ -23,6 +24,7 @@ export interface PreflightItem {
   width: number
   height: number
   issues: string[]
+  diagnostics?: PreflightDiagnostic[]
 }
 
 export interface PreflightRules {
@@ -34,7 +36,13 @@ export interface PreflightRules {
 }
 const legacyRules: PreflightRules = { width: DEFAULT_SIZE, height: DEFAULT_SIZE }
 
-export function inspectComponent(input: PreflightInput, rules: PreflightRules = legacyRules): PreflightItem {
+type ScannedItem = Omit<PreflightItem, 'issues'> & { diagnostics: PreflightDiagnostic[] }
+
+function withIssues(item: ScannedItem): PreflightItem {
+  return { ...item, issues: item.diagnostics.map(diagnostic => diagnostic.message) }
+}
+
+function scanComponent(input: PreflightInput, rules: PreflightRules = legacyRules): ScannedItem {
   if (shouldSkipName(input.name, rules.skipPrefix)) {
     return {
       id: input.id,
@@ -43,7 +51,7 @@ export function inspectComponent(input: PreflightInput, rules: PreflightRules = 
       skipped: true,
       width: input.width,
       height: input.height,
-      issues: [],
+      diagnostics: [],
     }
   }
 
@@ -52,18 +60,14 @@ export function inspectComponent(input: PreflightInput, rules: PreflightRules = 
       ? `${input.parentName}-${input.name}`
       : input.name
   const iconName = toIconName(raw) || null
-  const issues: string[] = []
+  const diagnostics: PreflightDiagnostic[] = []
 
   const pattern = rules.name === undefined ? DEFAULT_NAME_PATTERN : new RegExp(rules.name)
   if (rules.namingMode !== 'server' && (!iconName || !pattern.test(iconName))) {
-    issues.push(
-      `Name "${input.name}" does not match the naming rule (got ${iconName || '(empty)'})`,
-    )
+    diagnostics.push({ code: 'name-rule', message: `Name "${input.name}" does not match the naming rule (got ${iconName || '(empty)'})` })
   }
   if ((rules.width !== undefined && input.width !== rules.width) || (rules.height !== undefined && input.height !== rules.height)) {
-    issues.push(
-      `Canvas is ${input.width}×${input.height}, expected ${rules.width ?? 'any'}×${rules.height ?? 'any'}`,
-    )
+    diagnostics.push({ code: 'canvas-size', message: `Canvas is ${input.width}×${input.height}, expected ${rules.width ?? 'any'}×${rules.height ?? 'any'}` })
   }
 
   return {
@@ -73,15 +77,19 @@ export function inspectComponent(input: PreflightInput, rules: PreflightRules = 
     skipped: false,
     width: input.width,
     height: input.height,
-    issues,
+    diagnostics,
   }
 }
 
+export function inspectComponent(input: PreflightInput, rules?: PreflightRules): PreflightItem {
+  return withIssues(scanComponent(input, rules))
+}
+
 export function inspectComponents(nodes: PreflightInput[], rules?: PreflightRules): PreflightItem[] {
-  const items = nodes.map(node => inspectComponent(node, rules))
+  const items = nodes.map(node => scanComponent(node, rules))
   // A server hook can assign different final names to equal local previews.
   if (rules?.namingMode === 'server') {
-    return items
+    return items.map(withIssues)
   }
   const names = new Map<string, Set<string>>()
   for (const item of items) {
@@ -94,10 +102,10 @@ export function inspectComponents(nodes: PreflightInput[], rules?: PreflightRule
   for (const item of items) {
     const count = !item.skipped && item.iconName ? names.get(item.iconName)?.size ?? 0 : 0
     if (count > 1) {
-      item.issues.push(`Duplicate icon name "${item.iconName}" on this page (${count} components). Rename a component and rescan.`)
+      item.diagnostics.push({ code: 'duplicate-name', message: `Duplicate icon name "${item.iconName}" on this page (${count} components). Rename a component and rescan.` })
     }
   }
-  return items
+  return items.map(withIssues)
 }
 
 export function canSubmit(items: PreflightItem[]): boolean {

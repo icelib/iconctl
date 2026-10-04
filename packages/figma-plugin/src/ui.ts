@@ -1,9 +1,11 @@
 import type { PreflightItem } from './preflight'
+import type { IssueType } from './preflight-view'
 import type { AppliedRules } from './report'
 import type { LegacySettings, ViewPreferences } from './settings'
 import type { HandoffFile } from './svg-handoff-format'
 import { actionsUrl, dispatchPublish, parseRepo } from './github'
 import { canSubmit } from './preflight'
+import { issueType, PreflightView } from './preflight-view'
 import { SvgHandoffUI } from './svg-handoff-ui'
 
 interface PluginMessage {
@@ -57,6 +59,7 @@ const nextProblem = document.querySelector<HTMLButtonElement>('#next-problem')!
 const problemPosition = document.querySelector<HTMLElement>('#problem-position')!
 const searchInput = document.querySelector<HTMLInputElement>('#search')!
 const problemsInput = document.querySelector<HTMLInputElement>('#problems-only')!
+const issueTypeInput = document.querySelector<HTMLSelectElement>('#issue-type')!
 const viewCount = document.querySelector<HTMLElement>('#view-count')!
 const emptyView = document.querySelector<HTMLElement>('#empty-view')!
 const clearFilters = document.querySelector<HTMLButtonElement>('#clear-filters')!
@@ -71,6 +74,8 @@ const editedSettings = new Set<keyof LegacySettings>()
 const settingsInputs = { repo: repoInput, token: tokenInput, eventType: eventInput }
 let editedPreferences = false
 let items: PreflightItem[] = []
+let selectedIssueType: IssueType = 'all'
+const preflightView = new PreflightView()
 let scanId: number | undefined
 let navigationRequest = 0
 let navigationPending: { scanId: number, requestId: number, nodeId: string } | undefined
@@ -246,9 +251,7 @@ function escapeHtml(value: string) {
   })[char] || char)
 }
 function visibleItems() {
-  const query = searchInput.value.trim().toLowerCase()
-  return items.filter(item => !item.skipped && (!problemsInput.checked || item.issues.length > 0)
-    && [item.id, item.name, item.iconName ?? '', ...item.issues].some(value => value.toLowerCase().includes(query)))
+  return preflightView.visible({ search: searchInput.value, problemsOnly: problemsInput.checked, issueType: selectedIssueType })
 }
 function updateProblemNavigation() {
   const problems = visibleItems().filter(item => item.issues.length > 0)
@@ -334,12 +337,19 @@ window.addEventListener('pagehide', () => {
   updateReport()
 })
 function renderList() {
+  issueTypeInput.replaceChildren(...preflightView.options(selectedIssueType).map(({ value, label }) => {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    return option
+  }))
+  issueTypeInput.value = selectedIssueType
   const available = items.filter(item => !item.skipped)
   const visible = visibleItems()
   viewCount.textContent = `Showing ${visible.length} of ${available.length} icons`
   emptyView.hidden = visible.length > 0
   emptyView.textContent = available.length ? 'No icons match these filters.' : 'No icons to display on this page.'
-  clearFilters.disabled = !searchInput.value && !problemsInput.checked
+  clearFilters.disabled = !searchInput.value && !problemsInput.checked && selectedIssueType === 'all'
   listEl.innerHTML = visible
     .map((item) => {
       const state = item.issues.length ? 'err' : 'ok'
@@ -373,6 +383,10 @@ function savePreferences() {
   parent.postMessage({ pluginMessage: { type: 'save-preferences', preferences: { problemsOnly: problemsInput.checked } } }, '*')
 }
 searchInput.addEventListener('input', changeView)
+issueTypeInput.addEventListener('change', () => {
+  selectedIssueType = issueType(issueTypeInput.value)
+  changeView()
+})
 problemsInput.addEventListener('change', () => {
   changeView()
   savePreferences()
@@ -380,6 +394,7 @@ problemsInput.addEventListener('change', () => {
 clearFilters.addEventListener('click', () => {
   searchInput.value = ''
   problemsInput.checked = false
+  selectedIssueType = 'all'
   changeView()
   savePreferences()
 })
@@ -567,6 +582,7 @@ window.onmessage = (event: MessageEvent<{
     navigationStatus.textContent = ''
     navigationStatus.className = ''
     items = message.items
+    preflightView.capture(items)
     handoffRules = message.appliedRules
     renderRules(message.appliedRules)
     currentPreflight = true

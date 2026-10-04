@@ -134,12 +134,17 @@
         margin: 4px 0 0;
       }
       #view-count,
+      #issue-type-help,
       #live-preflight-help,
       #live-preflight-status,
       #problem-position,
       #empty-view {
         color: #555;
         margin: 6px 0;
+      }
+      #issue-type {
+        min-width: 0;
+        max-width: 100%;
       }
       #applied-rules {
         margin: 8px 0;
@@ -213,6 +218,18 @@
       Live preflight is off. Choose Rescan after editing.
     </p>
     <label>Search preflight<input id="search" type="search" placeholder="Name, node ID or issue" /></label>
+    <label
+      >Issue type<select id="issue-type" aria-describedby="issue-type-help">
+        <option value="all">All issue types</option>
+        <option value="name-rule">Naming (0 components)</option>
+        <option value="canvas-size">Canvas size (0 components)</option>
+        <option value="duplicate-name">Duplicate names (0 components)</option>
+      </select></label
+    >
+    <p id="issue-type-help">
+      Counts cover all non-draft components. A component can have several issue types. Other includes unclassified
+      issues.
+    </p>
     <div class="view-options">
       <label><input id="problems-only" type="checkbox" />Problems only</label>
       <button id="clear-filters" class="secondary" type="button">Clear filters</button>
