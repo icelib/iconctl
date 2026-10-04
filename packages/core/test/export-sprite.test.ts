@@ -43,7 +43,7 @@ it('does not apply SVG filename restrictions to a type-only export', async () =>
 
 it('escapes prefix and custom names as literal values in generated TypeScript', () => {
   expect(generateIconNameTypes('brand\'\\\n', ['alias\'\\\n', 'line\u2028separator'])).toBe(
-    'export const ICONIFY_PREFIX = \'brand\\\'\\\\\\n\' as const\nexport type IconName = \'alias\\\'\\\\\\n\' | \'line\\u2028separator\'\n',
+    'export const ICONIFY_PREFIX = \'brand\\\'\\\\\\n\'\nexport type IconName = \'alias\\\'\\\\\\n\' | \'line\\u2028separator\'\n',
   )
 })
 

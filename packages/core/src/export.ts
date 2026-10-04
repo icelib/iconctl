@@ -144,7 +144,9 @@ export function generateIconNameTypes(prefix: string, names: string[]): string {
   const union = names.length
     ? names.map(literal).join(' | ')
     : 'never'
-  return `export const ICONIFY_PREFIX = ${literal(prefix)} as const\nexport type IconName = ${union}\n`
+  // A const string initializer already keeps its literal type and is also
+  // valid in declaration files, where an `as const` expression is rejected.
+  return `export const ICONIFY_PREFIX = ${literal(prefix)}\nexport type IconName = ${union}\n`
 }
 
 export async function readPreviousIconJson(file: string): Promise<IconifyJSON | undefined> {

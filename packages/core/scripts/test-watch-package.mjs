@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs', 'standalone-sprite-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs', 'standalone-sprite-consumer.mjs', 'types-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   await copyFile(join(core, 'test/fixtures/standalone-sprite.json'), join(consumer, 'standalone-sprite.json'))
@@ -130,6 +130,8 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
     process.stdout.write(configuration.stdout)
     const sprite = await run(node, [join(consumer, 'sprite-consumer.mjs'), mode], consumer)
     process.stdout.write(sprite.stdout)
+    const types = await run(node, [join(consumer, 'types-consumer.mjs'), mode, resolve(core, '../../node_modules/typescript/bin/tsc')], consumer)
+    process.stdout.write(types.stdout)
     const standalone = await run(node, [join(consumer, 'standalone-sprite-consumer.mjs'), mode], consumer)
     process.stdout.write(standalone.stdout)
     const preview = await run(node, [join(consumer, 'preview-consumer.mjs'), mode], consumer)
