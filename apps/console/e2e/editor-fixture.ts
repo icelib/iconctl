@@ -127,6 +127,45 @@ export const test = base.extend<{ editorApi: EditorApi }>({
       if (path === '/api/state') {
         return route.fulfill({ json: structuredClone(api.state) })
       }
+      const historyMatch = path.match(/^\/api\/jobs\/([^/]+)\/history$/)
+      if (method === 'GET' && historyMatch) {
+        const job = api.state.jobs.find(item => item.id === historyMatch[1])
+        if (!job) {
+          return route.fulfill({ status: 404, json: { error: 'Job not found' } })
+        }
+        const groups = new Map<number, { attempt: number, events: NonNullable<typeof job.events>, snapshots: typeof api.state.snapshots }>()
+        const group = (attempt: number) => {
+          let value = groups.get(attempt)
+          if (!value) {
+            value = { attempt, events: [], snapshots: [] }
+            groups.set(attempt, value)
+          }
+          return value
+        }
+        group(job.attempt)
+        for (const event of job.events ?? []) {
+          if (event.attempt !== undefined) {
+            group(event.attempt).events.push(structuredClone(event))
+          }
+        }
+        for (const snapshot of api.state.snapshots) {
+          if (snapshot.jobId === job.id && snapshot.projectId === job.projectId) {
+            group(snapshot.attempt ?? 1).snapshots.push(structuredClone(snapshot))
+          }
+        }
+        const query = new URL(request.url()).searchParams
+        const limit = Number(query.get('limit') ?? '5')
+        const ordered = [...groups.values()].sort((a, b) => b.attempt - a.attempt).slice(0, Number.isFinite(limit) ? limit : 5)
+        return route.fulfill({
+          json: {
+            jobId: job.id,
+            projectId: job.projectId,
+            attempts: ordered,
+            legacyEvents: (job.events ?? []).filter(event => event.attempt === undefined),
+            hasMore: ordered.length < groups.size,
+          },
+        })
+      }
       unexpected.push(`${method} ${path}`)
       return route.fulfill({ status: 500, json: { error: 'Unplanned editor request' } })
     })
