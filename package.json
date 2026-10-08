@@ -52,7 +52,9 @@
     "pr:beta": "repo release pre enter beta",
     "pr:rc": "repo release pre enter rc",
     "pr:next": "repo release pre enter next",
-    "pr:exit": "repo release pre exit"
+    "pr:exit": "repo release pre exit",
+    "sync:npmmirror": "repo release sync-npmmirror --all",
+    "release:sync-npmmirror": "repo release sync-npmmirror --published"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
@@ -62,7 +64,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.5.1",
     "only-allow": "^1.2.2",
-    "repoctl": "^5.5.5",
+    "repoctl": "^5.9.0",
     "stylelint": "^17.15.0",
     "tsd": "^0.33.0",
     "tsdown": "0.23.0",

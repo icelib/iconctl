@@ -14,6 +14,11 @@ export default {
       skipOverwrite: false,
       mergeTargets: true,
     },
+    release: {
+      hooks: {
+        afterPublish: [{ script: 'release:sync-npmmirror', continueOnError: true, idempotent: true }],
+      },
+    },
   },
   tooling: {
     commitlint: {
@@ -31,7 +36,7 @@ export default {
       },
     },
     lintStaged: {
-      monorepoCommand: 'pnpm exec repo',
+      repoCommand: 'pnpm exec repo',
     },
     vitest: {
       includeWorkspaceRootConfig: false,
