@@ -45,6 +45,11 @@
     - tidy-cows-shine
     - wise-waves-clean
     - young-frogs-clap
+"@iconctl/core@0.4.0":
+  dir: packages/core
+  intents:
+    - real-olives-pretend
+    - wild-elephants-end
 "@iconctl/website@0.0.1":
   dir: apps/website
   intents:
@@ -96,3 +101,8 @@ iconctl@0.3.0:
     - weak-deers-live
     - wise-waves-clean
     - young-frogs-clap
+iconctl@0.4.0:
+  dir: apps/cli
+  intents:
+    - real-olives-pretend
+    - wild-elephants-end
