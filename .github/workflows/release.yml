@@ -30,6 +30,10 @@ on:
         description: Version used for unpublished-version recovery
         required: false
         type: string
+      source-sha:
+        description: Verified source commit used to recover an unfinished release
+        required: false
+        type: string
       dry-run:
         description: Preview release reconciliation without changes
         required: false
@@ -78,5 +82,6 @@ jobs:
           REPO_RELEASE_MODE: ${{ inputs.mode || 'auto' }}
           REPO_RELEASE_PACKAGE: ${{ inputs.package }}
           REPO_RELEASE_VERSION: ${{ inputs.version }}
+          REPO_RELEASE_RECOVERY_SOURCE_SHA: ${{ inputs.source-sha }}
           REPO_RELEASE_DRY_RUN: ${{ inputs.dry-run }}
         run: pnpm exec repo release ci
