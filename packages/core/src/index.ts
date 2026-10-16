@@ -19,10 +19,11 @@ export {
 } from './config'
 export { compareIconSets, diffIconSets, type IconComparisonEntry, type IconDiff, type IconSetComparison } from './diff'
 export { renderDiffHtml, renderDiffMarkdown, writeDiffHtml, type WriteDiffHtmlOptions, writeDiffMarkdown } from './diff-preview'
-export { IconctlAbortError, IconctlError, IconctlSyncError, type SyncIssue } from './errors'
+export { IconctlAbortError, IconctlError, type IconctlErrorOptions, IconctlSyncError, type SerializedIconctlError, serializeIconctlError, type SerializeIconctlErrorOptions, type SyncIssue } from './errors'
 export { exportOutputs, generateIconNameTypes, readPreviousIconJson } from './export'
 export { getFigmaAuthStatus, logoutFigma } from './figma/auth'
 export type { FigmaAuth } from './figma/auth'
+export { type FigmaAuthInspection, type FigmaAuthSource, type FigmaAuthSourceInspection, inspectFigmaAuth, type InspectFigmaAuthOptions } from './figma/inspect-auth'
 export { type FigmaLoginOptions, loginFigma } from './figma/login'
 export { FIGMA_COMMUNITY_FILE_HELP, parseFigmaFileKey } from './file-key'
 export { stripIconPrefix } from './icon-set'
@@ -31,6 +32,8 @@ export { loadConfig, type LoadConfigOptions } from './load-config'
 export { defaultIconNameForNode, shouldSkipName, toIconName } from './naming'
 export { renderPreviewHtml, writePreviewHtml, type WritePreviewHtmlOptions } from './preview'
 export { processIconSet } from './process'
+export type { SyncProgressEvent, SyncProgressHandler, SyncProgressStage } from './progress'
+export type { FigmaAuthOptions, RequestOptions } from './request-options'
 export {
   type IconfontJsToSvgOptions,
   iconfontJsToSvgs,

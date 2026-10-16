@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from './config'
+import type { ProgressReporter } from './progress'
 import { checkpoint } from './abort'
 
 export interface ValidationIssue {
@@ -69,11 +70,18 @@ export function validateIconSet(iconSet: IconSet, config: ValidationOptions): Va
   return { issues }
 }
 
-export async function validateIconSetAsync(iconSet: IconSet, config: ValidationOptions, signal?: AbortSignal): Promise<ValidationResult> {
+export async function validateIconSetAsync(iconSet: IconSet, config: ValidationOptions, signal?: AbortSignal, report?: ProgressReporter): Promise<ValidationResult> {
   const { issues, validate } = validator(iconSet, config)
+  const total = iconSet.list(['icon']).length
+  let completed = 0
+  report?.({ stage: 'validate', completed, total })
   await iconSet.forEach(async (name, type) => {
     await checkpoint(signal)
     validate(name, type)
+    if (type === 'icon') {
+      report?.({ stage: 'validate', name, completed: ++completed, total })
+    }
   })
+  await checkpoint(signal)
   return { issues }
 }

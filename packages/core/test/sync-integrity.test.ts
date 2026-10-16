@@ -94,11 +94,7 @@ it.each([
   await seed()
   const before = await snapshot()
   failure = mode
-  if (mode === 'timeout') {
-    const timeout = AbortSignal.timeout.bind(AbortSignal)
-    vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => timeout(10))
-  }
-  const error = await sync({ cwd, config: config() }).catch(error => error)
+  const error = await sync({ cwd, config: config(), ...(mode === 'timeout' ? { requestTimeoutMs: 10 } : {}) }).catch(error => error)
   expect(error).toBeInstanceOf(IconctlSyncError)
   expect(error.issues).toEqual([expect.objectContaining({ name: 'bad', nodeId: '1:1', fileKey: 'fixture12345678', sourceIndex: 0, sourceType: 'figma', stage })])
   expect(await snapshot()).toEqual(before)

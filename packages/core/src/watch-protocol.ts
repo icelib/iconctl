@@ -32,6 +32,12 @@ export type WatchFailure
       message: string
       stack?: string
       code?: string | number
+      httpStatus?: number
+      retryable?: boolean
+      retryAfterMs?: number
+      sourceType?: string
+      sourceIndex?: number
+      operation?: string
       issues?: IconctlSyncError['issues']
       errors?: WatchFailure[]
       cause?: WatchFailure
@@ -45,6 +51,13 @@ export function packWatchFailure(value: unknown, seen = new Set<Error>()): Watch
     }
     seen.add(value)
     const code = 'code' in value ? value.code : undefined
+    const metadata: Record<string, string | number | boolean> = {}
+    for (const key of ['httpStatus', 'retryAfterMs', 'sourceIndex', 'retryable', 'sourceType', 'operation']) {
+      const field = (value as unknown as Record<string, unknown>)[key]
+      if (typeof field === 'number' || typeof field === 'boolean' || typeof field === 'string') {
+        metadata[key] = field
+      }
+    }
     return {
       kind: 'error',
       type: value instanceof IconctlAbortError ? 'abort' : value instanceof IconctlSyncError ? 'sync' : value instanceof IconctlError ? 'iconctl' : 'native',
@@ -52,6 +65,7 @@ export function packWatchFailure(value: unknown, seen = new Set<Error>()): Watch
       message: value.message,
       ...(value.stack ? { stack: value.stack } : {}),
       ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
+      ...metadata,
       ...(value instanceof IconctlSyncError ? { issues: value.issues } : {}),
       ...(value instanceof AggregateError ? { errors: value.errors.map(error => packWatchFailure(error, seen)) } : {}),
       ...('cause' in value ? { cause: packWatchFailure(value.cause, seen) } : {}),
@@ -97,6 +111,11 @@ export function unpackWatchFailure(value: WatchFailure): unknown {
   }
   if (value.code !== undefined) {
     Object.assign(error, { code: value.code })
+  }
+  for (const key of ['httpStatus', 'retryAfterMs', 'sourceIndex', 'retryable', 'sourceType', 'operation'] as const) {
+    if (value[key] !== undefined) {
+      Object.assign(error, { [key]: value[key] })
+    }
   }
   return error
 }

@@ -39,7 +39,7 @@ async function install(name, packages) {
   await writeFile(join(consumer, 'global.npmrc'), '')
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--userconfig', join(consumer, 'empty.npmrc'), '--globalconfig', join(consumer, 'global.npmrc'), ...packages], consumer)
   assert.equal((await readFile(join(consumer, 'package.json'), 'utf8')).includes('patchedDependencies'), false)
-  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs', 'standalone-sprite-consumer.mjs', 'types-consumer.mjs']) {
+  for (const file of ['watch-consumer.mjs', 'watch-consumer-preload.mjs', 'figma-consumer.mjs', 'config-watch-consumer.mjs', 'sprite-consumer.mjs', 'preview-consumer.mjs', 'init-consumer.mjs', 'standalone-sprite-consumer.mjs', 'types-consumer.mjs', 'sdk-consumer.mjs']) {
     await copyFile(join(core, 'scripts', file), join(consumer, file))
   }
   await copyFile(join(core, 'test/fixtures/standalone-sprite.json'), join(consumer, 'standalone-sprite.json'))
@@ -52,11 +52,38 @@ async function check(consumer, mode, scenario) {
 try {
   // Actual package-manager artifacts, including publishConfig and files filtering.
   const coreTarball = await pack(core, join(fixture, 'core-package'))
+  const sdkConsumer = await install('core-only', [coreTarball])
+  for (const mode of ['esm', 'cjs']) {
+    const sdk = await run(node, [join(sdkConsumer, 'sdk-consumer.mjs'), mode, resolve(core, '../../node_modules/typescript/bin/tsc')], sdkConsumer)
+    process.stdout.write(sdk.stdout)
+  }
   const cliTarball = await pack(cli, join(fixture, 'cli-package'))
   const consumer = await install('fixed', [coreTarball, cliTarball])
   const typeProbe = `import { watch, IconctlAbortError, defineConfig, resolveConfig, exportOutputs, sync, type IconctlOutputConfig, type SyncResult, type WatchEvent } from '@iconctl/core'
 import { renderIconNameTypes, writeIconNameTypes, type IconNameTypesSummary, type WriteIconNameTypesOptions } from '@iconctl/core'
 import { renderIconNameTypes as renderTypes, writeIconNameTypes as writeTypes, type IconNameTypesSummary as TypesSummary, type WriteIconNameTypesOptions as TypesOptions } from 'iconctl'
+import { inspectFigmaAuth as inspectAuth, serializeIconctlError as serializeError,
+  type IconctlErrorOptions as FacadeErrorOptions, type SerializedIconctlError as FacadeError, type SerializeIconctlErrorOptions as FacadeSerializationOptions, type SyncIssue as FacadeIssue,
+  type RequestOptions as FacadeRequestOptions, type FigmaAuthOptions as FacadeAuthOptions, type SyncOptions as FacadeSyncOptions,
+  type SyncProgressEvent as FacadeProgressEvent, type SyncProgressHandler as FacadeProgressHandler, type SyncProgressStage as FacadeProgressStage,
+  type FigmaAuthInspection as FacadeInspection, type FigmaAuthSource as FacadeAuthSource, type FigmaAuthSourceInspection as FacadeSourceInspection, type InspectFigmaAuthOptions as FacadeInspectOptions } from 'iconctl'
+const facadeRequest: FacadeRequestOptions = { requestTimeoutMs: 1000, oauthTimeoutMs: 500 }
+const facadeAuth: FacadeAuthOptions = { ...facadeRequest, signal: new AbortController().signal }
+const facadeProgress: FacadeProgressHandler = (event: FacadeProgressEvent) => { const stage: FacadeProgressStage = event.stage; void stage }
+const facadeSync: FacadeSyncOptions = { ...facadeAuth, config: resolveConfig({ prefix: 'brand', sources: [{ type: 'directory', dir: 'raw' }] }), onProgress: facadeProgress }
+const facadeErrorOptions: FacadeErrorOptions = { code: 'FIGMA_HTTP_ERROR', httpStatus: 429, retryable: true, retryAfterMs: 1000, sourceType: 'figma', sourceIndex: 0, operation: 'figma-svg', cause: new Error('cause') }
+const facadeSerialization: FacadeSerializationOptions = { secrets: ['secret'] as const }
+const facadeError: FacadeError = serializeError(new Error('failure'), facadeSerialization)
+const facadeIssue: FacadeIssue = { name: 'home', message: 'retry', stage: 'download', ...facadeErrorOptions, fileKey: 'design-file', nodeId: '1:2' }
+const facadeInspectOptions: FacadeInspectOptions = { ...facadeAuth, token: 'secret', env: {}, verify: false }
+const facadeInspection: Promise<FacadeInspection> = inspectAuth(facadeInspectOptions)
+const facadeSource: FacadeAuthSource = 'config-token'
+const facadeSourceInspection: FacadeSourceInspection = { source: facadeSource, configured: true, selected: true, validity: 'unknown', expiresAt: null, error: facadeError }
+// @ts-expect-error Facade deadlines accept numbers only.
+const invalidFacadeRequest: FacadeRequestOptions = { requestTimeoutMs: '1000' }
+// @ts-expect-error Facade public diagnostics never expose a stack.
+facadeError.stack
+void facadeSync; void facadeIssue; void facadeInspection; void facadeSourceInspection; void invalidFacadeRequest
 const typesOptions: WriteIconNameTypesOptions = { inputs: ['icons.json'] as const, dryRun: true }
 const facadeTypesOptions: TypesOptions = typesOptions
 const typesJson = { prefix: 'brand', icons: {} }
@@ -135,6 +162,33 @@ void watch; void IconctlAbortError; void event; void requestFigmaToken; void exp
     process.stdout.write(`${JSON.stringify({ scenario: 'installed-cli-version', mode, version: cliManifest.version, runtime, passed: true })}\n`)
   }
   for (const mode of ['esm', 'cjs']) {
+    const facade = await run(node, ['--input-type=module', '--eval', `
+      import assert from 'node:assert/strict'
+      import { createRequire } from 'node:module'
+      const require = createRequire(import.meta.url)
+      const core = ${mode === 'cjs' ? 'require(\'@iconctl/core\')' : 'await import(\'@iconctl/core\')'}
+      const cli = ${mode === 'cjs' ? 'require(\'iconctl\')' : 'await import(\'iconctl\')'}
+      assert.equal(cli.inspectFigmaAuth, core.inspectFigmaAuth)
+      assert.equal(cli.serializeIconctlError, core.serializeIconctlError)
+      const safe = cli.serializeIconctlError(new cli.IconctlError('Bearer facade-private-token', { code: 'FIGMA_HTTP_ERROR', httpStatus: 429, retryable: true }))
+      assert.equal(safe.httpStatus, 429)
+      assert(!JSON.stringify(safe).includes('facade-private-token'))
+      const originalFetch = globalThis.fetch
+      let requests = 0
+      try {
+        globalThis.fetch = async () => { requests++; throw new Error('Facade inspection must stay offline') }
+        const inspection = await cli.inspectFigmaAuth({ token: 'facade-private-token', env: { ICONCTL_FIGMA_CREDENTIALS_FILE: ${JSON.stringify(join(consumer, 'absent-facade-credentials.json'))} } })
+        assert.equal(inspection.source, 'config-token')
+        assert.equal(inspection.sources[0].validity, 'unknown')
+        assert(!JSON.stringify(inspection).includes('facade-private-token'))
+        assert.equal(requests, 0)
+      }
+      finally {
+        globalThis.fetch = originalFetch
+      }
+      console.log(JSON.stringify({ scenario: 'installed-sdk-facade', mode: ${JSON.stringify(mode)}, safeErrors: true, offlineInspection: true, passed: true }))
+    `], consumer)
+    process.stdout.write(facade.stdout)
     for (const scenario of ['healthy', 'startup', 'handover', 'cancel']) {
       await check(consumer, mode, scenario)
     }

@@ -1,6 +1,7 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from './config'
 import type { SyncIssue } from './errors'
+import type { ProgressReporter } from './progress'
 import {
   cleanupSVG,
   isEmptyColor,
@@ -66,12 +67,16 @@ export function processIconSet(iconSet: IconSet, config: ProcessOptions): Proces
   return result
 }
 
-export async function processIconSetAsync(iconSet: IconSet, config: ProcessOptions, signal?: AbortSignal): Promise<ProcessResult> {
+export async function processIconSetAsync(iconSet: IconSet, config: ProcessOptions, signal?: AbortSignal, report?: ProgressReporter): Promise<ProcessResult> {
   const result: ProcessResult = { processed: 0, failed: [], issues: [] }
+  const total = iconSet.list(['icon']).length
+  let completed = 0
+  report?.({ stage: 'process', completed, total })
   await iconSet.forEach(async (name, type) => {
     await checkpoint(signal)
     if (type === 'icon') {
       processIcon(iconSet, config, name, result)
+      report?.({ stage: 'process', name, completed: ++completed, total })
     }
   })
   await checkpoint(signal)

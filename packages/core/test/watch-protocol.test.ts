@@ -1,5 +1,5 @@
 import { resolveConfig } from '../src/config'
-import { IconctlAbortError, IconctlError, IconctlSyncError } from '../src/errors'
+import { IconctlAbortError, IconctlError, IconctlSyncError, serializeIconctlError } from '../src/errors'
 import { watchInputDescriptor } from '../src/watch-paths'
 import { packWatchFailure, unpackWatchFailure } from '../src/watch-protocol'
 
@@ -46,6 +46,25 @@ it('preserves aggregate recovery errors inside an output failure cause', () => {
   expect(result).toBeInstanceOf(IconctlError)
   expect(result.cause).toBeInstanceOf(AggregateError)
   expect((result.cause as AggregateError).errors).toEqual([expect.objectContaining({ code: 'EACCES' }), expect.any(TypeError)])
+})
+
+it('keeps private diagnostics lossless across IPC while public serialization redacts credentials', () => {
+  const original = new IconctlError('Figma failed: Bearer private-access-token', {
+    code: 'FIGMA_HTTP_ERROR',
+    httpStatus: 429,
+    retryable: true,
+    retryAfterMs: 2000,
+    sourceType: 'figma',
+    sourceIndex: 0,
+    operation: 'document',
+    cause: new IconctlError('network failed', { code: 'ECONNRESET', operation: 'fetch' }),
+  })
+  const result = transferred(original) as IconctlError
+  expect(result).toMatchObject({ name: original.name, message: original.message, stack: original.stack, code: 'FIGMA_HTTP_ERROR', httpStatus: 429, retryable: true, retryAfterMs: 2000, sourceType: 'figma', sourceIndex: 0, operation: 'document', cause: { code: 'ECONNRESET', operation: 'fetch' } })
+  expect(JSON.stringify(serializeIconctlError(result))).not.toContain('private-access-token')
+  expect(serializeIconctlError(result)).not.toHaveProperty('stack')
+  const sync = new IconctlSyncError([{ name: 'arrow', message: 'invalid', stage: 'validation' }], 'Failed', { code: 'ICON_SYNC_FAILED', sourceIndex: 1 })
+  expect(transferred(sync)).toMatchObject({ message: sync.message, code: 'ICON_SYNC_FAILED', sourceIndex: 1, issues: sync.issues })
 })
 
 it('projects paths without cloning hooks, validation state, package metadata or credentials', () => {
