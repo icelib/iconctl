@@ -1,4 +1,74 @@
-import { IconctlAbortError, IconctlError, IconctlSyncError, serializeIconctlError } from '../src/errors'
+import type { SyncIssue } from '../src/errors'
+import { formatSyncIssues, IconctlAbortError, IconctlError, IconctlSyncError, serializeIconctlError } from '../src/errors'
+
+it('preserves the existing formatting for issues without collision groups', () => {
+  const issues: SyncIssue[] = [
+    { name: 'arrow', nodeId: '1:2', stage: 'download', message: 'SVG download failed' },
+    { name: 'bell', stage: 'process', message: 'Invalid SVG' },
+  ]
+  const expected = '- arrow (1:2) [download]: SVG download failed\n- bell [process]: Invalid SVG'
+  expect(formatSyncIssues(issues)).toBe(expected)
+  expect(new IconctlSyncError(issues).message).toBe(`Icon sync failed:\n${expected}`)
+  expect(formatSyncIssues([])).toBe('')
+})
+
+it('groups name collisions once and includes actionable details for every node', () => {
+  const message = 'Duplicate icon name "bell" is shared by 2 Figma nodes.'
+  const issues: SyncIssue[] = [{
+    name: 'bell',
+    stage: 'import',
+    message,
+    collisionGroup: 'bell',
+    sourceIndex: 0,
+    fileKey: 'design',
+    nodeId: '34:1698',
+    originalName: ' Bell ',
+    normalizedName: 'bell',
+    parentPath: ['Icons', 'Notifications'],
+    proposedName: 'bell',
+    figmaUrl: 'https://www.figma.com/design/design?node-id=34-1698',
+  }, {
+    name: 'arrow',
+    stage: 'download',
+    message: 'SVG download failed',
+  }, {
+    name: 'bell',
+    stage: 'import',
+    message,
+    collisionGroup: 'bell',
+    sourceIndex: 0,
+    fileKey: 'design',
+    nodeId: '5398:44',
+    originalName: 'bell',
+    normalizedName: 'bell',
+    parentPath: ['Icons', 'Legacy'],
+    proposedName: 'bell-5398-44',
+    figmaUrl: 'https://www.figma.com/design/design?node-id=5398-44',
+  }]
+  const formatted = formatSyncIssues(issues)
+  expect(formatted.split(message)).toHaveLength(2)
+  expect(formatted).toBe([
+    `- bell [import] (source 0, file design): ${message}`,
+    '  - name: " Bell "; node: 34:1698; path: "Icons" > "Notifications"; normalized: "bell"; proposed: "bell"; URL: https://www.figma.com/design/design?node-id=34-1698',
+    '  - name: "bell"; node: 5398:44; path: "Icons" > "Legacy"; normalized: "bell"; proposed: "bell-5398-44"; URL: https://www.figma.com/design/design?node-id=5398-44',
+    '- arrow [download]: SVG download failed',
+  ].join('\n'))
+  expect(new IconctlSyncError(issues).message).toBe(`Icon sync failed:\n${formatted}`)
+})
+
+it('keeps collision groups from separate sources and files distinct without losing node messages', () => {
+  const issue: SyncIssue = { name: 'bell', stage: 'import', message: 'Collision', collisionGroup: 'bell', sourceIndex: 0, fileKey: 'design' }
+  const formatted = formatSyncIssues([
+    issue,
+    { ...issue, name: 'bell-alias', originalName: 'Bell', nodeId: '2:3', message: 'Assigned a stable name' },
+    { ...issue, sourceIndex: 1 },
+    { ...issue, fileKey: 'another-design' },
+  ])
+  expect(formatted.match(/^- bell \[import\]/gm)).toHaveLength(3)
+  expect(formatted).toContain('name: "Bell"; node: 2:3; icon: "bell-alias"; Assigned a stable name')
+  expect(formatted).toContain('(source 1, file design)')
+  expect(formatted).toContain('(source 0, file another-design)')
+})
 
 it('keeps ErrorOptions compatibility and exposes optional diagnostic metadata', () => {
   const cause = new TypeError('connection reset')
@@ -70,6 +140,84 @@ it('removes local filesystem paths from public diagnostics while retaining HTTP 
   expect(safe.cause?.message).toBe('Cannot import [path]')
   expect(safe.message).toContain('https://api.figma.com/v1/files/design-file')
   expect(safe.message).toContain('ENOENT open')
+})
+
+it('serializes collision details and redacts sensitive values in every new string field', () => {
+  const secret = 'private-design-name'
+  const safe = serializeIconctlError({
+    message: 'Name collision',
+    issues: [{
+      name: 'bell',
+      message: 'Assigned a stable name',
+      stage: 'import',
+      severity: 'warning',
+      originalName: `Bell ${secret}`,
+      normalizedName: `bell-${secret}`,
+      parentPath: ['Icons', secret, 'figd_private-token'],
+      proposedName: `bell-${secret}-1-2`,
+      figmaUrl: `https://www.figma.com/design/file?node-id=1-2&token=${secret}`,
+      collisionGroup: `group-${secret}`,
+    }, {
+      name: 'other',
+      message: 'Error',
+      stage: 'import',
+      severity: 'error',
+    }, {
+      name: 'invalid',
+      message: 'Error',
+      stage: 'import',
+      severity: 'fatal',
+    }],
+  }, { secrets: [secret] })
+  expect(JSON.stringify(safe)).not.toContain(secret)
+  expect(safe.issues?.[0]).toEqual({
+    name: 'bell',
+    message: 'Assigned a stable name',
+    stage: 'import',
+    severity: 'warning',
+    originalName: 'Bell [redacted]',
+    normalizedName: 'bell-[redacted]',
+    parentPath: ['Icons', '[redacted]', '[redacted]'],
+    proposedName: 'bell-[redacted]-1-2',
+    figmaUrl: 'https://www.figma.com/design/file?node-id=1-2&token=[redacted]',
+    collisionGroup: 'group-[redacted]',
+  })
+  expect(safe.issues?.[1]?.severity).toBe('error')
+  expect(safe.issues?.[2]).not.toHaveProperty('severity')
+})
+
+it('bounds collision paths and shares the existing diagnostic character budget', () => {
+  const safe = serializeIconctlError({
+    message: 'Name collision',
+    issues: Array.from({ length: 5 }, () => ({
+      name: 'bell',
+      message: 'Collision',
+      stage: 'import',
+      parentPath: Array.from({ length: 100 }, () => 'x'.repeat(1000)),
+      figmaUrl: `https://www.figma.com/design/${'x'.repeat(5000)}`,
+    })),
+  })
+  expect(safe.issues?.[0]?.parentPath).toHaveLength(20)
+  expect(safe.issues?.[0]?.parentPath?.every(segment => segment.length <= 256)).toBe(true)
+  expect(safe.issues?.[0]?.figmaUrl?.length).toBeLessThanOrEqual(2000)
+  expect(safe.truncated).toBe(true)
+  expect(JSON.stringify(safe).length).toBeLessThan(18000)
+})
+
+it('does not invoke getters in collision metadata or parent path array entries', () => {
+  const getter = vi.fn(() => {
+    throw new Error('do not invoke')
+  })
+  const fields = ['severity', 'originalName', 'normalizedName', 'proposedName', 'figmaUrl', 'collisionGroup']
+  const parentPath = ['Icons', 'unsafe']
+  Object.defineProperty(parentPath, '1', { get: getter })
+  const issue = Object.defineProperties({ name: 'bell', message: 'Collision', stage: 'import', parentPath }, Object.fromEntries(fields.map(field => [field, { get: getter }])))
+  const safe = serializeIconctlError({ message: 'Name collision', issues: [issue] })
+  expect(safe.issues?.[0]).toEqual({ name: 'bell', message: 'Collision', stage: 'import', parentPath: ['Icons'] })
+  expect(getter).not.toHaveBeenCalled()
+  Object.defineProperty(issue, 'parentPath', { get: getter })
+  expect(serializeIconctlError({ message: 'Name collision', issues: [issue] }).issues?.[0]).not.toHaveProperty('parentPath')
+  expect(getter).not.toHaveBeenCalled()
 })
 
 it('bounds long and deeply nested diagnostics and reports truncation', () => {

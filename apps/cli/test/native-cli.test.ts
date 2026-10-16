@@ -98,6 +98,7 @@ describe('native TypeScript CLI process boundary', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout).toContain(`iconctl/${version}`)
     expect(result.stdout).toContain('preview')
+    expect(result.stdout).toContain('preflight')
     expect(result.stdout).toContain('sprite')
     expect(result.stdout).toContain('types')
     expect(result.stdout).toContain('init')
@@ -132,6 +133,14 @@ describe('native TypeScript CLI process boundary', () => {
     expect(result.code).toBe(1)
     expect(result.stderr).toBe('')
     expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preview', error: { phase: 'arguments' } })
+    expect(result.stdout).not.toContain('must not execute config')
+    expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json'])
+  })
+
+  it.each(['--continue', '--offline'])('rejects unsupported preflight %s before config in the native CLI', async (flag) => {
+    const result = await run(['preflight', flag, '--json'])
+    expect(result).toMatchObject({ code: 1, stderr: '' })
+    expect(JSON.parse(result.stdout)).toMatchObject({ success: false, command: 'preflight', error: { phase: 'arguments', message: expect.stringContaining(`${flag} is not supported by preflight`) } })
     expect(result.stdout).not.toContain('must not execute config')
     expect(await readdir(cwd)).toEqual(['iconctl.config.mjs', 'icons.json'])
   })

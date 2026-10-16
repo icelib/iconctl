@@ -1,6 +1,9 @@
 import type { IconSet } from '@iconify/tools'
 import type { FigmaImportNodeFilter } from '@iconify/tools/lib/import/figma/types/nodes'
 import type { SyncIssue } from '../errors'
+import type { FigmaNameEntry } from '../figma-naming'
+import type { FigmaNamingPlan } from '../figma-naming-plan'
+import type { FigmaNamingOptions } from '../naming'
 
 export interface FigmaSourceConfig {
   type: 'figma'
@@ -10,6 +13,7 @@ export interface FigmaSourceConfig {
   ids?: string[]
   token?: string
   iconNameForNode?: FigmaImportNodeFilter
+  naming?: FigmaNamingOptions
 }
 
 export interface DirectorySourceConfig {
@@ -66,6 +70,7 @@ export interface ResolvedFigmaSourceConfig {
   ids?: string[]
   token?: string
   iconNameForNode?: FigmaImportNodeFilter
+  naming?: FigmaNamingOptions
 }
 
 export interface ResolvedDirectorySourceConfig {
@@ -112,6 +117,9 @@ export type ResolvedSourceConfig
     | ResolvedIconifySourceConfig
 
 export interface LoadedSource {
+  namingPlan?: FigmaNamingPlan
+  namingSourceKey?: string
+  namingEntries?: Record<string, FigmaNameEntry>
   issues?: SyncIssue[]
   type: SourceConfig['type']
   iconSet?: IconSet

@@ -183,7 +183,7 @@ export function outputTargets(config: ResolvedIconctlConfig, cwd: string): { pat
 export async function generateOutputs(
   iconSet: IconSet,
   config: ResolvedIconctlConfig,
-  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal } = { cwd: process.cwd() },
+  options: { cwd: string, dryRun?: boolean, signal?: AbortSignal, reservedFiles?: readonly string[] } = { cwd: process.cwd() },
 ): Promise<ExportResult> {
   const files: string[] = []
   const json = iconSet.export()
@@ -195,7 +195,7 @@ export async function generateOutputs(
   if (options.dryRun) {
     // Keep dry-run validation side-effect free while checking the same
     // destination conflicts and filesystem types as publication.
-    const targets = await validateOutputTargets(outputTargets(config, options.cwd), options.signal)
+    const targets = await validateOutputTargets([...outputTargets(config, options.cwd), ...(options.reservedFiles ?? []).map(path => ({ path }))], options.signal)
     for (const target of targets) {
       canonicalPaths.set(target.requested, target.path)
     }
@@ -213,6 +213,12 @@ export async function generateOutputs(
   if (config.output.jsonPackage) {
     for (const name of jsonPackageFiles) {
       generatedFiles.add(resolvePath(resolve(config.output.jsonPackage.dir), name))
+    }
+  }
+  for (const file of options.reservedFiles ?? []) {
+    const target = resolvePath(resolve(file))
+    if ([...generatedFiles].some(generated => generated === target || target.startsWith(`${generated}/`) || generated.startsWith(`${target}/`))) {
+      throw new IconctlError(`Conflicting output targets: generated file and ${target}`)
     }
   }
   for (const file of [config.output.json, config.output.sprite, config.output.types, config.output.preview, config.output.changelog]) {

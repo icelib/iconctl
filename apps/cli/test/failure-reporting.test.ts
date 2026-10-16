@@ -63,6 +63,41 @@ describe('central CLI failure boundary', () => {
     expect(operations.sync).not.toHaveBeenCalled()
   })
 
+  it('retains safe structured naming diagnostics in the sync JSON failure envelope', async () => {
+    const issue = Object.assign({
+      name: 'bell',
+      message: 'Duplicate icon name',
+      stage: 'import' as const,
+      code: 'FIGMA_DUPLICATE_NAME',
+      severity: 'error' as const,
+      originalName: 'Bell',
+      normalizedName: 'bell',
+      parentPath: ['Icons', 'Notifications'],
+      proposedName: 'bell-1-2',
+      figmaUrl: 'https://www.figma.com/design/file?node-id=1-2&token=figd_private-token',
+      collisionGroup: 'bell',
+    }, { token: 'never-copy-token' })
+    operations.sync.mockRejectedValue(new IconctlSyncError([issue]))
+    await expect(runCli(['node', 'iconctl', 'sync', '--json'])).rejects.toThrow('Duplicate icon name')
+    const value = report()
+    expect(value.error.issues).toEqual([{
+      name: 'bell',
+      message: 'Duplicate icon name',
+      stage: 'import',
+      code: 'FIGMA_DUPLICATE_NAME',
+      severity: 'error',
+      originalName: 'Bell',
+      normalizedName: 'bell',
+      parentPath: ['Icons', 'Notifications'],
+      proposedName: 'bell-1-2',
+      figmaUrl: 'https://www.figma.com/design/file?node-id=1-2&token=[redacted]',
+      collisionGroup: 'bell',
+    }])
+    expect(value.error.issues[0]).not.toHaveProperty('token')
+    expect(writes.join('')).not.toContain('figd_private-token')
+    expect(writes.join('')).not.toContain('never-copy-token')
+  })
+
   it.each(['a string failure', 42, null, undefined])('preserves a thrown primitive: %s', async (error) => {
     operations.sync.mockRejectedValue(error)
     await expect(runCli(['node', 'iconctl', 'sync', '--json'])).rejects.toBe(error)

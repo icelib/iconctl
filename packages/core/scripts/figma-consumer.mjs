@@ -20,10 +20,10 @@ const icons = [
   { id: '1:3', name: 'Check' },
 ]
 
-function configure() {
+function configure(naming) {
   return core.resolveConfig({
     prefix: 'brand',
-    sources: [{ type: 'figma', file: fileKey, token: 'fixture' }],
+    sources: [{ type: 'figma', file: fileKey, token: 'fixture', ...(naming ? { naming } : {}) }],
     output: { json: 'icons.json', types: 'types.ts', changelog: 'CHANGELOG.md' },
   })
 }
@@ -76,7 +76,7 @@ async function project(name, selected = icons) {
   return { cwd, config: configure(), requests, previous, json }
 }
 
-function checkIssues(issues) {
+function checkIssues(issues, resolved = false) {
   assert.deepEqual(issues.map(({ message, ...coordinates }) => {
     assert.equal(typeof message, 'string')
     assert(message.length > 0)
@@ -88,6 +88,14 @@ function checkIssues(issues) {
     sourceType: 'figma',
     sourceIndex: 0,
     stage: 'import',
+    code: resolved ? 'FIGMA_NAME_DISAMBIGUATED' : 'FIGMA_DUPLICATE_NAME',
+    severity: resolved ? 'warning' : 'error',
+    collisionGroup: 'arrow-left',
+    originalName: icons.find(icon => icon.id === nodeId).name,
+    normalizedName: 'arrow-left',
+    parentPath: ['Icons'],
+    figmaUrl: `https://www.figma.com/design/${fileKey}?node-id=${encodeURIComponent(nodeId)}`,
+    proposedName: nodeId === '1:1' ? 'arrow-left' : 'arrow-left-1-2',
   })))
 }
 
@@ -161,7 +169,39 @@ try {
   assert.deepEqual(legacy.requests.documentDepths, ['3'])
   onlyIndependentRendered(legacy.requests)
 
-  console.log(JSON.stringify({ mode, runtime: process.version, scenarios: 4, passed: true }))
+  const stable = await project('stable-naming')
+  const stableConfig = configure({ duplicates: 'suffix-node-id' })
+  const preview = await core.preflightFigmaNaming({ cwd: stable.cwd, config: stableConfig })
+  assert.equal(preview.complete, true)
+  checkIssues(preview.issues, true)
+  assert.deepEqual(preview.files, [])
+  assert.deepEqual(preview.publicNames, { added: ['arrow-left-1-2'], removed: [], deletionsReliable: true })
+  assert.deepEqual(preview.naming[0].mappings.map(({ nodeId, name }) => ({ nodeId, name })), [
+    { nodeId: '1:1', name: 'arrow-left' },
+    { nodeId: '1:2', name: 'arrow-left-1-2' },
+    { nodeId: '1:3', name: 'check' },
+  ])
+  assert.deepEqual(stable.requests.imageBatches, [])
+  assert.deepEqual(stable.requests.downloads, [])
+  assert.deepEqual(stable.requests.documentDepths, ['3'])
+  await unchanged(stable)
+  await assert.rejects(readFile(join(stable.cwd, '.iconctl-names.json')), { code: 'ENOENT' })
+  const dry = await core.sync({ cwd: stable.cwd, config: stableConfig, dryRun: true })
+  assert.equal(dry.complete, true)
+  assert.deepEqual(dry.naming, preview.naming)
+  await unchanged(stable)
+  await assert.rejects(readFile(join(stable.cwd, '.iconctl-names.json')), { code: 'ENOENT' })
+  const imported = await core.sync({ cwd: stable.cwd, config: stableConfig })
+  assert.equal(imported.complete, true)
+  assert.deepEqual(imported.failed, [])
+  checkIssues(imported.issues, true)
+  assert.deepEqual(Object.keys(imported.json.icons).sort(), ['arrow-left', 'arrow-left-1-2', 'check'])
+  const saved = JSON.parse(await readFile(join(stable.cwd, '.iconctl-names.json'), 'utf8'))
+  assert.equal(saved.sources[JSON.stringify([fileKey, ''])].entries['1:1'].name, 'arrow-left')
+  assert.equal(saved.sources[JSON.stringify([fileKey, ''])].entries['1:2'].name, 'arrow-left-1-2')
+  assert.equal((await core.sync({ cwd: stable.cwd, config: stableConfig })).notModified, true)
+
+  console.log(JSON.stringify({ mode, runtime: process.version, scenarios: 5, stableNaming: true, documentOnlyPreflight: true, passed: true }))
 }
 finally {
   globalThis.fetch = originalFetch

@@ -75,7 +75,12 @@ function mockFigma(icons: FixtureIcon[]) {
 }
 
 function expectedIssues(name = 'arrow-left', ids = ['1:1', '1:2'], sourceIndex = 0) {
-  return ids.map(nodeId => ({
+  const originals: Record<string, Record<string, string>> = {
+    'arrow-left': { '1:1': 'Arrow Left', '1:2': 'arrow_left', '1:4': 'arrow-left' },
+    'custom-shared': { '1:1': 'First', '1:2': 'Second' },
+    'user-add': { '2:1': 'User Add', '2:2': 'user_add' },
+  }
+  return ids.map((nodeId, index) => ({
     name,
     nodeId,
     fileKey,
@@ -83,6 +88,14 @@ function expectedIssues(name = 'arrow-left', ids = ['1:1', '1:2'], sourceIndex =
     sourceIndex,
     stage: 'import',
     message: expect.any(String),
+    code: 'FIGMA_DUPLICATE_NAME',
+    severity: 'error',
+    collisionGroup: name,
+    originalName: originals[name]![nodeId],
+    normalizedName: name,
+    parentPath: ['Icons'],
+    proposedName: index === 0 ? name : `${name}-${nodeId.replace(':', '-')}`,
+    figmaUrl: `https://www.figma.com/design/${fileKey}?node-id=${encodeURIComponent(nodeId)}`,
   }))
 }
 

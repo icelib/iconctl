@@ -3,6 +3,7 @@ import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import type { SyncIssue } from './errors'
+import type { FigmaNamingManifest, FigmaNamingPlan } from './figma-naming-plan'
 import type { ProgressReporter, SyncProgressHandler } from './progress'
 import type { RequestOptions } from './request-options'
 import type { FigmaSourceLoadOptions } from './sources/figma'
@@ -16,6 +17,7 @@ import { writeChangelog } from './changelog'
 import { diffIconSets } from './diff'
 import { IconctlSyncError } from './errors'
 import { generateOutputs, outputTargets, readPreviousIconJson, stagedConfig } from './export'
+import { namingManifestPath, readFigmaNamingManifest, serializeFigmaNamingManifest, usesFigmaNamingManifest, withFigmaNamingLock, writeFigmaNamingManifest } from './figma-naming-plan'
 import { captureOutputProof, matchesOutputProof } from './output-proof'
 import { OutputTransaction, validateOutputTargets } from './output-transaction'
 import { renderPreviewHtml } from './preview'
@@ -53,6 +55,7 @@ export interface SyncResult {
   diff: IconDiff & { deletionsReliable: boolean }
   files: string[]
   json: IconifyJSON
+  naming?: FigmaNamingPlan[]
 }
 
 interface CacheMeta {
@@ -62,6 +65,7 @@ interface CacheMeta {
   outputProof?: unknown
   lastModified?: string
   version?: string
+  naming?: FigmaNamingPlan[]
 }
 
 // A completion marker also certifies the import/validation rules used. Bump
@@ -82,7 +86,7 @@ async function writeCacheMeta(file: string, meta: CacheMeta) {
   await writeFile(file, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
 }
 
-export async function sync(options: SyncOptions): Promise<SyncResult> {
+async function runSync(options: SyncOptions, assertNamesOwned: () => void = () => {}): Promise<SyncResult> {
   throwIfAborted(options.signal)
   const requestOptions = resolveRequestOptions(options)
   const report = createProgressReporter(options.onProgress)
@@ -94,16 +98,22 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const previous = await readPreviousIconJson(resolve(cwd, config.output.json))
   const cacheMetaFile = resolve(cwd, config.cacheDir, 'meta.json')
   const previousMeta = await readCacheMeta(cacheMetaFile)
-  const configDigest = createHash('sha256')
+  const manifestFile = namingManifestPath(config, cwd)
+  const manifest = !options.iconSet && usesFigmaNamingManifest(config) ? await readFigmaNamingManifest(manifestFile) : undefined
+  const nextManifest: FigmaNamingManifest | undefined = manifest ? { version: 1, sources: { ...manifest.sources } } : undefined
+  const configText = JSON.stringify(config, (key, value) =>
+    key === 'token'
+      ? undefined
+      : typeof value === 'function' || value instanceof RegExp
+        ? String(value)
+        : value)
+  const digest = (names: FigmaNamingManifest | undefined) => createHash('sha256')
     .update(
-      JSON.stringify(config, (key, value) =>
-        key === 'token'
-          ? undefined
-          : typeof value === 'function' || value instanceof RegExp
-            ? String(value)
-            : value),
+      configText,
     )
+    .update(names ? serializeFigmaNamingManifest(names) : '')
     .digest('hex')
+  const configDigest = digest(manifest)
 
   let iconSet = options.iconSet
   let origins = new Map<string, IconOrigin>()
@@ -113,6 +123,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   let nextMeta: CacheMeta | undefined
   const sourceIssues: SyncIssue[] = []
   const sourceSummaries: SyncResult['sources'] = []
+  const naming: FigmaNamingPlan[] = []
 
   if (!iconSet) {
     const completedOutputs = previous
@@ -120,10 +131,12 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       && previousMeta?.outputDigest === createHash('sha256').update(JSON.stringify(previous)).digest('hex')
       && previousMeta?.configDigest === configDigest
       && previousMeta?.lastModified
+      && (!config.sources.some(source => source.type === 'figma') || Array.isArray(previousMeta.naming))
       && await matchesOutputProof(previousMeta.outputProof, config, previous, cwd, options.signal)
     const loaded = await loadSources({
       cwd,
       config,
+      ...(manifest ? { namingManifest: manifest } : {}),
       ...requestOptions,
       report,
       ...cancellation,
@@ -144,7 +157,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       sourceType: item.type,
       sourceIndex,
     })) ?? []))
-    if (sourceIssues.length && !options.continueOnError) {
+    if (sourceIssues.some(issue => issue.severity !== 'warning') && !options.continueOnError) {
       throw new IconctlSyncError(sourceIssues)
     }
     notModified = loaded.length > 0 && loaded.every(item => item.notModified)
@@ -165,6 +178,13 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
         diff: { ...diffIconSets(json, json), deletionsReliable: true },
         files: [],
         json,
+        ...(previousMeta?.naming
+          ? { naming: previousMeta.naming.map(plan => ({
+              ...plan,
+              mappings: plan.mappings.map(mapping => ({ ...mapping, ...(mapping.name ? { previousName: mapping.name } : {}) })),
+              changes: { ...plan.changes, added: [], removed: [], renamed: [] },
+            })) }
+          : {}),
       }
       if (previousMeta?.version) {
         result.fileVersion = previousMeta.version
@@ -182,6 +202,17 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     fileVersion = loaded.find(item => item.fileVersion)?.fileVersion
     fileKey = loaded.find(item => item.fileKey)?.fileKey
     for (const item of loaded) {
+      if (item.namingPlan) {
+        naming.push(item.namingPlan)
+        if (nextManifest && item.namingSourceKey && item.namingEntries) {
+          nextManifest.sources[item.namingSourceKey] = {
+            fileKey: item.namingPlan.fileKey,
+            namespace: item.namingPlan.namespace,
+            entries: item.namingEntries,
+            activeNodeIds: item.namingPlan.mappings.filter(mapping => mapping.name !== undefined).map(mapping => mapping.nodeId),
+          }
+        }
+      }
       sourceSummaries.push({
         type: item.type,
         notModified: item.notModified,
@@ -194,7 +225,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     )
     if (!options.dryRun && figma?.lastModified) {
       nextMeta = {
-        configDigest,
+        configDigest: digest(nextManifest),
+        ...(naming.length ? { naming } : {}),
         lastModified: figma.lastModified,
         ...(figma.fileVersion ? { version: figma.fileVersion } : {}),
       }
@@ -209,8 +241,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     ...processed.issues.map(issue => ({ ...issue, ...origins.get(issue.name) })),
     ...validation.issues.map(issue => ({ ...issue, stage: 'validation' as const, ...origins.get(issue.name) })),
   ]
-  const failed = [...new Set([...sourceIssues.map(issue => issue.name), ...processed.failed])].sort()
-  const complete = !issues.length
+  const failed = [...new Set([...sourceIssues.filter(issue => issue.severity !== 'warning').map(issue => issue.name), ...processed.failed])].sort()
+  const complete = issues.every(issue => issue.severity === 'warning')
   if (!complete && !options.continueOnError) {
     throw new IconctlSyncError(issues, 'Icon processing or validation failed')
   }
@@ -224,15 +256,16 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const files: string[] = []
   report({ stage: 'export' })
   await checkpoint(options.signal)
+  const extraTargets = [{ path: cacheMetaFile }, ...(manifest ? [{ path: manifestFile }] : [])]
   if (!options.dryRun) {
     // Keep every configured target visible to collision checks, even when an
     // incomplete run preserves the changelog instead of appending to it.
     const { changelog } = config.output
     const targets = outputTargets(config, cwd)
-    const transaction = await OutputTransaction.create([...targets, { path: cacheMetaFile }], options.signal)
+    const transaction = await OutputTransaction.create([...targets, ...extraTargets], options.signal)
     try {
       const staged = stagedConfig(config, cwd, transaction)
-      await generateOutputs(iconSet, staged, { cwd, ...cancellation })
+      await generateOutputs(iconSet, staged, { cwd, ...cancellation, ...(manifest ? { reservedFiles: [transaction.path(manifestFile)] } : {}) })
       // Package cleanup may encompass the changelog. Seed it from the live
       // output before appending a complete diff (or preserving a partial run).
       if (changelog) {
@@ -291,6 +324,28 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       else {
         await rm(stagedMeta, { force: true })
       }
+      if (manifest && nextManifest) {
+        const stagedManifest = transaction.path(manifestFile)
+        await mkdir(dirname(stagedManifest), { recursive: true })
+        if (complete) {
+          await writeFigmaNamingManifest(stagedManifest, nextManifest)
+          files.push(manifestFile)
+        }
+        else {
+          // A package clean may include the manifest's parent directory.
+          // Partial imports must preserve the last complete ownership snapshot.
+          try {
+            await copyFile(manifestFile, stagedManifest)
+          }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+              throw error
+            }
+            await rm(stagedManifest, { force: true })
+          }
+        }
+      }
+      assertNamesOwned()
       await transaction.commit(options.signal)
     }
     finally {
@@ -298,8 +353,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     }
   }
   else {
-    await validateOutputTargets([...outputTargets(config, cwd), { path: cacheMetaFile }], options.signal)
-    await generateOutputs(iconSet, config, { cwd, dryRun: true, ...cancellation })
+    await validateOutputTargets([...outputTargets(config, cwd), ...extraTargets], options.signal)
+    await generateOutputs(iconSet, config, { cwd, dryRun: true, ...cancellation, ...(manifest ? { reservedFiles: [manifestFile] } : {}) })
   }
 
   const result: SyncResult = {
@@ -313,6 +368,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     diff,
     files,
     json,
+    ...(naming.length ? { naming } : {}),
   }
   if (fileVersion) {
     result.fileVersion = fileVersion
@@ -322,6 +378,14 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   }
   report({ stage: 'complete', complete, notModified, dryRun: !!options.dryRun })
   return result
+}
+
+export async function sync(options: SyncOptions): Promise<SyncResult> {
+  throwIfAborted(options.signal)
+  if (!options.dryRun && !options.iconSet && usesFigmaNamingManifest(options.config)) {
+    return withFigmaNamingLock(namingManifestPath(options.config, options.cwd ?? process.cwd()), assertOwned => runSync(options, assertOwned))
+  }
+  return runSync(options)
 }
 
 export { importLocalSvgDirectory } from './sources/directory'

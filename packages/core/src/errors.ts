@@ -32,18 +32,84 @@ export class IconctlError extends Error {
   }
 }
 
-/** A failed icon, with source coordinates when available. */
+/** An icon diagnostic, with source coordinates when available. */
 export interface SyncIssue extends Omit<IconctlErrorOptions, 'cause'> {
   name: string
   message: string
   stage: 'export-url' | 'download' | 'import' | 'process' | 'validation'
   fileKey?: string
   nodeId?: string
+  severity?: 'error' | 'warning'
+  originalName?: string
+  normalizedName?: string
+  parentPath?: string[]
+  proposedName?: string
+  figmaUrl?: string
+  collisionGroup?: string
+}
+
+/** Format collision groups together while preserving the legacy output for other issues. */
+export function formatSyncIssues(issues: readonly SyncIssue[]): string {
+  const groups = new Map<string, SyncIssue[]>()
+  const entries: (SyncIssue | SyncIssue[])[] = []
+  for (const issue of issues) {
+    if (!issue.collisionGroup) {
+      entries.push(issue)
+      continue
+    }
+    const key = JSON.stringify([issue.collisionGroup, issue.sourceIndex, issue.fileKey])
+    const group = groups.get(key)
+    if (group) {
+      group.push(issue)
+    }
+    else {
+      const group = [issue]
+      groups.set(key, group)
+      entries.push(group)
+    }
+  }
+  return entries.map((entry) => {
+    if (!Array.isArray(entry)) {
+      return `- ${entry.name}${entry.nodeId ? ` (${entry.nodeId})` : ''} [${entry.stage}]: ${entry.message}`
+    }
+    const first = entry[0]!
+    const source = [
+      first.sourceIndex === undefined ? undefined : `source ${first.sourceIndex}`,
+      first.fileKey === undefined ? undefined : `file ${first.fileKey}`,
+    ].filter(value => value !== undefined).join(', ')
+    const heading = `- ${first.normalizedName ?? first.name} [${first.stage}]${source ? ` (${source})` : ''}: ${first.message}`
+    const nodes = entry.map((issue) => {
+      const details = [`name: ${JSON.stringify(issue.originalName ?? issue.name)}`]
+      if (issue.nodeId !== undefined) {
+        details.push(`node: ${issue.nodeId}`)
+      }
+      if (issue.parentPath !== undefined) {
+        details.push(`path: ${issue.parentPath.map(segment => JSON.stringify(segment)).join(' > ')}`)
+      }
+      if (issue.normalizedName !== undefined) {
+        details.push(`normalized: ${JSON.stringify(issue.normalizedName)}`)
+      }
+      if (issue.proposedName !== undefined) {
+        details.push(`proposed: ${JSON.stringify(issue.proposedName)}`)
+      }
+      if (issue.name !== (issue.originalName ?? issue.name) && issue.name !== issue.proposedName) {
+        details.push(`icon: ${JSON.stringify(issue.name)}`)
+      }
+      if (issue.figmaUrl !== undefined) {
+        details.push(`URL: ${issue.figmaUrl}`)
+      }
+      if (issue.message !== first.message) {
+        details.push(issue.message)
+      }
+      return `  - ${details.join('; ')}`
+    })
+    return [heading, ...nodes].join('\n')
+  }).join('\n')
 }
 
 export class IconctlSyncError extends IconctlError {
   constructor(public readonly issues: SyncIssue[], message = 'Icon sync failed', options?: IconctlErrorOptions) {
-    super(`${message}:\n${issues.map(issue => `- ${issue.name}${issue.nodeId ? ` (${issue.nodeId})` : ''} [${issue.stage}]: ${issue.message}`).join('\n')}`, options)
+    super(`${message}:\n${formatSyncIssues(issues)}`, options)
     this.name = 'IconctlSyncError'
   }
 }
@@ -214,11 +280,24 @@ export function serializeIconctlError(error: unknown, options: SerializeIconctlE
           continue
         }
         const safe: SyncIssue = { name: text(name, 256), message: text(message), stage: stage as SyncIssue['stage'] }
-        for (const key of ['sourceType', 'fileKey', 'nodeId', 'code', 'operation'] as const) {
+        for (const key of ['sourceType', 'fileKey', 'nodeId', 'code', 'operation', 'originalName', 'normalizedName', 'proposedName', 'collisionGroup'] as const) {
           const field = dataProperty(issue, key)
           if (typeof field === 'string') {
             safe[key] = text(field, 256)
           }
+        }
+        const figmaUrl = dataProperty(issue, 'figmaUrl')
+        if (typeof figmaUrl === 'string') {
+          safe.figmaUrl = text(figmaUrl, 2000)
+        }
+        const severity = dataProperty(issue, 'severity')
+        if (severity === 'error' || severity === 'warning') {
+          safe.severity = severity
+        }
+        const parentPath = arrayItems(dataProperty(issue, 'parentPath'), 20)
+        if (parentPath) {
+          safe.parentPath = parentPath.items.filter((segment): segment is string => typeof segment === 'string').map(segment => text(segment, 256))
+          truncated ||= parentPath.length > 20
         }
         const sourceIndex = dataProperty(issue, 'sourceIndex')
         if (typeof sourceIndex === 'number' && Number.isInteger(sourceIndex) && sourceIndex >= 0) {

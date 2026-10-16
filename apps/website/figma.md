@@ -29,9 +29,42 @@ Keep icons in a dedicated library file, not inside product screens.
 - Chinese labels belong in the description, not the layer name
 - Drafts start with `_` or `.` and are skipped
 
-Names must be unique within each configured Figma source after normalization: `Arrow Left` and `arrow_left` both become `arrow-left`. A custom `iconNameForNode` hook must also return unique final names. Conflicts report every affected node and stop the default sync before replacing outputs. Rename the layers or adjust the hook to resolve them.
+By default, names must be unique within each configured Figma source after normalization: `Arrow Left` and `arrow_left` both become `arrow-left`. A custom `iconNameForNode` hook must also return unique final names. Conflicts report every affected node and stop the default sync before replacing outputs. Rename the layers, adjust the hook or explicitly enable the naming policy below.
 
 With `--continue`, every icon in a conflicting group is excluded; unrelated valid icons can still be published with an incomplete result. If no valid icons remain, sync fails and preserves existing outputs even with `--continue`. Conflicting nodes are not sent for SVG export. This check applies after page and node filtering; the existing order of precedence between separate configured sources is unchanged.
+
+## Stable names for duplicate layers
+
+Opt in per Figma source to keep duplicate layers and append a stable node ID to later names:
+
+```ts
+{
+  type: 'figma',
+  file: 'https://www.figma.com/design/<fileKey>/Icons',
+  naming: {
+    duplicates: 'suffix-node-id',
+  },
+}
+```
+
+For example, nodes `34:1698` and `5398:44` named `bell` become `bell` and `bell-5398-44`. Without saved assignments, node ID order determines who receives the base name. All natural names are reserved before suffixes are assigned; another collision adds `-2`, `-3`, and so on. Automatically resolved collisions are warnings and do not make sync incomplete. The default `duplicates: 'error'` keeps the strict behavior above.
+
+This policy defaults to `preserveNames: true`. Successful syncs save assignments in `.iconctl-names.json` under the command's working directory; root config `namingManifest` selects a different local path. Commit this file with your configuration and outputs. Identity is the Figma file key, `naming.namespace` (empty by default) and node ID. Give sources with different naming rules for the same file distinct namespaces.
+
+Saved assignments survive layer reordering, insertion and renaming. Deleted nodes keep their names reserved and recover them when restored; a different node cannot take over that public name. To migrate a public name, explicitly review and edit its manifest assignment. A malformed manifest or duplicate saved names fails instead of silently resetting ownership. `preserveNames: false` ignores saved assignments and recomputes names deterministically from the current document.
+
+Before first adopting this policy for an existing library, inspect the proposed node-to-name assignments:
+
+```bash
+pnpm exec iconctl preflight --json
+pnpm exec iconctl sync --dry-run --json
+```
+
+Preflight reads the Figma document and reports final names, conflict groups, node paths and Figma links without requesting SVG exports or writing outputs or the naming manifest. It may renew authentication and update caches. Dry-run runs the full processing pipeline and includes the same naming plan, without committing outputs or assignments. Use dry-run when you also need SVG processing and validation.
+
+The first allocation cannot infer existing node ownership from `icons.json`. Review the plan against your published names and seed the manifest where necessary before running a writing sync. The [SDK guide](/sdk#figma-naming-and-preflight) shows the manifest shape. Only a complete successful sync commits the manifest atomically with outputs; failed or partial syncs preserve the previous manifest.
+
+For simple custom naming, use `naming.transform(name, node)`: it runs after the default node and draft filtering, may return `null` to skip a node, and its result is normalized before duplicate handling. This keeps the default filtering without copying it into a hook. The existing `iconNameForNode` remains a full override and may use the duplicate policy, but cannot be combined with `naming.transform`.
 
 ## Color
 

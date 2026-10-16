@@ -2,11 +2,13 @@ import type { CacheDiagnoseOptions } from './cache.ts'
 import type { CheckCommandOptions } from './check.ts'
 import type { CommandContext } from './failure.ts'
 import type { InitCommandOptions } from './init.ts'
+import type { PreflightCommandOptions } from './preflight.ts'
 import type { PreviewCommandOptions } from './preview.ts'
 import type { SpriteCommandOptions } from './sprite.ts'
 import type { TypesCommandOptions } from './types.ts'
 import process from 'node:process'
 import {
+  formatSyncIssues,
   loadConfig,
   sync,
 } from '@iconctl/core'
@@ -19,6 +21,7 @@ import { runDiff } from './diff.ts'
 import { reportCliError } from './failure.ts'
 import { runFigmaAuth } from './figma-auth.ts'
 import { runInit } from './init.ts'
+import { runPreflight } from './preflight.ts'
 import { runLocalPreview } from './preview.ts'
 import { runSprite } from './sprite.ts'
 import { syncSummary } from './sync-summary.ts'
@@ -49,6 +52,12 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
     return
   }
 
+  if (result.issues.length) {
+    for (const group of formatSyncIssues(result.issues).split(/\n(?=- )/)) {
+      consola.warn(group.slice(2))
+    }
+  }
+
   if (result.notModified) {
     consola.success('Sources were not modified. Nothing to write.')
     return
@@ -61,9 +70,6 @@ function printSyncResult(result: Awaited<ReturnType<typeof sync>>, asJson: boole
     consola.warn(`Incomplete sync: ${result.processed} icons for prefix "${result.prefix}". Deletions are unknown; changelog was not updated.`)
     if (result.failed.length) {
       consola.warn(`skipped: ${result.failed.join(', ')}`)
-    }
-    for (const issue of result.issues) {
-      consola.warn(`${issue.name}${issue.nodeId ? ` (${issue.nodeId})` : ''} [${issue.stage}]: ${issue.message}`)
     }
   }
   if (result.diff.added.length) {
@@ -118,6 +124,10 @@ export async function runCli(argv: string[] = process.argv) {
     .option('--redirect-uri <url>', 'Registered HTTP loopback callback URL')
     .option('--no-open', 'Print the authorization URL without opening a browser')
     .action(action((provider: string, operation: string, options) => runFigmaAuth(provider, operation, options, context)))
+
+  cli
+    .command('preflight', 'Check Figma icon names and public API changes without fetching SVGs or writing outputs')
+    .action(action((options: PreflightCommandOptions) => runPreflight(options, context)))
 
   cli
     .command('sync', 'Load icon sources and export Iconify JSON')
