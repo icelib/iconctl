@@ -50,6 +50,10 @@
   intents:
     - real-olives-pretend
     - wild-elephants-end
+"@iconctl/icons@0.0.1":
+  dir: packages/icons
+  intents:
+    - calm-icons-release
 "@iconctl/website@0.0.1":
   dir: apps/website
   intents:
