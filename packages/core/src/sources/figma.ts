@@ -1,5 +1,6 @@
 import type { FigmaAPIImagesResponse, FigmaDocument } from '@iconify/tools/lib/import/figma/types/api'
 import type { SyncIssue } from '../errors'
+import type { FigmaNamingManifest, FigmaNamingPlan } from '../figma-naming-plan'
 import type { FigmaAuth } from '../figma/auth'
 import type { ProgressReporter } from '../progress'
 import type { RequestOptions } from '../request-options'
@@ -9,10 +10,12 @@ import { getFigmaIconNodes } from '@iconify/tools/lib/import/figma/nodes'
 import { resolve } from 'pathe'
 import { checkpoint, settleWithAbort, throwIfAborted } from '../abort'
 import { IconctlError, IconctlSyncError } from '../errors'
+import { allocateFigmaNames } from '../figma-naming'
+import { figmaNamingSourceKey, preservesFigmaNames } from '../figma-naming-plan'
 import { resolveFigmaAuth } from '../figma/auth'
 import { FigmaClient } from '../figma/client'
 import { parseFigmaFileKey } from '../file-key'
-import { defaultIconNameForNode } from '../naming'
+import { defaultIconNameForNode, toIconName } from '../naming'
 
 function isSvgDownloadUrl(value: unknown): boolean {
   if (typeof value !== 'string') {
@@ -39,6 +42,8 @@ export interface FigmaSourceLoadOptions extends RequestOptions {
   authProvider?: (source: ResolvedFigmaSourceConfig, sourceIndex?: number) => Promise<FigmaAuth>
   refreshDocument?: boolean
   report?: ProgressReporter
+  namingManifest?: FigmaNamingManifest
+  namingOnly?: boolean
 }
 
 export async function loadFigmaSource(
@@ -74,13 +79,123 @@ export async function loadFigmaSource(
   }
   report({ stage: 'document', completed: 1, total: 1 })
   throwIfAborted(options.signal)
+  const parentPaths = new Map<string, string[]>()
   const nodes = getFigmaIconNodes(document, {
-    iconNameForNode: source.iconNameForNode ?? (node => defaultIconNameForNode(node, {
-      skipPrefix: options.skipPrefix,
-    })),
+    iconNameForNode: (node, result, document) => {
+      parentPaths.set(node.id, node.parents.map(parent => parent.name))
+      // The legacy callback remains a complete override, including filtering
+      // and exact custom keywords. The new transform composes with defaults.
+      if (source.iconNameForNode) {
+        return source.iconNameForNode(node, result, document)
+      }
+      const baseName = defaultIconNameForNode(node, { skipPrefix: options.skipPrefix })
+      if (baseName === null || !source.naming?.transform) {
+        return baseName
+      }
+      const transformed = source.naming.transform(baseName, node)
+      if (transformed === null) {
+        return null
+      }
+      if (typeof transformed !== 'string') {
+        throw new IconctlError('Figma naming.transform must return a string or null.', { code: 'FIGMA_NAMING_TRANSFORM_INVALID' })
+      }
+      return toIconName(transformed) || null
+    },
     ...(source.pages ? { pages: source.pages } : {}),
   })
   const candidates = Object.values(nodes.icons)
+  const namingCandidates = candidates.map(icon => ({ nodeId: icon.id, originalName: icon.name, baseName: icon.keyword, parentPath: parentPaths.get(icon.id) ?? [] }))
+  const policy = source.naming?.duplicates ?? 'error'
+  const namespace = source.naming?.namespace ?? ''
+  const namingSourceKey = figmaNamingSourceKey(fileKey, namespace)
+  const previous = options.namingManifest?.sources[namingSourceKey]
+  const preserveNames = preservesFigmaNames(source)
+  const allocation = allocateFigmaNames(namingCandidates, {
+    duplicates: policy,
+    preserveNames,
+    ...(previous ? { previous: previous.entries } : {}),
+  })
+  const proposed = policy === 'error' && allocation.collisions.length
+    ? allocateFigmaNames(namingCandidates, { duplicates: 'suffix-node-id', preserveNames, ...(previous ? { previous: previous.entries } : {}) }).names
+    : allocation.names
+  const figmaUrl = (nodeId: string) => `https://www.figma.com/design/${fileKey}?node-id=${encodeURIComponent(nodeId)}`
+  for (const group of allocation.collisions) {
+    for (const candidate of group.nodes) {
+      issues.push({
+        name: group.baseName,
+        nodeId: candidate.nodeId,
+        fileKey,
+        sourceType: 'figma',
+        stage: 'import',
+        code: policy === 'error' ? 'FIGMA_DUPLICATE_NAME' : 'FIGMA_NAME_DISAMBIGUATED',
+        severity: policy === 'error' ? 'error' : 'warning',
+        collisionGroup: group.baseName,
+        originalName: candidate.originalName,
+        normalizedName: group.baseName,
+        parentPath: candidate.parentPath,
+        figmaUrl: figmaUrl(candidate.nodeId),
+        proposedName: proposed[candidate.nodeId]!,
+        message: policy === 'error'
+          ? `Duplicate icon name "${group.baseName}" is shared by ${group.nodes.length} Figma nodes. Rename the layers, use naming.transform or opt in to naming.duplicates: "suffix-node-id".`
+          : `Resolved duplicate icon name "${group.baseName}" for ${group.nodes.length} Figma nodes with stable public names.`,
+        ...(options.sourceIndex === undefined ? {} : { sourceIndex: options.sourceIndex }),
+      })
+    }
+  }
+  for (const renamed of allocation.renamed) {
+    if (allocation.collisions.some(group => group.baseName === renamed.from)) {
+      continue
+    }
+    const candidate = namingCandidates.find(candidate => candidate.nodeId === renamed.nodeId)!
+    issues.push({
+      name: renamed.to,
+      nodeId: renamed.nodeId,
+      fileKey,
+      sourceType: 'figma',
+      stage: 'import',
+      code: 'FIGMA_NAME_PRESERVED',
+      severity: 'warning',
+      originalName: candidate.originalName,
+      normalizedName: renamed.from,
+      proposedName: renamed.to,
+      parentPath: candidate.parentPath,
+      figmaUrl: figmaUrl(candidate.nodeId),
+      message: `Kept public name "${renamed.to}" instead of "${renamed.from}" to preserve node/name ownership.`,
+      ...(options.sourceIndex === undefined ? {} : { sourceIndex: options.sourceIndex }),
+    })
+  }
+  const mappings = namingCandidates.map(candidate => ({
+    ...candidate,
+    figmaUrl: figmaUrl(candidate.nodeId),
+    ...(allocation.names[candidate.nodeId] === undefined ? {} : { name: allocation.names[candidate.nodeId] }),
+    ...(previous?.entries[candidate.nodeId] ? { previousName: previous.entries[candidate.nodeId]!.name } : {}),
+  })).sort((a, b) => a.nodeId.localeCompare(b.nodeId))
+  const oldNames = new Set((previous?.activeNodeIds ?? []).map(id => previous!.entries[id]!.name))
+  const newNames = new Set(Object.values(allocation.names))
+  const namingPlan: FigmaNamingPlan = {
+    sourceIndex: options.sourceIndex ?? 0,
+    fileKey,
+    namespace,
+    fileVersion: document.version,
+    lastModified: document.lastModified,
+    policy,
+    mappings,
+    changes: {
+      added: [...newNames].filter(name => !oldNames.has(name)).sort(),
+      removed: [...oldNames].filter(name => !newNames.has(name)).sort(),
+      renamed: mappings.flatMap(mapping => mapping.name && mapping.previousName && mapping.name !== mapping.previousName
+        ? [{ nodeId: mapping.nodeId, from: mapping.previousName, to: mapping.name }]
+        : []),
+      disambiguated: allocation.renamed,
+    },
+  }
+  const naming = {
+    namingPlan,
+    ...(preserveNames ? { namingSourceKey, namingEntries: allocation.entries } : {}),
+  }
+  if (options.namingOnly) {
+    return { type: 'figma', notModified: false, issues, fileKey, fileVersion: document.version, lastModified: document.lastModified, ...naming }
+  }
   const reportIssue = (icon: typeof candidates[number], stage: SyncIssue['stage'], message: string, error?: unknown) => {
     const issue: SyncIssue = { name: icon.keyword, nodeId: icon.id, fileKey, sourceType: 'figma', stage, message, ...(options.sourceIndex !== undefined ? { sourceIndex: options.sourceIndex } : {}) }
     if (error instanceof IconctlError) {
@@ -92,27 +207,10 @@ export async function loadFigmaSource(
     }
     issues.push(issue)
   }
-  // Compare the final keywords after filtering and custom naming. Exclude the
-  // entire ambiguous group before export so traversal/download order cannot
-  // pick a winner, including when one of its SVGs would fail to import.
-  const byName = new Map<string, typeof candidates>()
-  for (const icon of candidates) {
-    const group = byName.get(icon.keyword)
-    if (group) {
-      group.push(icon)
-    }
-    else {
-      byName.set(icon.keyword, [icon])
-    }
+  const icons = candidates.filter(icon => Object.hasOwn(allocation.names, icon.id))
+  for (const icon of icons) {
+    icon.keyword = allocation.names[icon.id]!
   }
-  for (const [name, group] of byName) {
-    if (group.length > 1) {
-      for (const icon of group) {
-        reportIssue(icon, 'import', `Duplicate icon name "${name}" is shared by ${group.length} Figma nodes. Rename the layers or return unique names from iconNameForNode.`)
-      }
-    }
-  }
-  const icons = candidates.filter(icon => byName.get(icon.keyword)!.length === 1)
   let exported = 0
   report({ stage: 'export-url', completed: 0, total: icons.length })
   // Bound both encoded URL size and the number of simultaneous downloads.
@@ -219,10 +317,11 @@ export async function loadFigmaSource(
     issues,
     iconSet,
     iconOrigins,
+    ...naming,
     notModified: false,
     fileKey,
     lastModified: document.lastModified,
-    ...(issues.length ? { failures: issues.map(({ name, message }) => ({ name, message })) } : {}),
+    ...(issues.some(issue => issue.severity !== 'warning') ? { failures: issues.filter(issue => issue.severity !== 'warning').map(({ name, message }) => ({ name, message })) } : {}),
   }
   if (document.version) {
     loaded.fileVersion = document.version

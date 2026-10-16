@@ -1,6 +1,6 @@
-import type { CheckIssue, CheckReport, SyncIssue } from '@iconctl/core'
+import type { CheckIssue, CheckReport } from '@iconctl/core'
 import process from 'node:process'
-import { IconctlCheckError, IconctlSyncError } from '@iconctl/core'
+import { IconctlCheckError, IconctlSyncError, serializeIconctlError } from '@iconctl/core'
 import { consola } from 'consola'
 
 export interface CommandContext {
@@ -20,19 +20,6 @@ function errorMessage(error: unknown): string {
   return error !== null && (typeof error === 'object' || typeof error === 'function')
     ? 'Unknown error'
     : String(error)
-}
-
-function syncIssues(issues: SyncIssue[]): SyncIssue[] {
-  return issues.filter(issue => issue && typeof issue.name === 'string' && typeof issue.message === 'string'
-    && ['export-url', 'download', 'import', 'process', 'validation'].includes(issue.stage)).map(issue => ({
-    name: issue.name,
-    message: issue.message,
-    stage: issue.stage,
-    ...(typeof issue.sourceType === 'string' ? { sourceType: issue.sourceType } : {}),
-    ...(Number.isInteger(issue.sourceIndex) && issue.sourceIndex! >= 0 ? { sourceIndex: issue.sourceIndex } : {}),
-    ...(typeof issue.fileKey === 'string' ? { fileKey: issue.fileKey } : {}),
-    ...(typeof issue.nodeId === 'string' ? { nodeId: issue.nodeId } : {}),
-  }))
 }
 
 function checkIssues(issues: CheckIssue[]): CheckIssue[] {
@@ -62,7 +49,8 @@ function checkReport(error: unknown, options: FailureOptions): CheckReport {
 /** The only one-shot failure writer. The caller still rejects with the original value. */
 export function reportCliError(error: unknown, command: string | null, options: FailureOptions, context: CommandContext): void {
   process.exitCode = context.exitCode ?? 1
-  const message = errorMessage(error)
+  const syncError = error instanceof IconctlSyncError ? serializeIconctlError(error) : undefined
+  const message = syncError?.message ?? errorMessage(error)
   // Runtime watch errors belong to its NDJSON lifecycle. Parser failures have
   // not started that lifecycle and keep their single human-readable diagnostic.
   if (!options.json || command === 'watch') {
@@ -70,7 +58,7 @@ export function reportCliError(error: unknown, command: string | null, options: 
     return
   }
   const report = command === 'check' ? checkReport(error, options) : undefined
-  const issues = report?.issues ?? (error instanceof IconctlSyncError ? syncIssues(error.issues) : undefined)
+  const issues = report?.issues ?? syncError?.issues
   const phase = command === 'check' && error instanceof IconctlCheckError
     && issues?.length && issues.every(issue => issue.stage === 'options')
     ? 'arguments'

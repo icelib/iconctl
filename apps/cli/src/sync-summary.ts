@@ -15,5 +15,6 @@ export function syncSummary(result: SyncResult) {
     skipped: result.failed,
     issues: result.issues,
     outputFiles: result.files,
+    ...(result.naming ? { naming: result.naming } : {}),
   }
 }

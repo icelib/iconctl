@@ -30,6 +30,8 @@ export interface IconctlConfig {
   prefix: string
   sources: SourceConfig[]
   cacheDir?: string
+  /** Reviewable Figma node/name ownership, separate from disposable caches. */
+  namingManifest?: string
   color?: string | false
   output?: IconctlOutputConfig
   validate?: IconctlValidateConfig
@@ -39,6 +41,7 @@ export interface ResolvedIconctlConfig {
   prefix: string
   sources: ResolvedSourceConfig[]
   cacheDir: string
+  namingManifest?: string
   color: string | false
   output: Required<Pick<IconctlOutputConfig, 'json'>> & Omit<IconctlOutputConfig, 'jsonPackage'> & {
     jsonPackage?: JsonPackageOutputConfig
@@ -114,6 +117,20 @@ function resolveFigmaSource(source: Extract<SourceConfig, { type: 'figma' }>): E
   }
   if (source.iconNameForNode) {
     resolved.iconNameForNode = source.iconNameForNode
+  }
+  if (source.naming !== undefined) {
+    const naming = source.naming
+    if (!naming || typeof naming !== 'object' || Array.isArray(naming)
+      || (naming.duplicates !== undefined && !['error', 'suffix-node-id'].includes(naming.duplicates))
+      || (naming.preserveNames !== undefined && typeof naming.preserveNames !== 'boolean')
+      || (naming.namespace !== undefined && (typeof naming.namespace !== 'string' || !naming.namespace.trim()))
+      || (naming.transform !== undefined && typeof naming.transform !== 'function')) {
+      throw new IconctlError('Invalid Figma naming options: use duplicates "error" or "suffix-node-id", boolean preserveNames, a nonempty namespace and a transform function.')
+    }
+    if (source.iconNameForNode && naming.transform) {
+      throw new IconctlError('Use either legacy iconNameForNode or naming.transform, not both.')
+    }
+    resolved.naming = { ...naming, ...(naming.namespace ? { namespace: naming.namespace.trim() } : {}) }
   }
   return resolved
 }
@@ -251,6 +268,12 @@ export function resolveConfig(config: IconctlConfig, configFile?: string): Resol
   }
   if (configFile) {
     resolved.configFile = configFile
+  }
+  if (config.namingManifest !== undefined) {
+    if (typeof config.namingManifest !== 'string' || !config.namingManifest.trim()) {
+      throw new IconctlError('iconctl namingManifest must be a nonempty local path')
+    }
+    resolved.namingManifest = config.namingManifest.trim()
   }
   return resolved
 }

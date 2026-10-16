@@ -34,6 +34,17 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./naming": {
+      "types": "./dist/naming.d.mts",
+      "import": {
+        "types": "./dist/naming.d.mts",
+        "default": "./dist/naming.mjs"
+      },
+      "require": {
+        "types": "./dist/naming.d.cts",
+        "default": "./dist/naming.cjs"
+      }
+    },
     "./figma/oauth": {
       "types": "./dist/figma-oauth.d.mts",
       "import": "./dist/figma-oauth.mjs",
@@ -59,7 +70,8 @@
     "build": "tsdown",
     "test": "vitest run",
     "test:dev": "vitest",
-    "test:package": "pnpm build && pnpm --filter iconctl build && node scripts/test-watch-package.mjs",
+    "test:package": "pnpm build && pnpm --filter iconctl build && node scripts/test-watch-package.mjs && node scripts/test-naming-package.mjs",
+    "test:naming-package": "pnpm build && node scripts/test-naming-package.mjs",
     "release": "pnpm publish",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

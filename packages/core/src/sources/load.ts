@@ -1,5 +1,6 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from '../config'
+import type { FigmaNamingManifest } from '../figma-naming-plan'
 import type { ProgressReporter } from '../progress'
 import type { RequestOptions } from '../request-options'
 import type { FigmaSourceLoadOptions } from './figma'
@@ -43,6 +44,8 @@ export interface LoadSourcesOptions extends RequestOptions {
   figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
   offline?: boolean
   report?: ProgressReporter
+  namingManifest?: FigmaNamingManifest
+  namingOnly?: boolean
 }
 
 async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
@@ -91,6 +94,8 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         ...cancellation,
         cacheDir: options.config.cacheDir,
         skipPrefix: options.config.validate.skipPrefix,
+        ...(options.namingManifest ? { namingManifest: options.namingManifest } : {}),
+        ...(options.namingOnly ? { namingOnly: true } : {}),
         // A failed revision may have been repaired since its document was cached.
         refreshDocument: !onlyFigma || !options.figmaIfModifiedSince,
         sourceIndex,
@@ -111,8 +116,12 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
   }
 
   const loaded: LoadedSource[] = []
+  const namingKeys = new Set<string>()
   options.report?.({ stage: 'source', completed: 0, total: options.config.sources.length })
   for (const [index, source] of options.config.sources.entries()) {
+    if (options.namingOnly && source.type !== 'figma') {
+      continue
+    }
     await checkpoint(options.signal)
     options.report?.({ stage: 'source', sourceType: source.type, sourceIndex: index, completed: index, total: options.config.sources.length })
     let result: LoadedSource
@@ -133,6 +142,12 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
     }
     if (result.issues) {
       result.issues = result.issues.map(issue => ({ ...issue, sourceType: source.type, sourceIndex: index }))
+    }
+    if (result.namingSourceKey) {
+      if (namingKeys.has(result.namingSourceKey)) {
+        throw new IconctlError('Figma sources sharing a file must use distinct naming.namespace values when preserving names.', { code: 'FIGMA_NAMING_SOURCE_CONFLICT' })
+      }
+      namingKeys.add(result.namingSourceKey)
     }
     loaded.push(result)
     options.report?.({ stage: 'source', sourceType: source.type, sourceIndex: index, completed: index + 1, total: options.config.sources.length })

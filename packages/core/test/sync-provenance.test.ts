@@ -144,8 +144,23 @@ it.each(['both-valid', 'first-invalid', 'last-invalid'] as const)('excludes ever
     { name: 'independent', stage: 'validation', message: expect.any(String), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:3' },
   ])
   expect(result.issues.filter(issue => issue.stage === 'import')).toEqual([
-    { name: 'same-name', stage: 'import', message: expect.stringContaining('Duplicate'), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:1' },
-    { name: 'same-name', stage: 'import', message: expect.stringContaining('Duplicate'), sourceType: 'figma', sourceIndex: 0, fileKey: firstFile, nodeId: '1:2' },
+    ...['1:1', '1:2'].map((nodeId, index) => ({
+      name: 'same-name',
+      stage: 'import',
+      message: expect.stringContaining('Duplicate'),
+      sourceType: 'figma',
+      sourceIndex: 0,
+      fileKey: firstFile,
+      nodeId,
+      code: 'FIGMA_DUPLICATE_NAME',
+      severity: 'error',
+      collisionGroup: 'same-name',
+      normalizedName: 'same-name',
+      originalName: index === 0 ? 'First' : 'Second',
+      parentPath: ['Icons'],
+      proposedName: index === 0 ? 'same-name' : 'same-name-1-2',
+      figmaUrl: `https://www.figma.com/design/${firstFile}?node-id=${encodeURIComponent(nodeId)}`,
+    })),
   ])
 })
 

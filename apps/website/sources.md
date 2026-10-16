@@ -2,6 +2,8 @@
 
 `iconctl` treats Figma as one input. A local SVG folder, MasterGo, iconfont, and 即时设计 use the same `sources` list.
 
+Figma's [stable duplicate-name policy](/figma#stable-names-for-duplicate-layers) applies within that Figma source. Names shared by separate sources retain the existing merge order: the later source wins. `iconctl preflight --json` checks Figma naming only; in a mixed-source project it does not load other sources or establish reliable collection-wide deletions. Use `iconctl sync --dry-run --json` to validate the complete merged collection.
+
 ## Local SVG
 
 No token. Put one `.svg` per icon in a folder:

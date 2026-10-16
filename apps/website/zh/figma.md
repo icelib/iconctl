@@ -31,9 +31,42 @@ Figma 只是 `iconctl` 的一种来源。设计师维护 Library，然后在 [ic
 - 中文写在描述里
 - `_` 或 `.` 开头视为草稿
 
-每个配置的 Figma 来源内，规范化后的名称必须唯一：`Arrow Left` 和 `arrow_left` 都会变成 `arrow-left`。自定义 `iconNameForNode` 也需要返回唯一的最终名称。冲突会报告每个相关节点，默认在替换产物前终止同步；请重命名图层或调整命名函数。
+默认情况下，每个配置的 Figma 来源内，规范化后的名称必须唯一：`Arrow Left` 和 `arrow_left` 都会变成 `arrow-left`。自定义 `iconNameForNode` 也需要返回唯一的最终名称。冲突会报告每个相关节点，在替换产物前终止同步；可以重命名图层、调整命名函数，或显式启用下方命名策略。
 
 使用 `--continue` 时，冲突组内所有图标都会被排除，其余有效图标可以生成不完整产物。如果没有任何有效图标，即使使用 `--continue` 也会失败并保留已有产物。冲突节点不会请求 SVG 导出。检查在页面和节点筛选后执行；不同配置来源之间原有的覆盖顺序保持不变。
+
+## 重复图层的稳定名称
+
+在 Figma 来源中显式开启以下策略，可以保留同名图层，并为后续名称追加稳定的节点 ID：
+
+```ts
+{
+  type: 'figma',
+  file: 'https://www.figma.com/design/<fileKey>/Icons',
+  naming: {
+    duplicates: 'suffix-node-id',
+  },
+}
+```
+
+例如，名称都是 `bell` 的节点 `34:1698` 和 `5398:44` 会得到 `bell`、`bell-5398-44`。没有已有映射时，按节点 ID 稳定排序决定原名称归属。分配后缀前会预留全部自然名称，再次冲突时追加 `-2`、`-3` 等编号。自动解决的冲突作为 warning 返回，不会让同步变成不完整结果。默认 `duplicates: 'error'` 继续使用上方严格规则。
+
+此策略默认开启 `preserveNames: true`。同步成功后，映射保存到命令工作目录下的 `.iconctl-names.json`；根配置 `namingManifest` 可以指定其他本地路径。请将该文件与配置、产物一起纳入版本管理。归属由 Figma file key、`naming.namespace`（默认空字符串）和节点 ID 确定。同一文件使用不同命名规则时，应显式指定不同 namespace。
+
+已有映射在图层重排、插入和改名后保持不变。删除节点仍保留其名称，恢复时取回原名称，其他节点不能接管。迁移公共名称时，需要显式审核并编辑 manifest 中的映射。manifest 损坏或保存了重复名称时会报错，不会静默重置归属。设置 `preserveNames: false` 则忽略已有映射，根据当前文档重新确定名称。
+
+已有图标库首次启用此策略前，先检查节点与公共名称的对应关系：
+
+```bash
+pnpm exec iconctl preflight --json
+pnpm exec iconctl sync --dry-run --json
+```
+
+Preflight 读取 Figma 文档，报告最终名称、冲突组、节点路径及 Figma 链接，不请求 SVG 导出，不写产物和命名 manifest，但可能刷新认证凭据、更新缓存。Dry-run 会执行完整处理流程并返回相同的命名计划，不提交产物和映射。需要同时检查 SVG 处理和校验时，使用 dry-run。
+
+首次分配无法从旧 `icons.json` 推断节点归属。请将计划与已发布名称核对，必要时先补入 manifest 映射，再执行写入同步。[SDK 文档](/zh/sdk#figma-命名与预检)提供 manifest 结构示例。只有完整成功的同步才将 manifest 与产物原子提交；失败或部分同步保留原 manifest。
+
+简单的自定义命名可使用 `naming.transform(name, node)`：它在默认节点和草稿筛选后执行，可返回 `null` 跳过节点，结果会先规范化再处理重复名称，无需复制默认过滤逻辑。已有 `iconNameForNode` 继续完整接管命名，也可搭配重复名称策略，但不能与 `naming.transform` 同时配置。
 
 ## 配置
 

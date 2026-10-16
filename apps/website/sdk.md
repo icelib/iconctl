@@ -74,6 +74,49 @@ Use the same `cwd` for `loadConfig` and `sync`: relative source, cache and outpu
 
 By default, import, processing and validation failures reject without replacing existing outputs. `continueOnError: true` explicitly permits partial output; inspect `result.complete`, `result.issues` and `result.diff.deletionsReliable` before publishing. A partial result has unreliable deletions, does not report removals and skips changelog updates. Authentication failures, unreadable sources and a Figma source with no valid imported icons still reject.
 
+## Figma naming and preflight
+
+Set a Figma source's `naming.duplicates` to `'suffix-node-id'` to allocate unique names and preserve node ownership across syncs. See [stable Figma names](/figma#stable-names-for-duplicate-layers) for the policy, custom `naming.transform` and migration behavior. Pure naming helpers are available through a lightweight entry point without loading the sync runtime:
+
+```ts
+import { defaultIconNameForNode, toIconName } from '@iconctl/core/naming'
+```
+
+Use `preflightFigmaNaming` to review names before downloading SVGs:
+
+```ts
+import { loadConfig, preflightFigmaNaming } from '@iconctl/core'
+
+const cwd = '/srv/icon-jobs/brand'
+const config = await loadConfig({ cwd })
+const report = await preflightFigmaNaming({ cwd, config, env: process.env })
+
+console.info({ complete: report.complete, publicNames: report.publicNames })
+console.info(report.naming, report.issues)
+```
+
+`report.naming` contains one plan per Figma source, with final node-to-name mappings, original and base names, parent paths, Figma links and name changes. `report.issues` includes error or warning severity and collision coordinates; automatically resolved duplicates are warnings, so the report can remain complete. A rejected duplicate has no assigned final name. Preflight writes no outputs or naming manifest and returns `files: []`; authentication and caches may still update. In mixed-source projects, only Figma is inspected and `publicNames.deletionsReliable` remains false. `sync({ ..., dryRun: true })` runs SVG processing too and exposes the same plans in `result.naming`.
+
+With name preservation enabled, successful syncs atomically commit `.iconctl-names.json` together with outputs; partial or failed syncs do not change its assignments. Configure root `namingManifest` to change its path relative to `cwd`. Keep this file in version control. Each `sources` key is the JSON-encoded `[fileKey, namespace]` pair; a minimal seed preserving an existing public `bell` name is:
+
+```json
+{
+  "version": 1,
+  "sources": {
+    "[\"AbCdEf123456\",\"\"]": {
+      "fileKey": "AbCdEf123456",
+      "namespace": "",
+      "entries": {
+        "34:1698": { "name": "bell", "baseName": "bell" }
+      },
+      "activeNodeIds": ["34:1698"]
+    }
+  }
+}
+```
+
+Seed only verified node ownership: generated `icons.json` does not record the original Figma node. Review manifest edits as public API migrations. Entries for deleted nodes remain reserved; removing an entry explicitly releases that assignment. Set different `naming.namespace` values when the same file needs independent naming rules.
+
 ## Progress and host jobs
 
 `onProgress` receives immutable `SyncProgressEvent` objects. Stages include `prepare`, `source`, `document`, `export-url`, `download`, `import`, `process`, `validate`, `export` and `complete`. Events include `timestamp` and may include source coordinates, an icon name, and `completed` / `total`.
@@ -116,7 +159,7 @@ Call `serializeIconctlError(error, { secrets })` before storing an error or send
 | `httpStatus` | Provider HTTP status when known |
 | `retryable`, `retryAfterMs` | Retry guidance; the host decides whether and when to retry |
 | `sourceType`, `sourceIndex`, `operation` | Known source and operation context |
-| `issues` | Per-icon failures with stage and available source coordinates |
+| `issues` | Per-icon diagnostics with stage, severity and available source coordinates; duplicate groups also include node paths and suggested names |
 | `cause`, `errors` | Bounded nested causes and aggregate errors |
 | `truncated` | Some details exceeded the serializer's limits |
 

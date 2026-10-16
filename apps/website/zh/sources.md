@@ -2,6 +2,8 @@
 
 Figma 只是一种输入。本地 SVG 目录、MasterGo、iconfont、即时设计走同一份 `sources`。
 
+Figma 的[重复名称稳定分配策略](/zh/figma#重复图层的稳定名称)只作用于该 Figma 来源。不同来源同名时继续沿用原有合并顺序：后面的来源覆盖前面的来源。`iconctl preflight --json` 只检查 Figma 命名；混合来源项目中不会加载其他来源，也不能可靠判断整个集合的删除项。验证完整合并结果请使用 `iconctl sync --dry-run --json`。
+
 ## 本地 SVG
 
 不需要 token。一个图标一个 `.svg`，放进文件夹：

@@ -74,6 +74,49 @@ catch (error) {
 
 默认情况下，导入、处理或校验失败会抛出错误，保留已有产物。只有显式设置 `continueOnError: true` 才允许输出部分结果；发布前检查 `result.complete`、`result.issues` 和 `result.diff.deletionsReliable`。部分结果的删除判断不可靠，因此不报告删除项，也不更新变更日志。认证失败、来源不可读，以及 Figma 来源未成功导入任何有效图标时，仍会抛出错误。
 
+## Figma 命名与预检
+
+将 Figma 来源的 `naming.duplicates` 设为 `'suffix-node-id'`，可以分配唯一名称并在多次同步间保留节点归属。策略、自定义 `naming.transform` 及迁移行为见[稳定 Figma 名称](/zh/figma#重复图层的稳定名称)。纯命名辅助函数提供轻量入口，无需加载同步运行时：
+
+```ts
+import { defaultIconNameForNode, toIconName } from '@iconctl/core/naming'
+```
+
+使用 `preflightFigmaNaming`，可以在下载 SVG 前审核名称：
+
+```ts
+import { loadConfig, preflightFigmaNaming } from '@iconctl/core'
+
+const cwd = '/srv/icon-jobs/brand'
+const config = await loadConfig({ cwd })
+const report = await preflightFigmaNaming({ cwd, config, env: process.env })
+
+console.info({ complete: report.complete, publicNames: report.publicNames })
+console.info(report.naming, report.issues)
+```
+
+`report.naming` 为每个 Figma 来源提供一份计划，包括节点到最终名称的映射、原始名称、基础名称、父级路径、Figma 链接和名称变化。`report.issues` 包含 error 或 warning 级别及冲突坐标；自动解决的重复名称是 warning，因此报告仍可完整。被拒绝的冲突节点没有最终名称。预检不写产物和命名 manifest，返回 `files: []`，但认证凭据和缓存仍可能更新。混合来源项目中只检查 Figma，`publicNames.deletionsReliable` 为 false。`sync({ ..., dryRun: true })` 还会执行 SVG 处理，并通过 `result.naming` 返回相同的计划。
+
+启用名称保留后，成功同步会将 `.iconctl-names.json` 与产物原子提交；部分或失败同步不修改映射。根配置 `namingManifest` 可以指定相对于 `cwd` 的其他路径。请将该文件纳入版本管理。`sources` 的键是经过 JSON 编码的 `[fileKey, namespace]`，保留已有公共名称 `bell` 的最小映射示例为：
+
+```json
+{
+  "version": 1,
+  "sources": {
+    "[\"AbCdEf123456\",\"\"]": {
+      "fileKey": "AbCdEf123456",
+      "namespace": "",
+      "entries": {
+        "34:1698": { "name": "bell", "baseName": "bell" }
+      },
+      "activeNodeIds": ["34:1698"]
+    }
+  }
+}
+```
+
+只补入已核实的节点归属，生成的 `icons.json` 不记录原始 Figma 节点。manifest 修改应按公共 API 迁移审核。删除节点的条目仍保留名称，显式删除条目才会释放该映射。同一文件需要独立命名规则时，使用不同的 `naming.namespace`。
+
 ## 进度与宿主任务
 
 `onProgress` 接收不可变的 `SyncProgressEvent`。阶段包括 `prepare`、`source`、`document`、`export-url`、`download`、`import`、`process`、`validate`、`export` 和 `complete`。事件包含 `timestamp`，并按情况提供来源坐标、图标名和 `completed` / `total`。
@@ -116,7 +159,7 @@ core 不分配任务 ID，也不提供持久化任务记录、重试队列或浏
 | `httpStatus` | 已知的服务商 HTTP 状态码 |
 | `retryable`、`retryAfterMs` | 重试建议；是否重试、何时重试由宿主决定 |
 | `sourceType`、`sourceIndex`、`operation` | 已知的来源与操作上下文 |
-| `issues` | 图标级失败，包含阶段和可用的来源坐标 |
+| `issues` | 图标级诊断，包含阶段、级别和可用的来源坐标；重复名称组还包括节点路径与建议名称 |
 | `cause`、`errors` | 有数量与长度限制的嵌套原因和聚合错误 |
 | `truncated` | 部分详情超过序列化上限 |
 
