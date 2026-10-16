@@ -3,6 +3,8 @@ import type { IconifyJSON } from '@iconify/types'
 import type { ResolvedIconctlConfig } from './config'
 import type { IconDiff } from './diff'
 import type { SyncIssue } from './errors'
+import type { ProgressReporter, SyncProgressHandler } from './progress'
+import type { RequestOptions } from './request-options'
 import type { FigmaSourceLoadOptions } from './sources/figma'
 import type { IconOrigin } from './sources/load'
 import { createHash } from 'node:crypto'
@@ -18,10 +20,12 @@ import { captureOutputProof, matchesOutputProof } from './output-proof'
 import { OutputTransaction, validateOutputTargets } from './output-transaction'
 import { renderPreviewHtml } from './preview'
 import { processIconSetAsync } from './process'
+import { createProgressReporter } from './progress'
+import { resolveRequestOptions } from './request-options'
 import { loadSources, mergeLoadedSources } from './sources/load'
 import { validateIconSetAsync } from './validate'
 
-export interface SyncOptions {
+export interface SyncOptions extends RequestOptions {
   cwd?: string
   signal?: AbortSignal
   config: ResolvedIconctlConfig
@@ -32,6 +36,8 @@ export interface SyncOptions {
   offline?: boolean
   iconSet?: IconSet
   figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
+  /** Invoked in event order; observer promises are not awaited and failures are isolated. */
+  onProgress?: SyncProgressHandler
 }
 
 export interface SyncResult {
@@ -78,6 +84,10 @@ async function writeCacheMeta(file: string, meta: CacheMeta) {
 
 export async function sync(options: SyncOptions): Promise<SyncResult> {
   throwIfAborted(options.signal)
+  const requestOptions = resolveRequestOptions(options)
+  const report = createProgressReporter(options.onProgress)
+  report({ stage: 'prepare' })
+  throwIfAborted(options.signal)
   const cancellation = options.signal ? { signal: options.signal } : {}
   const cwd = options.cwd ?? process.cwd()
   const config = options.config
@@ -114,6 +124,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     const loaded = await loadSources({
       cwd,
       config,
+      ...requestOptions,
+      report,
       ...cancellation,
       ...(options.env ? { env: options.env } : {}),
       ...(options.figmaAuthProvider
@@ -160,6 +172,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (loaded[0]?.fileKey) {
         result.fileKey = loaded[0].fileKey
       }
+      report({ stage: 'complete', complete: true, notModified: true, dryRun: !!options.dryRun })
       return result
     }
 
@@ -188,8 +201,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     }
   }
 
-  const processed = await processIconSetAsync(iconSet, config, options.signal)
-  const validation = await validateIconSetAsync(iconSet, config, options.signal)
+  const reportIcon: ProgressReporter = event => report({ ...event, ...(event.name ? origins.get(event.name) : {}) })
+  const processed = await processIconSetAsync(iconSet, config, options.signal, reportIcon)
+  const validation = await validateIconSetAsync(iconSet, config, options.signal, reportIcon)
   const issues: SyncIssue[] = [
     ...sourceIssues,
     ...processed.issues.map(issue => ({ ...issue, ...origins.get(issue.name) })),
@@ -208,6 +222,8 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     diff.removed = []
   }
   const files: string[] = []
+  report({ stage: 'export' })
+  await checkpoint(options.signal)
   if (!options.dryRun) {
     // Keep every configured target visible to collision checks, even when an
     // incomplete run preserves the changelog instead of appending to it.
@@ -304,6 +320,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   if (fileKey) {
     result.fileKey = fileKey
   }
+  report({ stage: 'complete', complete, notModified, dryRun: !!options.dryRun })
   return result
 }
 

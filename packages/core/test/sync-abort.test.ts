@@ -178,13 +178,17 @@ it('waits for a custom authentication provider to settle on cancellation', async
   expect(request).not.toHaveBeenCalled()
 })
 
-it('lets shared OAuth rotation persist safely before rejecting the cancelled sync', async () => {
+it('rejects a cancelled OAuth waiter promptly while shared rotation persists for its sibling', async () => {
   const credentials = join(cwd, 'credentials.json')
   await writeFigmaCredentials(credentials, { clientId: 'fake', clientSecret: 'fake', accessToken: 'old', refreshToken: 'old-refresh', expiresAt: 1 })
   const env = { ICONCTL_FIGMA_CREDENTIALS_FILE: credentials }
   const started = deferred<void>()
   const refreshed = deferred<Response>()
-  const request = vi.fn(async () => {
+  let transportAborted = false
+  const request = vi.fn(async (_url: string, init: RequestInit) => {
+    init.signal!.addEventListener('abort', () => {
+      transportAborted = true
+    }, { once: true })
     started.resolve()
     return await refreshed.promise
   })
@@ -200,10 +204,12 @@ it('lets shared OAuth rotation persist safely before rejecting the cancelled syn
   await started.promise
   const other = (await resolveFigmaAuth(undefined, env)).token()
   controller.abort()
-  await setImmediate()
-  expect(settled).toBe(false)
-  refreshed.resolve(Response.json({ access_token: 'new', refresh_token: 'new-refresh', token_type: 'bearer', expires_in: 3600 }))
   await rejected
+  expect(settled).toBe(true)
+  expect(transportAborted).toBe(false)
+  expect((await readFigmaCredentials(credentials))?.refreshToken).toBe('old-refresh')
+  expect(await readFile(join(cwd, 'icons.json'), 'utf8')).toBe('previous-output')
+  refreshed.resolve(Response.json({ access_token: 'new', refresh_token: 'new-refresh', token_type: 'bearer', expires_in: 3600 }))
   expect(await other).toBe('new')
   expect((await readFigmaCredentials(credentials))?.refreshToken).toBe('new-refresh')
   expect(request).toHaveBeenCalledTimes(1)

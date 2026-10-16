@@ -1,5 +1,7 @@
 import type { IconSet } from '@iconify/tools'
 import type { ResolvedIconctlConfig } from '../config'
+import type { ProgressReporter } from '../progress'
+import type { RequestOptions } from '../request-options'
 import type { FigmaSourceLoadOptions } from './figma'
 import type { LoadedSource, ResolvedSourceConfig } from './types'
 import { blankIconSet } from '@iconify/tools'
@@ -32,7 +34,7 @@ export function mergeIconSets(prefix: string, sets: IconSet[]): IconSet {
   return merged
 }
 
-export interface LoadSourcesOptions {
+export interface LoadSourcesOptions extends RequestOptions {
   cwd: string
   signal?: AbortSignal
   config: ResolvedIconctlConfig
@@ -40,6 +42,7 @@ export interface LoadSourcesOptions {
   figmaIfModifiedSince?: string
   figmaAuthProvider?: FigmaSourceLoadOptions['authProvider']
   offline?: boolean
+  report?: ProgressReporter
 }
 
 async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesOptions, sourceIndex: number): Promise<LoadedSource> {
@@ -91,6 +94,9 @@ async function loadOneSource(source: ResolvedSourceConfig, options: LoadSourcesO
         // A failed revision may have been repaired since its document was cached.
         refreshDocument: !onlyFigma || !options.figmaIfModifiedSince,
         sourceIndex,
+        ...(options.report ? { report: options.report } : {}),
+        ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+        ...(options.oauthTimeoutMs === undefined ? {} : { oauthTimeoutMs: options.oauthTimeoutMs }),
         ...(options.env ? { env: options.env } : {}),
         ...(options.figmaAuthProvider ? { authProvider: item => options.figmaAuthProvider!(item, sourceIndex) } : {}),
         ...(onlyFigma && options.figmaIfModifiedSince ? { ifModifiedSince: options.figmaIfModifiedSince } : {}),
@@ -105,13 +111,31 @@ export async function loadSources(options: LoadSourcesOptions): Promise<LoadedSo
   }
 
   const loaded: LoadedSource[] = []
+  options.report?.({ stage: 'source', completed: 0, total: options.config.sources.length })
   for (const [index, source] of options.config.sources.entries()) {
     await checkpoint(options.signal)
-    const result = await loadOneSource(source, options, index)
+    options.report?.({ stage: 'source', sourceType: source.type, sourceIndex: index, completed: index, total: options.config.sources.length })
+    let result: LoadedSource
+    try {
+      result = await loadOneSource(source, options, index)
+    }
+    catch (error) {
+      if (error instanceof IconctlError) {
+        try {
+          error.sourceType ??= source.type
+          error.sourceIndex ??= index
+        }
+        catch {
+          // A custom provider may freeze its error; preserve the original failure.
+        }
+      }
+      throw error
+    }
     if (result.issues) {
       result.issues = result.issues.map(issue => ({ ...issue, sourceType: source.type, sourceIndex: index }))
     }
     loaded.push(result)
+    options.report?.({ stage: 'source', sourceType: source.type, sourceIndex: index, completed: index + 1, total: options.config.sources.length })
     await checkpoint(options.signal)
   }
   return loaded

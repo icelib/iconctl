@@ -1,6 +1,8 @@
 import type { FigmaAPIImagesResponse, FigmaDocument } from '@iconify/tools/lib/import/figma/types/api'
 import type { SyncIssue } from '../errors'
 import type { FigmaAuth } from '../figma/auth'
+import type { ProgressReporter } from '../progress'
+import type { RequestOptions } from '../request-options'
 import type { LoadedSource, ResolvedFigmaSourceConfig } from './types'
 import { blankIconSet, cleanupSVG, SVG } from '@iconify/tools'
 import { getFigmaIconNodes } from '@iconify/tools/lib/import/figma/nodes'
@@ -25,7 +27,7 @@ function isSvgDownloadUrl(value: unknown): boolean {
   }
 }
 
-export interface FigmaSourceLoadOptions {
+export interface FigmaSourceLoadOptions extends RequestOptions {
   cwd: string
   signal?: AbortSignal
   sourceIndex?: number
@@ -36,6 +38,7 @@ export interface FigmaSourceLoadOptions {
   ifModifiedSince?: string
   authProvider?: (source: ResolvedFigmaSourceConfig, sourceIndex?: number) => Promise<FigmaAuth>
   refreshDocument?: boolean
+  report?: ProgressReporter
 }
 
 export async function loadFigmaSource(
@@ -45,12 +48,14 @@ export async function loadFigmaSource(
   throwIfAborted(options.signal)
   const issues: SyncIssue[] = []
   const fileKey = parseFigmaFileKey(source.file)
-  const auth = await settleWithAbort(() => options.authProvider ? options.authProvider(source) : resolveFigmaAuth(source.token, options.env), options.signal)
+  const report: ProgressReporter = event => options.report?.({ ...event, sourceType: 'figma', ...(options.sourceIndex === undefined ? {} : { sourceIndex: options.sourceIndex }), fileKey })
+  report({ stage: 'document', completed: 0, total: 1 })
+  const auth = await settleWithAbort(() => options.authProvider ? options.authProvider(source) : resolveFigmaAuth(source.token, options.env, options), options.signal)
   throwIfAborted(options.signal)
   // Refresh even when the remote response can be served from cache.
   await settleWithAbort(() => auth.token(), options.signal)
   throwIfAborted(options.signal)
-  const client = new FigmaClient(auth, resolve(options.cwd, options.cacheDir), options.signal)
+  const client = new FigmaClient(auth, resolve(options.cwd, options.cacheDir), options.signal, options)
   const parameters = new URLSearchParams({ depth: String(source.depth) })
   if (source.ids) {
     parameters.set('ids', source.ids.join(','))
@@ -58,13 +63,17 @@ export async function loadFigmaSource(
   if (options.ifModifiedSince) {
     const head = await client.json<FigmaDocument>(`files/${fileKey}`, new URLSearchParams({ ...Object.fromEntries(parameters), depth: '1' }), true)
     if (head.lastModified === options.ifModifiedSince) {
+      report({ stage: 'document', completed: 1, total: 1 })
+      throwIfAborted(options.signal)
       return { type: 'figma', notModified: true, fileKey }
     }
   }
   const document = await client.json<FigmaDocument>(`files/${fileKey}`, parameters, Boolean(options.ifModifiedSince || options.refreshDocument))
   if (document.editorType !== 'figma' || !Array.isArray(document.document?.children) || typeof document.version !== 'string' || typeof document.lastModified !== 'string') {
-    throw new IconctlError('Invalid Figma document. Use a Figma design file.')
+    throw new IconctlError('Invalid Figma document. Use a Figma design file.', { code: 'INVALID_RESPONSE', sourceType: 'figma', operation: 'figma-api' })
   }
+  report({ stage: 'document', completed: 1, total: 1 })
+  throwIfAborted(options.signal)
   const nodes = getFigmaIconNodes(document, {
     iconNameForNode: source.iconNameForNode ?? (node => defaultIconNameForNode(node, {
       skipPrefix: options.skipPrefix,
@@ -72,8 +81,16 @@ export async function loadFigmaSource(
     ...(source.pages ? { pages: source.pages } : {}),
   })
   const candidates = Object.values(nodes.icons)
-  const report = (icon: typeof candidates[number], stage: SyncIssue['stage'], message: string) => {
-    issues.push({ name: icon.keyword, nodeId: icon.id, fileKey, sourceType: 'figma', stage, message, ...(options.sourceIndex !== undefined ? { sourceIndex: options.sourceIndex } : {}) })
+  const reportIssue = (icon: typeof candidates[number], stage: SyncIssue['stage'], message: string, error?: unknown) => {
+    const issue: SyncIssue = { name: icon.keyword, nodeId: icon.id, fileKey, sourceType: 'figma', stage, message, ...(options.sourceIndex !== undefined ? { sourceIndex: options.sourceIndex } : {}) }
+    if (error instanceof IconctlError) {
+      for (const key of ['code', 'httpStatus', 'retryable', 'retryAfterMs', 'operation'] as const) {
+        if (error[key] !== undefined) {
+          Object.assign(issue, { [key]: error[key] })
+        }
+      }
+    }
+    issues.push(issue)
   }
   // Compare the final keywords after filtering and custom naming. Exclude the
   // entire ambiguous group before export so traversal/download order cannot
@@ -91,11 +108,13 @@ export async function loadFigmaSource(
   for (const [name, group] of byName) {
     if (group.length > 1) {
       for (const icon of group) {
-        report(icon, 'import', `Duplicate icon name "${name}" is shared by ${group.length} Figma nodes. Rename the layers or return unique names from iconNameForNode.`)
+        reportIssue(icon, 'import', `Duplicate icon name "${name}" is shared by ${group.length} Figma nodes. Rename the layers or return unique names from iconNameForNode.`)
       }
     }
   }
   const icons = candidates.filter(icon => byName.get(icon.keyword)!.length === 1)
+  let exported = 0
+  report({ stage: 'export-url', completed: 0, total: icons.length })
   // Bound both encoded URL size and the number of simultaneous downloads.
   let batch: string[] = []
   const render = async () => {
@@ -113,7 +132,7 @@ export async function loadFigmaSource(
       && batch.every(id => isSvgDownloadUrl(value.images[id])))
     if (!result.images || typeof result.images !== 'object') {
       await client.invalidateImages(`images/${fileKey}`, parameters)
-      throw new IconctlError('Invalid Figma image export response.')
+      throw new IconctlError('Invalid Figma image export response.', { code: 'INVALID_RESPONSE', sourceType: 'figma', operation: 'figma-api' })
     }
     for (const id of batch) {
       const url = result.images[id]
@@ -121,8 +140,9 @@ export async function loadFigmaSource(
         nodes.icons[id]!.url = url
       }
       else {
-        report(nodes.icons[id]!, 'export-url', 'Figma did not return an SVG export URL')
+        reportIssue(nodes.icons[id]!, 'export-url', 'Figma did not return an SVG export URL')
       }
+      report({ stage: 'export-url', name: nodes.icons[id]!.keyword, nodeId: id, completed: ++exported, total: icons.length })
     }
     if (batch.some(id => !nodes.icons[id]!.url)) {
       await client.invalidateImages(`images/${fileKey}`, parameters)
@@ -140,10 +160,13 @@ export async function loadFigmaSource(
   }
   const iconSet = blankIconSet(options.prefix)
   const iconOrigins: NonNullable<LoadedSource['iconOrigins']> = new Map()
+  let downloaded = 0
+  report({ stage: 'download', completed: 0, total: icons.length })
   for (let offset = 0; offset < icons.length; offset += 4) {
     await checkpoint(options.signal)
     const downloads = await Promise.allSettled(icons.slice(offset, offset + 4).map(async (icon) => {
       if (!icon.url) {
+        report({ stage: 'download', name: icon.keyword, nodeId: icon.id, completed: ++downloaded, total: icons.length })
         return
       }
       try {
@@ -151,8 +174,9 @@ export async function loadFigmaSource(
       }
       catch (error) {
         throwIfAborted(options.signal)
-        report(icon, 'download', error instanceof IconctlError ? error.message : 'Could not download the SVG (request failed or timed out)')
+        reportIssue(icon, 'download', error instanceof IconctlError ? error.message : 'Could not download the SVG (request failed or timed out)', error)
       }
+      report({ stage: 'download', name: icon.keyword, nodeId: icon.id, completed: ++downloaded, total: icons.length })
     }))
     throwIfAborted(options.signal)
     for (const download of downloads) {
@@ -162,6 +186,8 @@ export async function loadFigmaSource(
     }
   }
   let imported = 0
+  let attempted = 0
+  report({ stage: 'import', completed: 0, total: icons.length })
   for (const icon of icons) {
     await checkpoint(options.signal)
     if (icon.content !== undefined) {
@@ -175,13 +201,15 @@ export async function loadFigmaSource(
         imported++
       }
       catch {
-        report(icon, 'import', 'Could not parse or import the SVG')
+        reportIssue(icon, 'import', 'Could not parse or import the SVG')
         if (icon.url) {
           await client.invalidate(icon.url)
         }
       }
     }
+    report({ stage: 'import', name: icon.keyword, nodeId: icon.id, completed: ++attempted, total: icons.length })
   }
+  await checkpoint(options.signal)
   issues.sort((left, right) => (left.nodeId ?? '').localeCompare(right.nodeId ?? ''))
   if (!imported) {
     throw new IconctlSyncError(issues, 'No valid Figma icons could be imported. Check names, layers, filters and SVG downloads')
