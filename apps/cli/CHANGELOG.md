@@ -1,5 +1,18 @@
 # iconctl
 
+## 0.4.0
+
+### Minor Changes
+
+- 增加服务端同步进度、结构化安全错误、只读凭据诊断与请求超时取消配置，补充仅依赖 core 的部署指南与打包回归。
+
+- 增加 Figma 重复名称策略与持久名称映射、轻量命名入口及命名预检，保留严格默认行为并提供分组诊断。
+
+### Patch Changes
+
+- Updated dependencies:
+  - @iconctl/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
