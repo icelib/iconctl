@@ -1,5 +1,5 @@
 diff --git a/dist/commands-D1KtdxnV.mjs b/dist/commands-D1KtdxnV.mjs
-index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..24da651fea65d8d9f207bc61754291f10fa46dea 100644
+index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb76cadbc12 100644
 --- a/dist/commands-D1KtdxnV.mjs
 +++ b/dist/commands-D1KtdxnV.mjs
 @@ -12521,12 +12521,45 @@ function missingVersionTarget(message, stack) {
@@ -49,3 +49,77 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..24da651fea65d8d9f207bc61754291f1
  		let record;
  		try {
  			record = JSON.parse(line);
+@@ -12548,6 +12581,30 @@ function missingBatchVersion(error, report) {
+ }
+ //#endregion
+ //#region src/commands/release/nightly/consumer/install.ts
++const previousNightlyPublications = new WeakMap();
++async function readInstalledNightlyManifest(directory, pkg) {
++	const installed = await realpath(path$1.join(directory, "node_modules", pkg.name));
++	const relative = path$1.relative(directory, installed);
++	if (!relative || relative === ".." || relative.startsWith(`..${path$1.sep}`) || path$1.isAbsolute(relative)) throw new Error(`Nightly consumer resolved ${pkg.name} outside its isolated directory.`);
++	const manifest = JSON.parse(await readFile(path$1.join(installed, "package.json"), "utf8"));
++	return { installed, manifest };
++}
++/** Only the verified channel observed before this upload may be temporarily stale. */
++async function nightlyConsumerVisible(report, directory) {
++	let stale = false;
++	for (const pkg of report.packages) {
++		const { manifest } = await readInstalledNightlyManifest(directory, pkg);
++		if (manifest.name !== pkg.name) throw new Error(`Nightly consumer installed an unexpected package for ${pkg.name}.`);
++		if (manifest.version === pkg.version && matchesSnapshotMetadata(manifest.repoctlSnapshot, report.snapshot)) continue;
++		const previous = previousNightlyPublications.get(report)?.get(pkg.name);
++		if (manifest.version !== pkg.version && previous?.version === manifest.version && matchesSnapshotMetadata(manifest.repoctlSnapshot, previous)) {
++			stale = true;
++			continue;
++		}
++		throw new Error(`Nightly consumer installed an unexpected version or identity for ${pkg.name}.`);
++	}
++	return !stale;
++}
+ /** Retry installation only; accepted uploads and subsequent identity checks are never repeated. */
+ async function installNightlyConsumer(report, options, directory, run) {
+ 	const budget = report.provider === "npm" ? Math.min(9e5, registrySettings(options).visibilityTimeoutMs) : 6e5;
+@@ -12576,7 +12633,8 @@ async function installNightlyConsumer(report, options, directory, run) {
+ 				`--state-dir=${path$1.join(state, "state")}`,
+ 				`--config.cache-dir=${path$1.join(state, "cache")}`
+ 			], timeout);
+-			return;
++			if (report.provider !== "npm" || await nightlyConsumerVisible(report, directory)) return;
++			lastFailure = new Error("Nightly consumer resolved the verified previous channel; waiting for the confirmed batch.");
+ 		} catch (error) {
+ 			if (report.provider !== "npm" || !missingBatchVersion(error, report)) throw error;
+ 			lastFailure = error;
+@@ -12637,10 +12695,7 @@ async function verifyNightlyConsumer(report, options) {
+ 		await installNightlyConsumer(report, options, directory, run);
+ 		const validated = [];
+ 		for (const pkg of report.packages) {
+-			const installed = await realpath(path$1.join(directory, "node_modules", pkg.name));
+-			const relative = path$1.relative(directory, installed);
+-			if (!relative || relative === ".." || relative.startsWith(`..${path$1.sep}`) || path$1.isAbsolute(relative)) throw new Error(`Nightly consumer resolved ${pkg.name} outside its isolated directory.`);
+-			const manifest = JSON.parse(await readFile(path$1.join(installed, "package.json"), "utf8"));
++			const { installed, manifest } = await readInstalledNightlyManifest(directory, pkg);
+ 			if (manifest.name !== pkg.name || manifest.version !== pkg.version || !matchesSnapshotMetadata(manifest.repoctlSnapshot, report.snapshot)) throw new Error(`Nightly consumer installed an unexpected version or identity for ${pkg.name}.`);
+ 			const files = report.snapshot.checks?.find((check) => check.name === pkg.name)?.files;
+ 			if (!files) throw new Error(`Nightly consumer has no checked artifact manifest for ${pkg.name}.`);
+@@ -12804,12 +12859,20 @@ function validPublishedIdentity(metadata) {
+ async function inspectNpmNightly(report, options) {
+ 	const client = createNightlyRegistry(options);
+ 	report.latest = {};
++	const previous = new Map();
++	previousNightlyPublications.set(report, previous);
+ 	let sharedIdentity;
+ 	let complete = true;
+ 	for (const pkg of report.packages) {
+ 		const publication = await client.publication(pkg.name);
+ 		report.latest[pkg.name] = publication.latest;
+ 		const identity = validPublishedIdentity(publication.metadata);
++		if (identity) previous.set(pkg.name, {
++			version: publication.version,
++			identity: { kind: identity.kind, commit: identity.commit, buildId: identity.buildId },
++			identityKey: identity.key,
++			tag
++		});
+ 		if (!identity || identity.commit !== report.commit) {
+ 			complete = false;
+ 			continue;
