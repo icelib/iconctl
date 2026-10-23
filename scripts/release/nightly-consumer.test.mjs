@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -36,13 +37,47 @@ const consumerSource = regionNames.map((name) => {
   return parts[1].slice(0, end)
 }).join('\n')
 
-function loadConsumer({ visibilityTimeoutMs = 900_000, sleepAdvancesClock = false, removalError } = {}) {
+function compiledFunction(name) {
+  const marker = `function ${name}(`
+  assert.equal(bundle.split(marker).length, 2, `Expected exactly one ${name} function`)
+  let start = bundle.indexOf(marker)
+  if (bundle.slice(start - 6, start) === 'async ') {
+    start -= 6
+  }
+  const end = bundle.indexOf('\n}', start)
+  assert.ok(end > start, `Missing end of ${name} function`)
+  return bundle.slice(start, end + 2)
+}
+
+// Include the actual identity validator and inspection boundary as well as the
+// consumer. Registry responses and filesystem reads remain controlled fixtures.
+const publicationSource = ['snapshotMetadata', 'matchesSnapshotMetadata', 'snapshotIdentity', 'object$1', 'validPublishedIdentity', 'inspectNpmNightly']
+  .map(compiledFunction)
+  .join('\n')
+
+function loadConsumer({
+  visibilityTimeoutMs = 900_000,
+  sleepAdvancesClock = false,
+  removalError,
+  readFile = async () => { throw new Error('Unexpected manifest read') },
+  realpath = async target => target,
+  publication = async () => { throw new Error('Unexpected registry request') },
+} = {}) {
   let now = 0
   const waits = []
   const removed = []
-  const api = runInNewContext(`${consumerSource}\n({ ConsumerCommandError, consumerRunner, missingBatchVersion, installNightlyConsumer })`, {
+  const api = runInNewContext(`${consumerSource}\n${publicationSource}\n({
+    ConsumerCommandError, consumerRunner, missingBatchVersion, installNightlyConsumer,
+    previousNightlyPublications, readInstalledNightlyManifest, nightlyConsumerVisible,
+    snapshotIdentity, inspectNpmNightly
+  })`, {
     Error,
+    createHash,
     path$1: path,
+    readFile,
+    realpath,
+    tag: 'snapshot-nightly',
+    createNightlyRegistry: () => ({ publication }),
     performance: { now: () => now },
     registrySettings: () => ({ visibilityTimeoutMs }),
     // These collaborators are unrelated to parsing; no external commands or
@@ -72,11 +107,47 @@ function loadConsumer({ visibilityTimeoutMs = 900_000, sleepAdvancesClock = fals
   }
 }
 
+const parser = loadConsumer()
 const version = '0.4.1-snapshot.nightly.c8cc3cbacd518a25197593e89dbca726939032a6d.b63360f3e27b1c3a5b2209c08e1eded4d92e0e28eedbbcecc7fbe105d469bb810'
+const currentIdentity = parser.snapshotIdentity({ identity: { kind: 'nightly', commit: '8cc3cbacd518a25197593e89dbca726939032a6d', buildId: '39950614340-1' } })
+const currentPublication = { version, identity: currentIdentity.identity, identityKey: currentIdentity.key, tag: currentIdentity.tag }
+const priorIdentity = parser.snapshotIdentity({ identity: { kind: 'nightly', commit: 'a'.repeat(40), buildId: '39800000000-1' } })
+const priorPublication = {
+  version: `0.4.1-snapshot.nightly.c${priorIdentity.identity.commit}.b${priorIdentity.key}`,
+  identity: priorIdentity.identity,
+  identityKey: priorIdentity.key,
+  tag: priorIdentity.tag,
+}
 const batch = {
   provider: 'npm',
   confirmed: true,
+  commit: currentIdentity.identity.commit,
+  snapshot: { identity: currentPublication.identity, identityKey: currentPublication.identityKey, tag: currentPublication.tag },
   packages: ['@iconctl/core', 'iconctl'].map(name => ({ name, version, published: true })),
+}
+
+function installedManifest(name, publication = currentPublication) {
+  return {
+    name,
+    version: publication.version,
+    repoctlSnapshot: { ...publication.identity, identityKey: publication.identityKey, tag: publication.tag },
+  }
+}
+
+function installedBatch(publication = currentPublication) {
+  return Object.fromEntries(batch.packages.map(pkg => [pkg.name, installedManifest(pkg.name, publication)]))
+}
+
+function previousBatch() {
+  return new Map(batch.packages.map(pkg => [pkg.name, structuredClone(priorPublication)]))
+}
+
+function registryPublication(name, publication = priorPublication) {
+  return {
+    latest: '0.4.0',
+    version: publication.version,
+    metadata: { ...installedManifest(name, publication), dist: { integrity: `sha512-${'A'.repeat(86)}==` } },
+  }
 }
 const debugRecord = JSON.stringify({ level: 'debug', name: 'pnpm:scope', selected: 1 })
 // Captured fatal layout from icelib/iconctl Actions run 39950614340 (pnpm 12.6.0).
@@ -138,8 +209,6 @@ function structuredRecord(target = 'iconctl@snapshot-nightly', overrides = {}) {
 function commandError(api, { stdout = debugRecord, stderr = nativeFatal, exitCode = 1 } = {}) {
   return new api.ConsumerCommandError({ stdout, stderr, exitCode, output: `${stdout}\n${stderr}` })
 }
-
-const parser = loadConsumer()
 
 test('pnpm 12.6 mixed JSON progress and wrapped native fatal accepts only batch tags or exact versions', () => {
   for (const pkg of batch.packages) {
@@ -242,13 +311,35 @@ test('unknown stdout, spawn failures and signal exits cannot be treated as visib
   assert.equal(parser.missingBatchVersion(new Error(nativeFatal), batch), false)
 })
 
-function installation({ outputs = [{ status: 1, stderr: nativeFatal }, { status: 0 }], commandDuration = 0, provider = 'npm', ...runtime } = {}) {
-  const api = loadConsumer(runtime)
+function installation({
+  outputs = [{ status: 1, stderr: nativeFatal }, { status: 0 }],
+  manifests = [installedBatch()],
+  previous,
+  commandDuration = 0,
+  provider = 'npm',
+  ...runtime
+} = {}) {
   const calls = []
+  const reads = []
   const result = { commands: [] }
   const report = structuredClone({ ...batch, provider })
   const before = structuredClone(report)
   const directory = path.resolve('/tmp/iconctl-nightly-consumer-test')
+  const api = loadConsumer({
+    readFile: async (filename) => {
+      reads.push(filename)
+      const name = batch.packages.find(pkg => filename.endsWith(`${pkg.name}/package.json`))?.name
+      const selected = manifests[Math.min(calls.length - 1, manifests.length - 1)]?.[name]
+      if (selected === undefined) {
+        throw new Error('ENOENT: installed package manifest is missing')
+      }
+      return typeof selected === 'string' ? selected : JSON.stringify(selected)
+    },
+    ...runtime,
+  })
+  if (previous) {
+    api.previousNightlyPublications.set(report, previous)
+  }
   const options = {
     spawn: (executable, args, settings) => {
       calls.push({ executable, args: Array.from(args), settings })
@@ -260,6 +351,7 @@ function installation({ outputs = [{ status: 1, stderr: nativeFatal }, { status:
   return {
     ...api,
     calls,
+    reads,
     result,
     report,
     before,
@@ -362,4 +454,210 @@ test('cleanup failure stops retries and preserves the cleanup error', async () =
   await assert.rejects(runtime.install(), error => error === removalError)
   assert.equal(runtime.calls.length, 1)
   assert.deepEqual(runtime.waits, [])
+})
+
+test('inspection copies verified previous publications without adding them to the public report', async () => {
+  const publications = new Map(batch.packages.map(pkg => [pkg.name, registryPublication(pkg.name)]))
+  const requested = []
+  const runtime = loadConsumer({
+    publication: async (name) => {
+      requested.push(name)
+      return publications.get(name)
+    },
+  })
+  const report = structuredClone(batch)
+  assert.equal(await runtime.inspectNpmNightly(report, {}), false)
+  assert.deepEqual(requested, batch.packages.map(pkg => pkg.name))
+  assert.deepEqual(Object.keys(report).sort(), [...Object.keys(batch), 'latest'].sort())
+  assert.deepEqual(structuredClone(report.latest), { '@iconctl/core': '0.4.0', 'iconctl': '0.4.0' })
+
+  const previous = runtime.previousNightlyPublications.get(report)
+  for (const pkg of batch.packages) {
+    assert.deepEqual(structuredClone(previous.get(pkg.name)), structuredClone(priorPublication))
+    const publication = publications.get(pkg.name)
+    publication.version = '0.0.0-replaced'
+    publication.metadata.repoctlSnapshot.commit = 'b'.repeat(40)
+    publication.metadata.repoctlSnapshot.identityKey = 'c'.repeat(64)
+    publication.metadata.repoctlSnapshot.buildId = 'modified-after-inspection'
+    assert.deepEqual(structuredClone(previous.get(pkg.name)), structuredClone(priorPublication))
+  }
+  assert.equal(runtime.previousNightlyPublications.has(structuredClone(report)), false)
+})
+
+test('inspection never remembers missing or invalid previous snapshot evidence', async () => {
+  const invalidMetadata = [
+    null,
+    { ...registryPublication('iconctl').metadata, repoctlSnapshot: undefined },
+    { ...registryPublication('iconctl').metadata, dist: { integrity: 'invalid' } },
+    ...[
+      { identityKey: 'c'.repeat(64) },
+      { commit: 'not-a-commit' },
+      { kind: 'pr' },
+      { tag: 'latest' },
+      { unexpected: true },
+    ].map(overrides => ({
+      ...registryPublication('iconctl').metadata,
+      repoctlSnapshot: { ...installedManifest('iconctl', priorPublication).repoctlSnapshot, ...overrides },
+    })),
+  ]
+  for (const metadata of invalidMetadata) {
+    const runtime = loadConsumer({
+      publication: async name => name === 'iconctl'
+        ? { latest: '0.4.0', version: metadata ? priorPublication.version : null, metadata }
+        : registryPublication(name),
+    })
+    const report = structuredClone(batch)
+    assert.equal(await runtime.inspectNpmNightly(report, {}), false)
+    const previous = runtime.previousNightlyPublications.get(report)
+    assert.equal(previous.has('@iconctl/core'), true)
+    assert.equal(previous.has('iconctl'), false)
+  }
+})
+
+test('inspection preserves complete-channel detection and keeps separate reports isolated', async () => {
+  let publication = currentPublication
+  const runtime = loadConsumer({ publication: async name => registryPublication(name, publication) })
+  const first = structuredClone(batch)
+  assert.equal(await runtime.inspectNpmNightly(first, {}), true)
+  publication = priorPublication
+  const second = structuredClone(batch)
+  assert.equal(await runtime.inspectNpmNightly(second, {}), false)
+  assert.deepEqual(structuredClone(runtime.previousNightlyPublications.get(first).get('iconctl')), structuredClone(currentPublication))
+  assert.deepEqual(structuredClone(runtime.previousNightlyPublications.get(second).get('iconctl')), structuredClone(priorPublication))
+})
+
+test('inspection rejects mixed builds even when both existing packages share the current commit', async () => {
+  const identity = parser.snapshotIdentity({ identity: { ...currentPublication.identity, buildId: '39950614340-2' } })
+  const otherBuild = {
+    version: `0.4.1-snapshot.nightly.c${identity.identity.commit}.b${identity.key}`,
+    identity: identity.identity,
+    identityKey: identity.key,
+    tag: identity.tag,
+  }
+  const runtime = loadConsumer({ publication: async name => registryPublication(name, name === 'iconctl' ? otherBuild : currentPublication) })
+  assert.equal(await runtime.inspectNpmNightly(structuredClone(batch), {}), false)
+})
+
+test('a successful install of the inspected previous batch retries until the current batch is installed', async () => {
+  const runtime = installation({
+    outputs: [{ status: 0 }, { status: 0 }],
+    manifests: [installedBatch(priorPublication), installedBatch()],
+    publication: async name => registryPublication(name),
+  })
+  assert.equal(await runtime.inspectNpmNightly(runtime.report, {}), false)
+  const before = structuredClone(runtime.report)
+  await runtime.install()
+  assert.equal(runtime.calls.length, 2)
+  assert.deepEqual(runtime.result.commands.map(command => command.exitCode), [0, 0])
+  assert.deepEqual(runtime.waits, [2000])
+  assert.deepEqual(structuredClone(runtime.report), before)
+  assert.equal(runtime.reads.length, 4)
+  assert.deepEqual(runtime.removed.map(entry => entry.target), ['node_modules', 'pnpm-lock.yaml', '.pnpm-attempt-0'].map(name => path.join(runtime.directory, name)))
+  for (const [attempt, call] of runtime.calls.entries()) {
+    assert.equal(call.executable, 'pnpm')
+    assert.equal(call.args.filter(arg => !arg.startsWith('--')).join(' '), 'install')
+    assert.ok(call.args.includes(`--store-dir=${path.join(runtime.directory, `.pnpm-attempt-${attempt}`, 'store')}`))
+  }
+})
+
+test('mixed current core and verified previous CLI cannot pass until both packages are current', async () => {
+  const mixed = { ...installedBatch(), iconctl: installedManifest('iconctl', priorPublication) }
+  const runtime = installation({ outputs: [{ status: 0 }], manifests: [mixed, installedBatch()], previous: previousBatch() })
+  await runtime.install()
+  assert.equal(runtime.calls.length, 2)
+  assert.equal(runtime.reads.length, 4)
+  assert.deepEqual(runtime.waits, [2000])
+  assert.deepEqual(runtime.report, runtime.before)
+})
+
+test('missing-version and successful stale installations share one retry budget and fresh state sequence', async () => {
+  const runtime = installation({
+    outputs: [{ status: 1, stderr: nativeFatal }, { status: 0 }, { status: 0 }],
+    manifests: [installedBatch(), installedBatch(priorPublication), installedBatch()],
+    previous: previousBatch(),
+    visibilityTimeoutMs: 7000,
+  })
+  await runtime.install()
+  assert.deepEqual(runtime.calls.map(call => call.settings.timeout), [7000, 5000, 1000])
+  assert.deepEqual(runtime.waits, [2000, 4000])
+  assert.deepEqual(runtime.removed.map(entry => path.basename(entry.target)), [
+    'node_modules',
+    'pnpm-lock.yaml',
+    '.pnpm-attempt-0',
+    'node_modules',
+    'pnpm-lock.yaml',
+    '.pnpm-attempt-1',
+  ])
+})
+
+test('a persistently stale successful install stops at the original visibility deadline', async () => {
+  const runtime = installation({
+    outputs: [{ status: 0 }],
+    manifests: [installedBatch(priorPublication)],
+    previous: previousBatch(),
+    visibilityTimeoutMs: 7000,
+  })
+  await assert.rejects(runtime.install(), /visibility timed out/u)
+  assert.deepEqual(runtime.result.commands.map(command => command.exitCode), [0, 0, 0])
+  assert.deepEqual(runtime.calls.map(call => call.settings.timeout), [7000, 5000, 1000])
+  assert.deepEqual(runtime.waits, [2000, 4000, 1000])
+  assert.equal(runtime.removed.length, 9)
+  assert.deepEqual(runtime.report, runtime.before)
+})
+
+test('successful installs reject unknown versions, identity conflicts, package mismatches and invalid manifests immediately', async () => {
+  const current = installedManifest('iconctl')
+  const prior = installedManifest('iconctl', priorPublication)
+  const conflicts = [
+    { ...current, version: '0.4.1-unrecognized-snapshot' },
+    { ...current, version: prior.version },
+    { ...prior, version: current.version },
+    { ...current, name: 'another-package' },
+    { ...current, repoctlSnapshot: undefined },
+    { ...current, repoctlSnapshot: { ...current.repoctlSnapshot, extra: true } },
+    { ...prior, repoctlSnapshot: { ...prior.repoctlSnapshot, tag: 'latest' } },
+    { ...prior, repoctlSnapshot: { ...prior.repoctlSnapshot, identityKey: 'b'.repeat(64) } },
+    '{malformed-json',
+    undefined,
+  ]
+  for (const manifest of conflicts) {
+    // A recognized stale package earlier in the batch must not hide a later
+    // conflicting package by returning from the visibility check too early.
+    const manifests = { ...installedBatch(priorPublication), iconctl: manifest }
+    const runtime = installation({ outputs: [{ status: 0 }], manifests: [manifests], previous: previousBatch() })
+    await assert.rejects(runtime.install())
+    assert.equal(runtime.calls.length, 1)
+    assert.deepEqual(runtime.waits, [])
+    assert.deepEqual(runtime.removed, [])
+  }
+})
+
+test('a previous version requires evidence for that exact package and report', async () => {
+  for (const previous of [undefined, new Map(), new Map([['@iconctl/core', priorPublication]])]) {
+    const runtime = installation({
+      outputs: [{ status: 0 }],
+      manifests: [{ ...installedBatch(), iconctl: installedManifest('iconctl', priorPublication) }],
+      previous,
+    })
+    runtime.previousNightlyPublications.set(structuredClone(runtime.report), previousBatch())
+    await assert.rejects(runtime.install(), /unexpected version or identity/u)
+    assert.equal(runtime.calls.length, 1)
+    assert.deepEqual(runtime.waits, [])
+  }
+})
+
+test('installed symlinks cannot escape the isolated consumer or resolve to its root', async () => {
+  for (const escaped of [
+    path.resolve('/tmp/iconctl-nightly-consumer-test'),
+    path.resolve('/tmp'),
+    path.resolve('/tmp/iconctl-nightly-consumer-test-sibling/node_modules/iconctl'),
+    path.resolve('/elsewhere/node_modules/iconctl'),
+  ]) {
+    const runtime = installation({ outputs: [{ status: 0 }], realpath: async () => escaped, previous: previousBatch() })
+    await assert.rejects(runtime.install(), /outside its isolated directory/u)
+    assert.equal(runtime.calls.length, 1)
+    assert.deepEqual(runtime.reads, [])
+    assert.deepEqual(runtime.waits, [])
+    assert.deepEqual(runtime.removed, [])
+  }
 })
