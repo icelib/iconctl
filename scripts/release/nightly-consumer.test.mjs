@@ -94,6 +94,30 @@ ${' '.repeat(8)}
 
 `
 
+// Captured from an isolated pnpm 12.6.0 install after snapshot-nightly existed.
+// Substitute the confirmed batch version for the deliberately absent probe
+// version; preserve the actual wrapped dates, help version and bullet layout.
+const wrappedCoreTarget = `@iconctl/core@${version.slice(0, 50)}\n      ${version.slice(50)}`
+const nativeOtherReleasesFatal = `Error: ERR_PNPM_NO_MATCHING_VERSION
+
+  × installing dependencies
+  ╰─▶ Failed to resolve dependency tree: No matching version found for
+      ${wrappedCoreTarget} while
+      fetching it from https://registry.npmjs.org/
+  help: The latest release of @iconctl/core is "0.4.0". Published at
+        10/17/2026
+${' '.repeat(8)}
+        Other releases are:
+          * snapshot-nightly: 0.4.1-
+        snapshot.nightly.c8cc3cbacd518a25197593e89dbca726939032a6d.b63360f3e27
+        b1c3a5b2209c08e1eded4d92e0e28eedbbcecc7fbe105d469bb810 published at
+        10/23/2026 8:12:51 PM
+${' '.repeat(8)}
+        If you need the full list of all 7 published versions run "pnpm view
+        @iconctl/core versions".
+
+`
+
 function nativeOutput(target = 'iconctl@snapshot-nightly') {
   const name = target.slice(0, target.lastIndexOf('@'))
   return nativeFatal
@@ -133,6 +157,15 @@ test('pnpm 12.6 mixed JSON progress and wrapped native fatal accepts only batch 
   assert.equal(parser.missingBatchVersion(commandError(parser, { stderr: noHelp }), batch), true)
 })
 
+test('native Other releases help accepts wrapped exact versions and publication dates', () => {
+  for (const stderr of [
+    nativeOtherReleasesFatal,
+    nativeOtherReleasesFatal.replace(wrappedCoreTarget, '@iconctl/core@snapshot-nightly'),
+  ]) {
+    assert.equal(parser.missingBatchVersion(commandError(parser, { stderr: `${debugRecord}\n${stderr}` }), batch), true)
+  }
+})
+
 test('existing NDJSON missing-version records retain strict top-level and nested support', () => {
   for (const pkg of batch.packages) {
     for (const suffix of ['snapshot-nightly', pkg.version]) {
@@ -163,6 +196,15 @@ const rejectedOutputs = [
   ['unrecognized suffix', `${nativeFatal}unexpected output\n`],
   ['additional indented cause', nativeFatal.replace('  help:', '      caused by authentication failure\n  help:')],
   ['unknown help', nativeFatal.replace('  help:', '  help: another failure\n        ')],
+  ['malformed other-release tag', nativeOtherReleasesFatal.replace('* snapshot-nightly:', '* invalid tag:')],
+  ['malformed other-release version', nativeOtherReleasesFatal.replace('snapshot-nightly: 0.4.1-', 'snapshot-nightly: not-a-version-')],
+  ['malformed other-release date', nativeOtherReleasesFatal.replace('10/23/2026 8:12:51 PM', 'unknown-date')],
+  ['malformed other-release bullet', nativeOtherReleasesFatal.replace('* snapshot-nightly:', '- snapshot-nightly:')],
+  ['other-release extra cause', nativeOtherReleasesFatal.replace('10/23/2026 8:12:51 PM', '10/23/2026 8:12:51 PM\n        caused by authentication failure')],
+  ['other-release indented fatal', nativeOtherReleasesFatal.replace('Other releases are:', 'Other releases are:\n        Error: ERR_PNPM_FETCH_401')],
+  ['other-release unindented fatal', nativeOtherReleasesFatal.replace('Other releases are:', 'Other releases are:\nError: ERR_PNPM_FETCH_401')],
+  ['other-release appended fatal', `${nativeOtherReleasesFatal}Error: ERR_PNPM_TARBALL_INTEGRITY\n`],
+  ['other-release unrelated exact target', nativeOtherReleasesFatal.replace(wrappedCoreTarget, '@iconctl/core@0.0.0-unconfirmed')],
   ['wrong help package', nativeFatal.replace('release of iconctl', 'release of another-package')],
   ['wrong help command', nativeFatal.replace('iconctl versions', 'another-package versions')],
   ['second missing-version fatal', `${nativeFatal}${nativeFatal}`],
@@ -249,6 +291,14 @@ test('visibility retry runs install only, preserves accepted uploads and isolate
     options: { recursive: true, force: true },
   })))
   assert.deepEqual(runtime.result.commands.map(command => command.exitCode), [1, 0])
+})
+
+test('Other releases help still retries installation when the exact core version is not yet visible', async () => {
+  const runtime = installation({ outputs: [{ status: 1, stderr: nativeOtherReleasesFatal }, { status: 0 }] })
+  await runtime.install()
+  assert.equal(runtime.calls.length, 2)
+  assert.deepEqual(runtime.waits, [2000])
+  assert.deepEqual(runtime.report, runtime.before)
 })
 
 test('unrelated, authentication, integrity, timeout and signal failures stop after one install', async () => {
