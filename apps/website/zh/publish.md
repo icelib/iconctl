@@ -50,14 +50,16 @@ merge 之后，开发要么 **git pull**（JSON 在应用仓），要么 **`pnpm
 
 ## 这个仓库
 
-`packages/icons`（`@iconctl/icons`）是完整示例。源是 `raw/` 里的本地 SVG，也可以加 iconfont Symbol URL。sync 会写出 `icons.json`、`svg/`、`src/icon-names.ts`、`preview.html` 和 `CHANGELOG.md`。[演示](/zh/demo)页会预览这个包和 changelog。
+`packages/icons`（`@iconctl/icons`）是供本站通过 workspace 本地引用的私有示例包。源是 `raw/` 里的本地 SVG，也可以加 iconfont Symbol URL。sync 会写出 `icons.json`、`svg/`、`src/icon-names.ts`、`preview.html` 和 `CHANGELOG.md`。[演示](/zh/demo)页会展示图标和 changelog。该包不参与 npm 正式版和 nightly 发布。
 
 ```bash
 pnpm --filter @iconctl/icons sync
 pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.js
 ```
 
-`.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR。`workflow_dispatch` 可以带 iconfont URL。Figma 插件可以指向 `icelib/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。
+`.github/workflows/iconctl.yml` 监听 `iconctl-publish` 和 `workflow_dispatch`，然后只把 `packages/icons` 开成 PR，不生成发布意图。`workflow_dispatch` 可以带 iconfont URL。Figma 插件可以指向 `icelib/iconctl` 走同一条 event（workflow 仍然不会请求 Figma）。
+
+合并 PR 后，文档预览站会更新。正式网站随下一次 `@iconctl/core` 或 `iconctl` 稳定版本，部署包含示例和控制台的完整冻结源码快照。
 
 ## 私有线上控制台
 

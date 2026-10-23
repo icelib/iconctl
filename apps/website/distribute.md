@@ -79,21 +79,23 @@ import icons from '@iconify-json/brand/icons.json'
 
 Same `iconSets` / `collections` wiring as above. `clean: false` keeps sibling files (README, changelog) and custom `package.json` fields. Generated entry points and explicitly configured `jsonPackage.package` values take precedence over existing fields.
 
-### Workspace / npm package with preview
+### Private workspace demo and your own npm package
 
-`packages/icons` (`@iconctl/icons`) is this repo’s example: JSON + types + `preview.html` + `CHANGELOG.md`. After publish:
+`packages/icons` (`@iconctl/icons`) is this repository's private workspace demo: JSON + types + `preview.html` + `CHANGELOG.md`. The website consumes it through `workspace:*`. The sync workflow opens a PR without release intent; merging updates the documentation preview. The formal site includes the demo in the complete frozen source snapshot of the next core or CLI stable release.
+
+For your own installable icon package, use a name you control, such as `@acme/icons`. Configure its root export to expose `icons.json`, then version and publish it from your repository. Consumers can install and import your published package:
 
 ```bash
-pnpm add @iconctl/icons
+pnpm add @acme/icons
 ```
 
 ```ts
-import icons from '@iconctl/icons'
+import icons from '@acme/icons'
 ```
 
-Class: `i-ice-arrow-left`.
+With the `brand` prefix used above, the class is `i-brand-arrow-left`.
 
-In a changesets monorepo, the icon sync PR should include a patch changeset so release can publish. This repo’s `.github/workflows/iconctl.yml` does that. GitHub Packages is the same package with a different `publishConfig.registry`.
+For a publishable package in a changesets monorepo, include a patch changeset in the icon sync PR so release can publish it. Private workspace demos do not need package release intent. GitHub Packages uses a different `publishConfig.registry`.
 
 ## GitHub Action
 
@@ -114,7 +116,7 @@ concurrency:
     pr: true
 ```
 
-`examples/github-publish.yml` is the copy-paste workflow. `paths` limits `git add`. `changeset: true` writes a patch changeset when icons change.
+`examples/github-publish.yml` is the copy-paste workflow. `paths` limits `git add`. For your own publishable package, `changeset: true` writes a patch changeset when icons change.
 
 Personal tokens remain supported through the `token` input using the `FIGMA_TOKEN` secret and take precedence over OAuth inputs, but require manual replacement. Use separate OAuth apps or accounts for CI and local development; never cache or upload credential files.
 

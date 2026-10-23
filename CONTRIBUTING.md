@@ -18,10 +18,15 @@ Console changes also require `pnpm --filter @iconctl/console test:build`,
 `pnpm --filter @iconctl/console test:worker`, and the Chromium E2E suite.
 Website changes require `pnpm --filter @iconctl/website test:channels`.
 
-Public packages are `@iconctl/core`, `iconctl` (in `apps/cli`), and
-`@iconctl/icons`. Create release intent with `pnpm change` for affected public
-packages. Private applications and documentation do not need a package bump.
-Use Conventional Commits.
+Public packages are `@iconctl/core` and `iconctl` (in `apps/cli`). Create release
+intent with `pnpm change` for affected public packages. `@iconctl/icons` is a
+private workspace demo consumed by the documentation. Its sync workflow opens
+a PR without release intent. Private applications, documentation and the icon
+demo do not need a package bump. Use Conventional Commits.
+
+Main updates deploy the documentation preview. The complete formal website,
+including the icon demo and console, uses the frozen source snapshot of the
+next core or CLI stable release.
 
 Same-repository pull requests receive an automated patch intent for uncovered
 public packages. The `release:minor` and `release:major` labels override that

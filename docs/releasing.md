@@ -5,10 +5,14 @@ All publication workflows belong to `icelib/iconctl`.
 
 ## Stable packages and nightly
 
-Create package release intent with `pnpm change`. The Release workflow prepares
-a version PR, then publishes the merged version through its verified stages.
-Keep the existing changeset ledger and pending intents. Package versions are
-never edited manually.
+The public packages are `@iconctl/core` and `iconctl` (the CLI). Create their
+release intent with `pnpm change`. The Release workflow prepares a version PR,
+then publishes the merged version through its verified stages. Keep the
+existing changeset ledger. Package versions are never edited manually.
+
+`@iconctl/icons` is a private workspace demo used by the documentation gallery.
+It stays available for local sync and imports and is excluded from stable and
+nightly publication. Its sync workflow opens a PR without release intent.
 
 Nightly runs from main every day at 02:00 Asia/Shanghai (18:00 UTC). To run it
 manually, select **Release → Run workflow → main → mode: nightly**. Enable
@@ -24,8 +28,8 @@ CLI uses the core package from the same snapshot. repoctl checks quality,
 packed artifacts and independent consumers before reporting success. Stable
 publication also runs the existing best-effort npmmirror synchronization hook.
 
-Configure npm Trusted Publisher separately for `iconctl`, `@iconctl/core`, and
-`@iconctl/icons`: GitHub owner `icelib`, repository `iconctl`, workflow filename
+Configure npm Trusted Publisher separately for `iconctl` and `@iconctl/core`:
+GitHub owner `icelib`, repository `iconctl`, workflow filename
 `release.yml`, with no environment restriction. Enable direct publishing for
 this publisher. These packages already exist; no bootstrap publication is
 required. Run **Release → mode: oidc-audit** before the first nightly. OIDC token
@@ -48,8 +52,11 @@ site. Preview has no production DO/R2 bindings or API.
 The Release workflow deploys the **complete formal site** only after a stable
 release completes. Its Worker remains `iconctl-docs`, serving
 https://iconctl.icebreaker.top with `/app` and `/api`. It builds the frozen
-release commit and pins the executor to that same commit. Private console
-changes wait for the next covered package release.
+release commit and pins the executor to that same commit. Release coverage
+tracks `@iconctl/core` and `iconctl`; the complete source snapshot also includes
+the website, private console and private icon demo. Changes to those parts
+reach the formal site with the next core or CLI stable release. Demo changes
+appear on the preview after merging into main.
 
 Use these GitHub environments, restricted to the `main` branch. The stable
 environment requires approval from `sonofmagic` before deployment:
