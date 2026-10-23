@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -17,6 +17,7 @@ import { gzipSync } from 'node:zlib'
 const require = createRequire(import.meta.url)
 const repoctlEntry = require.resolve('repoctl')
 const implementationEntry = createRequire(repoctlEntry).resolve('@icebreakers/monorepo')
+const { parse: parseYaml, stringify } = createRequire(implementationEntry)('yaml')
 const dist = path.dirname(implementationEntry)
 for (const entry of [repoctlEntry, implementationEntry]) {
   assert.equal(JSON.parse(readFileSync(path.resolve(entry, '../../package.json'), 'utf8')).version, '6.0.1')
@@ -56,6 +57,7 @@ function loadConsumer() {
     realpath,
     rm,
     writeFile,
+    stringify,
     performance,
     tag: 'snapshot-nightly',
     registrySettings: () => ({ visibilityTimeoutMs: 30_000 }),
@@ -109,6 +111,7 @@ function catalogFor(previous, current) {
   const old = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
   const recent = new Date(Date.now() - 60 * 1000).toISOString()
   const thirdParty = 'repoctl-nightly-age-fixture'
+  const recentOnly = 'repoctl-nightly-recent-only-fixture'
   const entries = [
     { name: '@iconctl/core', previous: previous.version, current: current.version, versions: [
       [manifest('@iconctl/core', previous), old],
@@ -118,12 +121,17 @@ function catalogFor(previous, current) {
       [{ name: '@iconctl/core', version: '9.1.0' }, recent],
     ] },
     { name: 'iconctl', previous: previous.version, current: current.version, versions: [
-      [manifest('iconctl', previous, { '@iconctl/core': previous.version, [thirdParty]: '^1.0.0' }), old],
-      [manifest('iconctl', current, { '@iconctl/core': current.version, [thirdParty]: '^1.0.0' }), recent],
+      [manifest('iconctl', previous, { '@iconctl/core': previous.version, [thirdParty]: '^1.0.0', [recentOnly]: '^1.0.0' }), old],
+      [manifest('iconctl', current, { '@iconctl/core': current.version, [thirdParty]: '^1.0.0', [recentOnly]: '^1.0.0' }), recent],
     ] },
     { name: thirdParty, previous: '1.0.0', current: '1.1.0', versions: [
       [{ name: thirdParty, version: '1.0.0', dependencies: { '@iconctl/core': '^9.0.0' } }, old],
       [{ name: thirdParty, version: '1.1.0', dependencies: { '@iconctl/core': '^9.0.0' } }, recent],
+    ] },
+    // pnpm has no mature fallback, so its native writer must append an exact
+    // age exception. This exercises the writable YAML boundary on every install.
+    { name: recentOnly, previous: '1.0.0', current: '1.0.0', versions: [
+      [{ name: recentOnly, version: '1.0.0' }, recent],
     ] },
   ]
   return entries.map((entry, packageIndex) => ({
@@ -267,13 +275,14 @@ function consumerRun(api, directory, registry, onInstall = () => {}) {
   const options = {
     spawn: (executable, args, settings) => {
       const localArgs = Array.from(args, arg => arg === '--registry=https://registry.npmjs.org/' ? `--registry=${registry.origin}/` : arg)
+      const workspaceBefore = args.includes('install') ? parseYaml(readFileSync(path.join(directory, 'pnpm-workspace.yaml'), 'utf8')) : undefined
       const completed = spawnSync(executable, localArgs, {
         ...settings,
         timeout: Math.min(settings.timeout, 20_000),
         maxBuffer: 1024 * 1024,
       })
       if (args.includes('install')) {
-        onInstall(completed)
+        onInstall(completed, workspaceBefore)
       }
       return completed
     },
@@ -295,6 +304,8 @@ async function assertInstalled(directory, report) {
   assert.equal(JSON.parse(await readFile(thirdPartyPath, 'utf8')).version, '1.0.0', 'Third-party recent releases must remain age protected')
   const transitiveCore = createRequire(thirdPartyPath).resolve('@iconctl/core/package.json')
   assert.equal(JSON.parse(await readFile(transitiveCore, 'utf8')).version, '9.0.0', 'The batch exception must not exempt other versions of the same package')
+  const recentOnly = fromCLI.resolve('repoctl-nightly-recent-only-fixture/package.json')
+  assert.equal(JSON.parse(await readFile(recentOnly, 'utf8')).version, '1.0.0', 'The native writer must allow a dependency with no mature candidate')
 }
 
 test('real pnpm 12.6 respects exact nightly exceptions and refreshes retry metadata', { timeout: 90_000 }, async (t) => {
@@ -316,7 +327,7 @@ test('real pnpm 12.6 respects exact nightly exceptions and refreshes retry metad
       const report = reportFor()
       report.packages = report.packages.filter(pkg => pkg.name === 'iconctl')
       const directory = await createConsumer(root, 'default-age', api, report)
-      await writeFile(path.join(directory, 'pnpm-workspace.yaml'), `${JSON.stringify({ packages: [], cacheDir: path.join(directory, 'cache') })}\n`)
+      await writeFile(path.join(directory, 'pnpm-workspace.yaml'), stringify({ packages: [], cacheDir: path.join(directory, 'cache') }, { collectionStyle: 'block', lineWidth: 0 }))
       const { run } = consumerRun(api, directory, registry)
       assert.equal(await run('pnpm', [...api.consumerPnpmOptions, '--version']), '12.6.0')
       await run('pnpm', [...api.consumerPnpmOptions, 'install', '--ignore-scripts', '--registry=https://registry.npmjs.org/', `--store-dir=${path.join(directory, 'store')}`, `--state-dir=${path.join(directory, 'state')}`])
@@ -332,6 +343,8 @@ test('real pnpm 12.6 respects exact nightly exceptions and refreshes retry metad
       await api.installNightlyConsumer(report, options, directory, run)
       assert.equal(result.commands.length, 1)
       assert.equal(result.commands[0].exitCode, 0)
+      const workspace = parseYaml(await readFile(path.join(directory, 'pnpm-workspace.yaml'), 'utf8'))
+      assert.deepEqual(workspace.minimumReleaseAgeExclude, [...report.packages.map(pkg => `${pkg.name}@${pkg.version}`), 'repoctl-nightly-recent-only-fixture@1.0.0'])
       await assertInstalled(directory, report)
     })
 
@@ -341,28 +354,33 @@ test('real pnpm 12.6 respects exact nightly exceptions and refreshes retry metad
       const report = reportFor()
       const directory = await createConsumer(root, 'retry', api, report)
       const expectedWorkspace = { packages: [], minimumReleaseAgeExclude: report.packages.map(pkg => `${pkg.name}@${pkg.version}`) }
-      assert.deepEqual(JSON.parse(api.nightlyConsumerWorkspace(report)), expectedWorkspace)
+      assert.deepEqual(parseYaml(api.nightlyConsumerWorkspace(report)), expectedWorkspace)
       api.previousNightlyPublications.set(report, new Map(report.packages.map(pkg => [pkg.name, previous])))
       let installs = 0
-      const { run, options, result } = consumerRun(api, directory, registry, (completed) => {
+      const { run, options, result } = consumerRun(api, directory, registry, (completed, workspaceBefore) => {
+        const expectedBefore = {
+          ...expectedWorkspace,
+          cacheDir: path.join(directory, `.pnpm-attempt-${installs}/cache`),
+        }
+        assert.deepEqual(workspaceBefore, expectedBefore, 'Every attempt must remove exceptions persisted by the previous installation')
         installs += 1
         assert.equal(completed.status, 0, completed.stderr)
+        const workspaceAfter = parseYaml(readFileSync(path.join(directory, 'pnpm-workspace.yaml'), 'utf8'))
+        assert.deepEqual(workspaceAfter, {
+          ...expectedBefore,
+          minimumReleaseAgeExclude: [...expectedWorkspace.minimumReleaseAgeExclude, 'repoctl-nightly-recent-only-fixture@1.0.0'],
+        }, 'Real pnpm must append its newly resolved dependency exception successfully on both attempts')
         if (installs === 1) {
           registry.setPhase(1)
-          // Emulate mutable installer state left by a previous attempt. The next
-          // production install must regenerate the exact confirmed-batch policy.
-          writeFileSync(path.join(directory, 'pnpm-workspace.yaml'), `${JSON.stringify({
-            ...expectedWorkspace,
-            minimumReleaseAgeExclude: [...expectedWorkspace.minimumReleaseAgeExclude, 'repoctl-nightly-age-fixture@1.1.0', '@iconctl/core@9.1.0'],
-          })}\n`)
         }
       })
       await api.installNightlyConsumer(report, options, directory, run)
       assert.equal(installs, 2)
       assert.deepEqual(result.commands.map(command => command.exitCode), [0, 0])
-      assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'pnpm-workspace.yaml'), 'utf8')), {
+      assert.deepEqual(parseYaml(await readFile(path.join(directory, 'pnpm-workspace.yaml'), 'utf8')), {
         ...expectedWorkspace,
         cacheDir: path.join(directory, '.pnpm-attempt-1/cache'),
+        minimumReleaseAgeExclude: [...expectedWorkspace.minimumReleaseAgeExclude, 'repoctl-nightly-recent-only-fixture@1.0.0'],
       })
       await assertInstalled(directory, report)
       const requests = (await registry.requests()).slice(requestOffset)
