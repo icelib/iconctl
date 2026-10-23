@@ -119,14 +119,14 @@ describe('workspace build-cache inputs', () => {
   })
 
   it('isolates preview and stable build caches for the same source', async () => {
-    const originalChannel = env.REPO_DOCS_CHANNEL
-    const originalUrl = env.REPO_DOCS_URL
+    const originalChannel = env['REPO_DOCS_CHANNEL']
+    const originalUrl = env['REPO_DOCS_URL']
     try {
-      env.REPO_DOCS_CHANNEL = 'preview'
-      env.REPO_DOCS_URL = 'https://preview.example.com'
+      env['REPO_DOCS_CHANNEL'] = 'preview'
+      env['REPO_DOCS_URL'] = 'https://preview.example.com'
       const preview = await hashes()
-      env.REPO_DOCS_CHANNEL = 'stable'
-      env.REPO_DOCS_URL = 'https://iconctl.icebreaker.top'
+      env['REPO_DOCS_CHANNEL'] = 'stable'
+      env['REPO_DOCS_URL'] = 'https://iconctl.icebreaker.top'
       const stable = await hashes()
       for (const task of ['@iconctl/website#build', '@iconctl/console#build']) {
         expect(preview[task], task).toBeTruthy()
@@ -137,16 +137,16 @@ describe('workspace build-cache inputs', () => {
     }
     finally {
       if (originalChannel === undefined) {
-        delete env.REPO_DOCS_CHANNEL
+        delete env['REPO_DOCS_CHANNEL']
       }
       else {
-        env.REPO_DOCS_CHANNEL = originalChannel
+        env['REPO_DOCS_CHANNEL'] = originalChannel
       }
       if (originalUrl === undefined) {
-        delete env.REPO_DOCS_URL
+        delete env['REPO_DOCS_URL']
       }
       else {
-        env.REPO_DOCS_URL = originalUrl
+        env['REPO_DOCS_URL'] = originalUrl
       }
     }
   })
