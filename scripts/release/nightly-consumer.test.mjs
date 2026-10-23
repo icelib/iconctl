@@ -66,15 +66,19 @@ function loadConsumer({
   let now = 0
   const waits = []
   const removed = []
+  const written = []
   const api = runInNewContext(`${consumerSource}\n${publicationSource}\n({
     ConsumerCommandError, consumerRunner, missingBatchVersion, installNightlyConsumer,
-    previousNightlyPublications, readInstalledNightlyManifest, nightlyConsumerVisible,
+    previousNightlyPublications, readInstalledNightlyManifest, nightlyConsumerVisible, nightlyConsumerWorkspace,
     snapshotIdentity, inspectNpmNightly
   })`, {
     Error,
     createHash,
     path$1: path,
     readFile,
+    writeFile: async (target, contents) => {
+      written.push({ target, contents })
+    },
     realpath,
     tag: 'snapshot-nightly',
     createNightlyRegistry: () => ({ publication }),
@@ -101,6 +105,7 @@ function loadConsumer({
     ...api,
     waits,
     removed,
+    written,
     advance: (duration) => {
       now += duration
     },
@@ -373,12 +378,21 @@ test('visibility retry runs install only, preserves accepted uploads and isolate
       assert.ok(call.args.includes(flag), `Missing installation safeguard: ${flag}`)
     }
     const state = path.join(runtime.directory, `.pnpm-attempt-${attempt}`)
-    for (const [flag, child] of [['--store-dir', 'store'], ['--state-dir', 'state'], ['--config.cache-dir', 'cache']]) {
+    for (const [flag, child] of [['--store-dir', 'store'], ['--state-dir', 'state']]) {
       assert.ok(call.args.includes(`${flag}=${path.join(state, child)}`))
     }
     assert.equal(call.settings.cwd, runtime.directory)
     assert.equal(call.settings.shell, false)
+    assert.deepEqual(runtime.written[attempt], {
+      target: path.join(runtime.directory, 'pnpm-workspace.yaml'),
+      contents: `${JSON.stringify({
+        packages: [],
+        minimumReleaseAgeExclude: batch.packages.map(pkg => `${pkg.name}@${pkg.version}`),
+        cacheDir: path.join(state, 'cache'),
+      }, null, 2)}\n`,
+    })
   }
+  assert.equal(runtime.written.length, runtime.calls.length)
   assert.deepEqual(runtime.removed, ['node_modules', 'pnpm-lock.yaml', '.pnpm-attempt-0'].map(name => ({
     target: path.join(runtime.directory, name),
     options: { recursive: true, force: true },
