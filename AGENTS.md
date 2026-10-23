@@ -22,6 +22,29 @@ pnpm exec repo new <name> --template <key>
 
 Preview without writing files: `pnpm exec repo new <name> --template <key> --dry-run`.
 
+## Create a new project
+
+If the user asks you to create a new business project, do not add it inside an
+existing unrelated repository. Use a new or empty directory outside the repoctl
+source checkout.
+
+Node.js 25+ does not bundle Corepack. On those versions, or if `corepack` is
+unavailable, first run `npm install --global corepack@0.36.0`. Then run
+`corepack enable` before the first pnpm command. After entering the generated
+project, run `corepack enable` again as shown below so pnpm uses that workspace's
+`packageManager` field.
+
+Start a new workspace with:
+
+```bash
+pnpm create repoctl@latest <dir> -- --yes --templates <keys>
+cd <dir>
+corepack enable
+pnpm install
+pnpm exec repo init
+pnpm exec repo doctor
+```
+
 ## Verify
 
 ```bash
@@ -37,6 +60,10 @@ pnpm exec repo check
 
 ## Requirements
 
-- Node.js 22.13 or newer
+- Node.js 24.22.1 recommended (`.nvmrc`); CI also verifies 22.23.4
 - pnpm
 - CLI output is English by default; `--lang zh-CN` or `REPOCTL_LANG=zh-CN` selects Simplified Chinese
+
+## Git hooks
+
+Lefthook reads `lefthook.yml`. Keep pre-commit jobs sequential: ESLint fixes, Stylelint fixes (including Vue style blocks), then one `repo verify staged-typecheck` call. Use `stage_fixed: true` for fixes and `glob_matcher: doublestar` for root and nested files. Do not call `repo verify pre-commit` from inside the Lefthook configuration.

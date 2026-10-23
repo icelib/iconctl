@@ -7,6 +7,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { build } from 'tsdown'
+import ts from 'typescript'
 
 const exec = promisify(execFile)
 const core = fileURLToPath(new URL('..', import.meta.url))
@@ -59,6 +60,17 @@ try {
   }
   const cliTarball = await pack(cli, join(fixture, 'cli-package'))
   const consumer = await install('fixed', [coreTarball, cliTarball])
+  // Modern TypeScript permits require(ESM), so compilation alone does not catch
+  // a shared types condition shadowing the CommonJS declaration branch.
+  for (const [extension, mode] of [['mts', ts.ModuleKind.ESNext], ['cts', ts.ModuleKind.CommonJS]]) {
+    for (const specifier of ['@iconctl/core', '@iconctl/core/naming', '@iconctl/core/figma/oauth', 'iconctl']) {
+      const resolved = ts.resolveModuleName(specifier, join(consumer, `export-probe.${extension}`), {
+        module: ts.ModuleKind.NodeNext,
+        moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      }, ts.sys, undefined, undefined, mode).resolvedModule
+      assert(resolved?.resolvedFileName.endsWith(`.d.${extension}`), `${specifier} must resolve to .d.${extension} for a .${extension} consumer; got ${resolved?.resolvedFileName}`)
+    }
+  }
   const typeProbe = `import { watch, IconctlAbortError, defineConfig, resolveConfig, exportOutputs, sync, type IconctlOutputConfig, type SyncResult, type WatchEvent } from '@iconctl/core'
 import { renderIconNameTypes, writeIconNameTypes, type IconNameTypesSummary, type WriteIconNameTypesOptions } from '@iconctl/core'
 import { renderIconNameTypes as renderTypes, writeIconNameTypes as writeTypes, type IconNameTypesSummary as TypesSummary, type WriteIconNameTypesOptions as TypesOptions } from 'iconctl'

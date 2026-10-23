@@ -6,6 +6,12 @@
     ":semanticCommitTypeAll(chore)"
   ],
   "rangeStrategy": "bump",
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "gitIgnoredAuthors": [
+    "41898282+github-actions[bot]@users.noreply.github.com",
+    "335527025+auto-upgrade-deps[bot]@users.noreply.github.com"
+  ],
   "npm": {
     "commitMessageTopic": "{{prettyDepType}} {{depName}}"
   },
@@ -33,6 +39,17 @@
       ],
       "groupName": "Cloudflare Workers tooling",
       "groupSlug": "cloudflare-workers-tooling"
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@cloudflare/nimbus-docs"
+      ],
+      "groupName": "Nimbus documentation engine",
+      "groupSlug": "nimbus-documentation-engine",
+      "automerge": false
     }
   ]
 }

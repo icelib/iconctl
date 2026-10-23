@@ -46,3 +46,11 @@ config.ts.timestamp-*.mjs
 preview.html
 !packages/icons/preview.html
 !examples/app-json/preview.html
+
+# release diagnostics (retained as CI artifacts)
+/pnpm-publish-summary.json
+/repoctl-publish-progress.json
+/pnpm-publish-summary.json.*.tmp
+/repoctl-publish-progress.json.*.tmp
+/repoctl-release-progress.json
+/repoctl-ci-progress.json

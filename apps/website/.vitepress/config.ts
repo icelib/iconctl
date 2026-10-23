@@ -1,23 +1,37 @@
+import type { DefaultTheme, HeadConfig } from 'vitepress'
+import { writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import process from 'node:process'
 import Tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vitepress'
+import { defineConfigWithTheme } from 'vitepress'
 import { createNav, createSidebars } from './navigation/routes'
 
 const github = 'https://github.com/icelib/iconctl'
+const channel = process.env.REPO_DOCS_CHANNEL ?? 'stable'
+if (channel !== 'preview' && channel !== 'stable') {
+  throw new Error('REPO_DOCS_CHANNEL must be preview or stable')
+}
+const isPreview = channel === 'preview'
+const previewHead: HeadConfig[] = isPreview
+  ? [['meta', { name: 'robots', content: 'noindex, nofollow' }]]
+  : []
 
-export default defineConfig({
+export default defineConfigWithTheme<DefaultTheme.Config & { docsPreview?: boolean }>({
   outDir: '.vitepress/dist',
   title: 'iconctl',
   titleTemplate: ':title — Icons to Iconify',
   description: 'Load icons from Figma, SVG directories, and more, then distribute Iconify JSON.',
   lastUpdated: true,
   cleanUrls: true,
-  sitemap: {
-    hostname: 'https://iconctl.icebreaker.top',
-  },
+  sitemap: isPreview
+    ? undefined
+    : { hostname: process.env.REPO_DOCS_URL || 'https://iconctl.icebreaker.top' },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/brand/repoctl-mark.svg' }],
+    ...previewHead,
   ],
   themeConfig: {
+    docsPreview: isPreview,
     search: { provider: 'local' },
     socialLinks: [{ icon: 'github', link: github }],
   },
@@ -54,5 +68,13 @@ export default defineConfig({
   },
   vite: {
     plugins: [Tailwindcss()],
+  },
+  async buildEnd({ outDir }) {
+    if (isPreview) {
+      await Promise.all([
+        writeFile(path.join(outDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n'),
+        writeFile(path.join(outDir, '_headers'), '/*\n  X-Robots-Tag: noindex, nofollow\n'),
+      ])
+    }
   },
 })

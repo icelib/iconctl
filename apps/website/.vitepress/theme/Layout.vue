@@ -4,7 +4,9 @@ import DefaultTheme from 'vitepress/theme'
 import { computed } from 'vue'
 
 const { Layout } = DefaultTheme
-const { lang } = useData()
+const { lang, theme } = useData()
+const isPreview = computed(() => theme.value.docsPreview === true)
+const stableDocsHref = computed(() => `https://iconctl.icebreaker.top${lang.value === 'zh-CN' ? '/zh/' : '/'}`)
 const notFoundTitle = computed(() => lang.value === 'zh-CN' ? '页面不存在' : 'Page not found')
 const notFoundBody = computed(() => lang.value === 'zh-CN'
   ? '这个地址不属于新的文档结构。请从开始、任务或参考章节继续。'
@@ -12,7 +14,13 @@ const notFoundBody = computed(() => lang.value === 'zh-CN'
 </script>
 
 <template>
-  <Layout>
+  <Layout :class="{ 'docs-preview-layout': isPreview }">
+    <template v-if="isPreview" #layout-top>
+      <aside class="docs-preview-banner" :aria-label="lang === 'zh-CN' ? '文档预览' : 'Documentation preview'">
+        <span>{{ lang === 'zh-CN' ? '预览文档 · 尚未正式发布' : 'Preview docs · Unreleased changes' }}</span>
+        <a :href="stableDocsHref">{{ lang === 'zh-CN' ? '查看正式文档' : 'View stable docs' }}</a>
+      </aside>
+    </template>
     <template #not-found>
       <main class="repoctl-not-found">
         <p class="repoctl-not-found__code">
@@ -25,3 +33,45 @@ const notFoundBody = computed(() => lang.value === 'zh-CN'
     </template>
   </Layout>
 </template>
+
+<style scoped>
+.docs-preview-layout {
+  --vp-layout-top-height: 40px;
+}
+
+.docs-preview-banner {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: calc(var(--vp-z-index-nav) + 1);
+  display: flex;
+  gap: 4px 16px;
+  align-items: center;
+  justify-content: center;
+  height: var(--vp-layout-top-height);
+  padding: 6px 16px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg-soft);
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.docs-preview-banner a {
+  color: var(--vp-c-brand-1);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 639px) {
+  .docs-preview-layout {
+    --vp-layout-top-height: 64px;
+  }
+
+  .docs-preview-banner {
+    flex-direction: column;
+  }
+}
+</style>

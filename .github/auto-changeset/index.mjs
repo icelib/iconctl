@@ -1,19 +1,11 @@
 import fs from 'node:fs/promises'
 import process from 'node:process'
 import { createGitHubClient } from './github.mjs'
+import { changedChangesets, isReleaseBranch, publishablePackagesForFiles } from './packages.mjs'
+
+export { isPublishableManifest, isReleaseBranch } from './packages.mjs'
 
 const CHANGESET_MARKER = '<!-- repoctl-auto-changeset -->'
-const PACKAGE_PATH = /^packages\/([^/]+)\//
-const CHANGESET_PATH = /^\.changeset\/[^/]+\.md$/
-const RELEASE_BRANCH = /^(?:pnpm-release\/|release\/pnpm-version)/
-
-export function packageDirectories(files) {
-  return [...new Set(files
-    .map(file => file.filename ?? file)
-    .filter(filename => !/^packages\/[^/]+\/dist(?:\/|$)/.test(filename))
-    .map(filename => filename.match(PACKAGE_PATH)?.[1])
-    .filter(Boolean))]
-}
 
 export function releaseLevel(labels = []) {
   const names = labels.map(label => typeof label === 'string' ? label : label.name)
@@ -40,43 +32,16 @@ export function changesetPath(number) {
   return `.changeset/auto-pr-${number}.md`
 }
 
-export function isReleaseBranch(ref) {
-  return RELEASE_BRANCH.test(ref)
-}
-
 export function hasChangeset(files) {
-  return files.some(file => CHANGESET_PATH.test(file.filename ?? file))
+  return changedChangesets(files).length > 0
 }
 
 function hasManualChangeset(files, generatedPath) {
-  return files.some((file) => {
-    const filename = file.filename ?? file
-    return CHANGESET_PATH.test(filename) && filename !== generatedPath
-  })
-}
-
-export function isPublishableManifest(manifest) {
-  return Boolean(manifest && typeof manifest.name === 'string' && manifest.private !== true)
+  return changedChangesets(files).some(filename => filename !== generatedPath)
 }
 
 async function manifestsForFiles(client, files, ref) {
-  const names = []
-  for (const directory of packageDirectories(files)) {
-    const content = await client.getContent(`packages/${directory}/package.json`, ref)
-    if (!content) {
-      continue
-    }
-    try {
-      const manifest = JSON.parse(content)
-      if (isPublishableManifest(manifest)) {
-        names.push(manifest.name)
-      }
-    }
-    catch {
-      // Ignore a malformed manifest; the normal CI checks will report it.
-    }
-  }
-  return [...new Set(names)]
+  return publishablePackagesForFiles(files, path => client.getContent(path, ref))
 }
 
 async function commitChangesets(client, branch, baseSha, entries) {
@@ -125,8 +90,11 @@ async function prepareEntry(client, pullRequest, files) {
   }
 }
 
-export async function processPullRequest(client, number) {
+export async function processPullRequest(client, number, { expectedHeadSha } = {}) {
   const pullRequest = await client.getPullRequest(number)
+  if (expectedHeadSha && pullRequest.head.sha !== expectedHeadSha) {
+    throw new Error('PR head changed before release intent preparation; approve the latest run.')
+  }
   const files = await client.getPullRequestFiles(number)
   const entry = await prepareEntry(client, pullRequest, files)
   if (!entry) {
@@ -138,8 +106,11 @@ export async function processPullRequest(client, number) {
     return { action: 'commented', number }
   }
   const ref = await client.getRef(`heads/${pullRequest.head.ref}`)
-  await commitChangesets(client, pullRequest.head.ref, ref.object.sha, [entry])
-  return { action: 'committed', number, path: entry.path }
+  if (ref.object.sha !== pullRequest.head.sha) {
+    throw new Error('PR head changed while preparing its release intent; retry the latest run.')
+  }
+  const sha = await commitChangesets(client, pullRequest.head.ref, pullRequest.head.sha, [entry])
+  return { action: 'committed', number, path: entry.path, sha }
 }
 
 export async function backfillPullRequests(client, numbers, { runId = `${Date.now()}` } = {}) {
@@ -159,7 +130,8 @@ export async function backfillPullRequests(client, numbers, { runId = `${Date.no
       results.push({ action: 'skipped', number })
       continue
     }
-    const packages = await manifestsForFiles(client, files, pullRequest.merge_commit_sha)
+    // Backfilled intents must refer to packages that still exist on main.
+    const packages = await manifestsForFiles(client, files, baseRef.object.sha)
     if (!packages.length) {
       results.push({ action: 'skipped', number })
       continue
@@ -207,7 +179,7 @@ async function main() {
   if (!number) {
     throw new Error('pull_request event payload is required')
   }
-  console.log(JSON.stringify(await processPullRequest(client, number)))
+  console.log(JSON.stringify(await processPullRequest(client, number, { expectedHeadSha: event.pull_request.head.sha })))
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

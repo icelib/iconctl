@@ -117,4 +117,37 @@ describe('workspace build-cache inputs', () => {
     }
     expect(await hashes()).toEqual(baseline)
   })
+
+  it('isolates preview and stable build caches for the same source', async () => {
+    const originalChannel = env['REPO_DOCS_CHANNEL']
+    const originalUrl = env['REPO_DOCS_URL']
+    try {
+      env['REPO_DOCS_CHANNEL'] = 'preview'
+      env['REPO_DOCS_URL'] = 'https://preview.example.com'
+      const preview = await hashes()
+      env['REPO_DOCS_CHANNEL'] = 'stable'
+      env['REPO_DOCS_URL'] = 'https://iconctl.icebreaker.top'
+      const stable = await hashes()
+      for (const task of ['@iconctl/website#build', '@iconctl/console#build']) {
+        expect(preview[task], task).toBeTruthy()
+        expect(stable[task], task).toBeTruthy()
+        expect(stable[task], `${task} must not reuse preview output`).not.toBe(preview[task])
+      }
+      expect(await hashes()).toEqual(stable)
+    }
+    finally {
+      if (originalChannel === undefined) {
+        delete env['REPO_DOCS_CHANNEL']
+      }
+      else {
+        env['REPO_DOCS_CHANNEL'] = originalChannel
+      }
+      if (originalUrl === undefined) {
+        delete env['REPO_DOCS_URL']
+      }
+      else {
+        env['REPO_DOCS_URL'] = originalUrl
+      }
+    }
+  })
 })

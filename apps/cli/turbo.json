@@ -2,6 +2,7 @@
   "extends": ["//"],
   "tasks": {
     "typecheck": {
+      "dependsOn": ["^build", "^typecheck"],
       "inputs": ["$TURBO_EXTENDS$", "$TURBO_DEFAULT$"]
     }
   }

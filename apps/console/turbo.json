@@ -6,6 +6,7 @@
       "outputs": ["dist/**", "worker-configuration.d.ts"]
     },
     "typecheck": {
+      "dependsOn": ["^build", "^typecheck"],
       "inputs": ["$TURBO_EXTENDS$", "$TURBO_DEFAULT$"],
       "outputs": ["worker-configuration.d.ts"]
     }
