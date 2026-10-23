@@ -50,6 +50,10 @@
   intents:
     - real-olives-pretend
     - wild-elephants-end
+"@iconctl/core@0.4.1":
+  dir: packages/core
+  intents:
+    - smooth-chairs-fetch
 "@iconctl/icons@0.0.1":
   dir: packages/icons
   intents:
@@ -110,3 +114,7 @@ iconctl@0.4.0:
   intents:
     - real-olives-pretend
     - wild-elephants-end
+iconctl@0.4.1:
+  dir: apps/cli
+  intents:
+    - smooth-chairs-fetch
