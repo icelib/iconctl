@@ -3,6 +3,11 @@
   "globalDependencies": [
     "pnpm-lock.yaml"
   ],
+  "globalPassThroughEnv": [
+    "WRANGLER_SEND_METRICS",
+    "WRANGLER_HIDE_BANNER",
+    "WRANGLER_NO_SKILLS_UPDATE_PROMPTS"
+  ],
   "tasks": {
     "build": {
       "dependsOn": [
@@ -11,13 +16,17 @@
       "inputs": [
         "src/**",
         "lib/**",
+        "declarations/**",
         "worker/**",
         "wrangler.{json,jsonc,toml}",
         ".dev.vars*",
         ".env*",
         "package.json",
         "tsconfig*.json",
-        "*.config.{js,ts,mjs,mts}"
+        "*.config.{js,ts,mjs,mts}",
+        "public/**",
+        "nimbus.json",
+        "index.html"
       ],
       "outputs": [
         "dist/**",
@@ -30,22 +39,27 @@
         "^lint"
       ],
       "inputs": [
-        "**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,vue}",
+        "**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,vue,astro,css,scss,less}",
         "**/*.{json,html,md,mdx,yml,yaml}",
         "*.config.{js,ts,mjs,mts}",
         ".eslintrc*",
         ".stylelintrc*",
-        "package.json"
+        "package.json",
+        "public/**",
+        "nimbus.json"
       ],
       "outputs": []
     },
     "dev": {
+      "dependsOn": [
+        "^build"
+      ],
       "cache": false,
       "persistent": true
     },
     "test": {
       "dependsOn": [
-        "^build"
+        "^test"
       ],
       "inputs": [
         "src/**",
@@ -74,18 +88,22 @@
     },
     "typecheck": {
       "dependsOn": [
-        "^build"
+        "^typecheck"
       ],
       "inputs": [
         "src/**",
         "lib/**",
+        "declarations/**",
         "worker/**",
         "wrangler.{json,jsonc,toml}",
         ".dev.vars*",
         ".env*",
         "test/**",
         "package.json",
-        "tsconfig*.json"
+        "tsconfig*.json",
+        "public/**",
+        "nimbus.json",
+        "*.config.{js,ts,mjs,mts}"
       ],
       "outputs": []
     },

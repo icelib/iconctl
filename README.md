@@ -6,6 +6,9 @@ Load icons from Figma, a local SVG folder, or later other design tools, clean th
 
 Docs: https://iconctl.icebreaker.top
 
+For nightly packages, preview documentation and stable website deployment, see
+the [release guide](docs/releasing.md).
+
 ```bash
 pnpm add -D iconctl
 pnpm exec iconctl init

@@ -50,12 +50,12 @@ jobs:
           package_json_file: executor/package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24
+          node-version: 24.22.1
           registry-url: https://registry.npmjs.org
       - name: Build pinned executor
         working-directory: executor
         env:
-          HUSKY: 0
+          LEFTHOOK: 0
         run: |
           pnpm install --frozen-lockfile
           pnpm exec turbo run build --filter=@iconctl/console-runner...

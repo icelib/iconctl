@@ -1,6 +1,6 @@
 # Private console
 
-The [console](https://iconctl.icebreaker.top/app/) manages projects, snapshots and public npm releases. Documentation remains public. Login, API requests, previews and downloads allow only GitHub user ID `15621541` (sonofmagic).
+The [production console](https://iconctl.icebreaker.top/app/) manages projects, snapshots and public npm releases. This link always opens the production service, including from the documentation preview. Documentation remains public. Login, API requests, previews and downloads allow only GitHub user ID `15621541` (sonofmagic).
 
 ## GitHub App setup
 
@@ -175,22 +175,25 @@ Legacy GitHub dispatch remains supported. Its fine-grained PAT needs repository 
 
 ## Deployment and recovery
 
-The Console CI workflow runs on pull requests and main with Linux and Node 24. It builds the console and runner, checks types, runs runner/contracts tests and the separate Cloudflare Worker tests, then exercises browser flows in Chromium. The Worker tests use the console's Vitest version; they are not included in the root `pnpm test` project list. Browser screenshots and failure traces are retained as workflow artifacts.
+The Console CI workflow runs on pull requests and main with Linux and Node 24. It builds the console and runner, checks types, runs runner/contracts tests and the separate Cloudflare Worker tests, then exercises browser flows in Chromium and checks preview/stable documentation builds. The Worker tests use the console's Vitest version; they are not included in the root `pnpm test` project list. Browser screenshots and failure traces are retained as workflow artifacts.
 
-`apps/console/wrangler.jsonc` is the single deployment entry. It merges Vue and VitePress assets, preserving documentation URLs and 404 behavior. The old website deploy command forwards to the console.
+Production uses `apps/console/wrangler.jsonc`, merging Vue and VitePress assets at `https://iconctl.icebreaker.top` while preserving documentation URLs, authentication and 404 behavior. repoctl deploys this unified site after a completed stable package release, from that release's frozen commit. To retry or deploy a selected release, run the managed **Documentation** GitHub workflow with site `website`, channel `stable` and its release completion record ID. Local inspection uses `pnpm exec repo docs plan website --channel stable --release <record-id>`; production deployment requires the managed workflow and the `docs-website-stable` environment.
+
+Main branch updates deploy documentation alone to the separate `iconctl-docs-preview` Worker on `workers.dev`, using `apps/website/wrangler.preview.jsonc`. Preview pages show an unreleased-documentation banner and block search indexing. The preview has no console, API, credentials or production storage; its production console link always opens the formal service. It does not deploy pull request code. The website's `deploy` and `deploy:preview` scripts enter repoctl's managed deployment flow.
+
+Provision production storage and secrets once before enabling deployments:
 
 ```bash
 pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console-runner...
 pnpm --filter @iconctl/console exec wrangler r2 bucket create iconctl-console-production
 pnpm --filter @iconctl/console exec wrangler secret bulk /absolute/path/production.secrets.json --env ""
-pnpm --filter @iconctl/console run deploy
 ```
 
 The console build checks types and validates the complete Website output before rebuilding its owned `apps/console/dist/public` directory. It then writes the current Vue app under `app/` and copies the complete documentation, so deleted or renamed pages and public resources do not survive a rebuild. Build the dependencies with the command above; invoking the console build alone requires current Website output. The internal assembly scripts resolve fixed package paths, require a regular Website `index.html`, reject symbolic links throughout Website output and in assembled copy destinations, reject linked `dist`/`public` output directories, and reserve `app`, `api` and `login` (including `.html` and case variants) for the application. Keep authored files in source/public directories, not in generated output. A typecheck or input-preflight failure preserves existing output; a failure after preparation may leave an incomplete build, so deploy only after a successful build. `pnpm --filter @iconctl/console test:build` exercises isolated output fixtures with Node’s test runner; Console CI runs it separately from Worker Vitest.
 
-Keep the secrets JSON outside the repository with mode 0600. Deployment requires committed changes pushed to `origin/main`; it pins the executor SHA and runs a dry run first. Automatic deployment requires repository Secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` and variable `ICONCTL_DEPLOY_ENABLED=true` after initial validation. Updating the executor requires merging an updated installation PR in each target repository.
+Keep the secrets JSON outside the repository with mode 0600. The frozen release commit must be an ancestor of `origin/main`; deployment pins that same SHA as the executor and runs a dry run first. Configure Secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` for the documentation workflows. Production access is controlled through `docs-website-stable`; configure its deployment rules before the first release. Updating the executor requires merging an updated installation PR in each target repository.
 
-An optional staging configuration isolates DO and R2 storage. This instance's owner selected direct deployment to the production domain. Real Figma authorization and npm publication still need provider configuration and live acceptance checks.
+An optional console staging configuration retains isolated DO and R2 storage; it is separate from the documentation preview. Real Figma authorization and npm publication still need provider configuration and live acceptance checks. Ordinary local VitePress builds default to stable; repoctl supplies `REPO_DOCS_CHANNEL` and `REPO_DOCS_URL` explicitly, and Turbo includes them in the website build cache key. `pnpm --filter @iconctl/website test:channels` builds preview then stable into the same temporary output directory and checks banners, indexing rules and production console links.
 
 Use `wrangler versions list` and `wrangler rollback <version-id>` to roll back Worker code. Export encrypted metadata in the console and back up the entire private R2 bucket separately. Preserve the encryption key separately. Restore into an empty isolated environment with the original object keys, verify snapshot digests and npm integrity, reconnect rotated authorizations and re-pair plugins. Reconcile pending npm publications before enabling dispatch. Restoring the database cannot undo npm publication.
 

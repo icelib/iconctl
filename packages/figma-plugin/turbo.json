@@ -3,6 +3,9 @@
   "tasks": {
     "build": {
       "inputs": ["$TURBO_EXTENDS$", "$TURBO_DEFAULT$"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "^typecheck"]
     }
   }
 }

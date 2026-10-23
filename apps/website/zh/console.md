@@ -1,6 +1,6 @@
 # 私有线上控制台
 
-[打开控制台](https://iconctl.icebreaker.top/app/)。公开文档不需要登录；控制台、业务 API 和产物下载仅向 GitHub 用户 ID `15621541`（sonofmagic）开放。
+[打开正式控制台](https://iconctl.icebreaker.top/app/)。此链接始终进入正式服务，在文档预览站也一样。公开文档不需要登录；控制台、业务 API 和产物下载仅向 GitHub 用户 ID `15621541`（sonofmagic）开放。
 
 ## 创建并安装 GitHub App
 
@@ -191,25 +191,28 @@ Figma 桌面端：Plugins → Development → Import plugin from manifest，选�
 
 ## 部署、回滚与恢复
 
-Console CI 工作流在 pull request 和 main 上使用 Linux、Node 24，依次构建控制台与 runner、检查类型、运行 runner/contracts 测试和独立的 Cloudflare Worker 测试，再通过 Chromium 验证浏览器流程。Worker 测试使用 console 自己的 Vitest 版本，不包含在根目录 `pnpm test` 的项目列表中。浏览器截图和失败 trace 会保留为工作流产物。
+Console CI 工作流在 pull request 和 main 上使用 Linux、Node 24，依次构建控制台与 runner、检查类型、运行 runner/contracts 测试和独立的 Cloudflare Worker 测试，再通过 Chromium 验证浏览器流程，并检查预览／正式文档构建。Worker 测试使用 console 自己的 Vitest 版本，不包含在根目录 `pnpm test` 的项目列表中。浏览器截图和失败 trace 会保留为工作流产物。
 
 GitHub 登录与目录来源可先上线；未配置站点专用 Figma App 时，连接 Figma 会明确提示配置缺失。配置 `FIGMA_CLIENT_ID` 和 `FIGMA_CLIENT_SECRET` 后即可启用，无需填写占位凭据。
 
-统一入口位于 `apps/console/wrangler.jsonc`。Vue 输出和 VitePress 文档合并到同一个 Worker，文档原 URL / 404 行为保持。原 website 的部署命令也转发到 console，避免静态站部署覆盖后端。
+正式站点使用 `apps/console/wrangler.jsonc`，将 Vue 输出和 VitePress 文档合并到 `https://iconctl.icebreaker.top`，保留文档 URL、鉴权和 404 行为。repoctl 在 npm 正式发布完成后，使用该次发布冻结的提交部署整个站点。重试或指定已有发布时，运行受管的 **Documentation** GitHub 工作流，选择站点 `website`、渠道 `stable`，填写发布完成记录 ID。本地可用 `pnpm exec repo docs plan website --channel stable --release <record-id>` 检查计划；正式部署必须经过受管工作流与 `docs-website-stable` environment。
+
+main 更新只将文档部署到独立的 `iconctl-docs-preview` Worker，使用 `apps/website/wrangler.preview.jsonc` 和 `workers.dev` 地址。预览页显示尚未正式发布的标识并禁止搜索引擎索引，不包含控制台、API、凭据或生产存储；页面上的正式控制台链接始终打开正式服务。该流程不部署 PR 代码。website 的 `deploy`、`deploy:preview` 脚本统一进入 repoctl 受管部署流程。
+
+首次启用部署前，创建正式存储并配置 Secrets：
 
 ```bash
 pnpm exec turbo run build --filter=@iconctl/console... --filter=@iconctl/console-runner...
 pnpm --filter @iconctl/console exec wrangler r2 bucket create iconctl-console-production
 # 使用仓库之外、权限为 0600 的 JSON 文件导入；内容包含上述八项 Secrets。
 pnpm --filter @iconctl/console exec wrangler secret bulk /absolute/path/production.secrets.json --env ""
-pnpm --filter @iconctl/console run deploy
 ```
 
 控制台构建先完成类型检查及完整 Website 输出预检，再重建自有的 `apps/console/dist/public` 目录，随后把当前 Vue 应用写入 `app/` 并复制完整文档。因此页面和公开资源删除、改名后不会继续残留。请使用上面的命令先构建依赖；单独执行控制台构建时，需要已有当前 Website 产物。内部组装脚本根据脚本位置解析固定目录，要求 Website 具有普通文件 `index.html`，拒绝文档产物及复制目标中的符号链接、拒绝链接形式的 `dist`/`public` 输出目录，并为应用保留 `app`、`api`、`login` 及其 `.html`、大小写变体。自编文件应放在源码或 public 输入目录，不放在生成目录。类型检查或输入预检失败会保留当前输出；准备完成后的失败可能留下不完整产物，只有构建成功后才能部署。`pnpm --filter @iconctl/console test:build` 使用 Node 原生测试运行器验证独立输出夹具，Console CI 将其与 Worker Vitest 分开执行。
 
-部署要求改动已提交且提交已推送到 `origin/main`，执行器固定到该 SHA；脚本先执行 dry-run 再部署。GitHub 自动部署需配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` Secrets，并在初次接入验证后设置仓库变量 `ICONCTL_DEPLOY_ENABLED=true`。创建 GitHub production environment 可进一步管理部署访问。
+冻结的发布提交必须是 `origin/main` 的祖先，执行器固定到同一 SHA；脚本先执行 dry-run 再部署。文档工作流需配置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` Secrets。使用 `docs-website-stable` environment 管理正式部署访问，在首次发布前配置好部署规则。
 
-仓库保留可选的独立 staging 配置（独立 DO 和 R2）。本实例按所有者选择直接使用 `iconctl.icebreaker.top`；真实 Figma OAuth 与 npm 发布仍需要完成提供方配置后验收。每次更新执行器后，目标仓库需重新创建并合并安装 PR。
+仓库保留可选的控制台 staging 配置（独立 DO 和 R2），与文档预览站分开。真实 Figma OAuth 与 npm 发布仍需要完成提供方配置后验收。每次更新执行器后，目标仓库需重新创建并合并安装 PR。普通本地 VitePress 构建默认使用正式渠道；repoctl 显式传入 `REPO_DOCS_CHANNEL` 和 `REPO_DOCS_URL`，Turbo 将其纳入文档构建缓存键。`pnpm --filter @iconctl/website test:channels` 在同一临时输出目录依次构建预览和正式渠道，检查标识、索引规则和正式控制台链接。
 
 ```bash
 pnpm --filter @iconctl/console exec wrangler versions list --env ""

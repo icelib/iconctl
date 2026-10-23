@@ -1,19 +1,13 @@
 # Security Policy
 
-English | [简体中文](SECURITY.zh-CN.md)
+Security fixes target the latest stable iconctl release. Upgrade before
+reporting a problem that may already be resolved.
 
-## Supported versions
+Report suspected vulnerabilities privately at
+https://github.com/icelib/iconctl/security/advisories/new. Include the affected
+version, environment, impact and reproduction steps. Do not include real tokens
+or private Figma content in public issues.
 
-Security fixes are provided for the latest stable major release of `repoctl` and its fixed-version core package. Upgrade to the latest release before reporting a problem that may already be resolved.
-
-## Reporting a vulnerability
-
-Do not open a public issue for a suspected vulnerability. Use GitHub's private vulnerability reporting for `icelib/iconctl`:
-
-https://github.com/icelib/iconctl/security/advisories/new
-
-Include the affected version, environment, impact, reproduction steps, and any suggested mitigation. Maintainers will acknowledge a complete report as soon as practical and coordinate validation, remediation, and disclosure with the reporter.
-
-## Scope
-
-Reports involving repoctl command execution, generated workflow security, release credentials, dependency handling, path traversal, or unsafe template extraction are in scope. Vulnerabilities in third-party tools should also be reported upstream when appropriate.
+Reports involving icon ingestion, filesystem access, generated SVG/HTML,
+credential handling, console authentication, executor isolation and publishing
+are in scope. Report third-party vulnerabilities upstream as appropriate.
