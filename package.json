@@ -57,7 +57,7 @@
     "docs:build": "node scripts/docs/build.mjs",
     "docs:deploy:preview": "node scripts/docs/deploy.mjs preview",
     "docs:deploy:stable": "node scripts/docs/deploy.mjs stable",
-    "test:automation": "node --test .github/auto-changeset/*.test.mjs scripts/docs/*.test.mjs",
+    "test:automation": "node --test .github/auto-changeset/*.test.mjs scripts/docs/*.test.mjs scripts/release/*.test.mjs",
     "test:package": "pnpm --filter @iconctl/core test:package",
     "lint:automation": "eslint repoctl.config.ts scripts .github/auto-changeset"
   },
