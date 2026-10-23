@@ -77,6 +77,11 @@ test('a valid intent covers CLI-only changes', async () => {
   assert.deepEqual(await checkReleaseIntent(['apps/cli/src/index.ts', '.changeset/change.md'], readContent), { packages: ['iconctl'], missing: [] })
 })
 
+test('pnpm explicit no-release intents remain valid', async () => {
+  const readContent = fixture({ '.changeset/declined.md': '---\niconctl: none\n---\n\nTest-only change.\n' })
+  assert.deepEqual(await checkReleaseIntent(['apps/cli/test/index.test.ts', '.changeset/declined.md'], readContent), { packages: ['iconctl'], missing: [] })
+})
+
 test('deleted release intents cannot satisfy the check', async () => {
   assert.deepEqual(changedChangesets([{ filename: '.changeset/removed.md', status: 'removed' }]), [])
   assert.deepEqual(await checkReleaseIntent(['apps/cli/src/index.ts', { filename: '.changeset/removed.md', status: 'removed' }], fixture()), { packages: ['iconctl'], missing: ['iconctl'] })

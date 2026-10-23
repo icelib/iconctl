@@ -96,7 +96,7 @@ export async function checkReleaseIntent(files, readContent) {
         throw new Error(`Invalid release intent packages: ${filename}`)
       }
       for (const [name, level] of Object.entries(intent)) {
-        if (!['patch', 'minor', 'major'].includes(level)) {
+        if (!['none', 'patch', 'minor', 'major'].includes(level)) {
           throw new Error(`Invalid release level for ${name} in ${filename}`)
         }
         covered.add(name)
