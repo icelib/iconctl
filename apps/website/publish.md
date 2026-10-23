@@ -50,14 +50,16 @@ After merge, developers get icons either from **git pull** (JSON in the app) or 
 
 ## This repo
 
-`packages/icons` (`@iconctl/icons`) is the worked example. Source is local SVG in `raw/`, plus an optional iconfont Symbol URL. Sync writes `icons.json`, `svg/`, `src/icon-names.ts`, `preview.html`, and `CHANGELOG.md`. The [Demo](/demo) page previews the package and the changelog.
+`packages/icons` (`@iconctl/icons`) is a private workspace demo consumed locally by the website. Source is local SVG in `raw/`, plus an optional iconfont Symbol URL. Sync writes `icons.json`, `svg/`, `src/icon-names.ts`, `preview.html`, and `CHANGELOG.md`. The [Demo](/demo) page displays the icons and changelog. This package is excluded from npm stable and nightly publication.
 
 ```bash
 pnpm --filter @iconctl/icons sync
 pnpm --filter @iconctl/icons add-iconfont -- https://at.alicdn.com/t/c/font_xxx.js
 ```
 
-`.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`. `workflow_dispatch` can pass an iconfont URL. Point the Figma plugin at `icelib/iconctl` to exercise the same event (the workflow still will not call Figma).
+`.github/workflows/iconctl.yml` listens for `iconctl-publish` and `workflow_dispatch`, then opens a PR that only stages `packages/icons`, without release intent. `workflow_dispatch` can pass an iconfont URL. Point the Figma plugin at `icelib/iconctl` to exercise the same event (the workflow still will not call Figma).
+
+Merging the PR updates the documentation preview. The formal website deploys the complete frozen source snapshot of the next `@iconctl/core` or `iconctl` stable release, including the demo and console.
 
 ## Private online console
 

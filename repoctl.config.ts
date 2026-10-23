@@ -46,7 +46,7 @@ export default {
     docs: {
       sites: {
         website: {
-          packages: ['@iconctl/core', 'iconctl', '@iconctl/icons'],
+          packages: ['@iconctl/core', 'iconctl'],
           releaseInputs: {
             '@iconctl/core': [
               'packages/core/src/**',
@@ -65,16 +65,6 @@ export default {
               'apps/cli/tsconfig.json',
               'apps/cli/tsdown.config.ts',
               'tsconfig.json',
-              'LICENSE',
-            ],
-            '@iconctl/icons': [
-              'packages/icons/package.json',
-              'packages/icons/icons.json',
-              'packages/icons/CHANGELOG.md',
-              'packages/icons/README.md',
-              'packages/icons/preview.html',
-              'packages/icons/src/**',
-              'packages/icons/svg/**',
               'LICENSE',
             ],
           },

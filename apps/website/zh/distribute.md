@@ -79,21 +79,23 @@ import icons from '@iconify-json/brand/icons.json'
 
 `iconSets` / `collections` 接法和上面一样。`clean: false` 会保留同目录里的 README、changelog 和 `package.json` 自定义字段；生成的入口字段以及显式配置的 `jsonPackage.package` 值优先于已有字段。
 
-### 带预览的 workspace / npm 包
+### 私有 workspace 示例与自有 npm 包
 
-`packages/icons`（`@iconctl/icons`）是本仓库的例子：JSON + 类型 + `preview.html` + `CHANGELOG.md`。发布后：
+`packages/icons`（`@iconctl/icons`）是本仓库的私有 workspace 示例：JSON + 类型 + `preview.html` + `CHANGELOG.md`。本站通过 `workspace:*` 引用它。同步工作流只创建 PR，不生成发布意图；合并后更新文档预览站。正式站随下一次 core 或 CLI 稳定版本，部署包含示例的完整冻结源码快照。
+
+如果要分发自己的可安装图标包，请使用你拥有的包名，例如 `@acme/icons`。将包的根导出指向 `icons.json`，在自己的仓库中完成版本管理和发布。消费者便可以安装并导入已发布的包：
 
 ```bash
-pnpm add @iconctl/icons
+pnpm add @acme/icons
 ```
 
 ```ts
-import icons from '@iconctl/icons'
+import icons from '@acme/icons'
 ```
 
-class：`i-ice-arrow-left`。
+使用上面的 `brand` 前缀时，class 为 `i-brand-arrow-left`。
 
-用 changesets 的 monorepo 里，图标 PR 应带一个 patch changeset，release 才能发版。本仓库的 `.github/workflows/iconctl.yml` 会写这个 changeset。GitHub Packages 只是换 `publishConfig.registry`。
+在使用 changesets 的 monorepo 中，可发布图标包的同步 PR 应带一个 patch changeset，供 release 发版。私有 workspace 示例无需包发布意图。使用 GitHub Packages 时，配置对应的 `publishConfig.registry`。
 
 ## GitHub Action
 
@@ -114,7 +116,7 @@ concurrency:
     pr: true
 ```
 
-`examples/github-publish.yml` 可直接拷。`paths` 限制 `git add`。`changeset: true` 在图标有 diff 时写 patch changeset。
+`examples/github-publish.yml` 可直接拷。`paths` 限制 `git add`。对自己的可发布包设置 `changeset: true`，可在图标有 diff 时写入 patch changeset。
 
 个人令牌仍可通过 `token` 输入使用 `FIGMA_TOKEN` Secret，优先于 OAuth 输入，但需要手动更换。CI 和本地使用独立 OAuth App 或账号；不要将凭据文件放入缓存或制品。
 
