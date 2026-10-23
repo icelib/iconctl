@@ -1,0 +1,39 @@
+diff --git a/dist/commands-D1KtdxnV.mjs b/dist/commands-D1KtdxnV.mjs
+index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..39e4c561db98359396ad913d0f646e733dfe940d 100644
+--- a/dist/commands-D1KtdxnV.mjs
++++ b/dist/commands-D1KtdxnV.mjs
+@@ -12521,12 +12521,33 @@ function missingVersionTarget(message, stack) {
+ 	const resolverMessage = context && message.endsWith(context) ? message.slice(0, -context.length) : message;
+ 	return (/^No matching version found for (\S+) while fetching it from https:\/\/registry\.npmjs\.org\/(?:\n\nFailed to resolve \1)?\s*$/u.exec(resolverMessage)?.[1])?.replace(/^(?:@[^/@\s]+\/)?[^/@\s]+@npm:/u, "");
+ }
++/** pnpm 12.6 emits a miette diagnostic even with --reporter=ndjson. */
++function formattedMissingVersion(lines, expected) {
++	const diagnostic = lines.join("\n").trimEnd();
++	const match = /^Error: ERR_PNPM_NO_MATCHING_VERSION\n\n  × installing dependencies\n  ╰─▶ ([^\n]+(?:\n      [^\n]+)*?)(?:\n  help: ([^\n]*(?:\n        [^\n]*)*))?$/u.exec(diagnostic);
++	if (!match) return false;
++	const message = match[1].replace(/\n      /gu, " ");
++	const resolver = /^Failed to resolve dependency tree: No matching version found for (.+) while fetching it from (.+)$/u.exec(message);
++	if (!resolver || resolver[2].replace(/ /gu, "") !== "https://registry.npmjs.org/") return false;
++	const target = resolver[1].replace(/ /gu, "");
++	if (!expected.has(target)) return false;
++	if (match[2] !== void 0) {
++		const name = target.slice(0, target.lastIndexOf("@"));
++		const help = match[2].replace(/\n        /gu, " ").trim();
++		const latest = /^The latest release of (\S+) is "([^"\s]+)"\.(?: Published at \d{1,2}\/\d{1,2}\/\d{4})?\s+If you need the full list of all \d+ published versions run "pnpm view\s+(\S+) versions"\.$/u.exec(help);
++		if (!latest || latest[1] !== name || latest[3] !== name) return false;
++	}
++	return true;
++}
+ /** A confirmed upload can precede visibility in pnpm's installation packument. */
+ function missingBatchVersion(error, report) {
+ 	if (!(error instanceof ConsumerCommandError) || error.command.exitCode === null) return false;
+ 	const expected = new Set(report.packages.flatMap((pkg) => [`${pkg.name}@snapshot-nightly`, `${pkg.name}@${pkg.version}`]));
+ 	let missing = false;
+-	for (const line of `${error.command.stdout}\n${error.command.stderr}`.split("\n").filter((line) => line.trim())) {
++	const lines = `${error.command.stdout}\n${error.command.stderr}`.replace(/\r\n/gu, "\n").split("\n");
++	for (const [index, line] of lines.entries()) {
++		if (!line.trim()) continue;
++		if (line === "Error: ERR_PNPM_NO_MATCHING_VERSION") return formattedMissingVersion(lines.slice(index), expected);
+ 		let record;
+ 		try {
+ 			record = JSON.parse(line);
