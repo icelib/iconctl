@@ -11,6 +11,7 @@ import { runInNewContext } from 'node:vm'
 const require = createRequire(import.meta.url)
 const repoctlEntry = require.resolve('repoctl')
 const implementationEntry = createRequire(repoctlEntry).resolve('@icebreakers/monorepo')
+const { parse: parseYaml, stringify } = createRequire(implementationEntry)('yaml')
 const dist = path.dirname(implementationEntry)
 for (const entry of [repoctlEntry, implementationEntry]) {
   const manifest = JSON.parse(readFileSync(path.resolve(entry, '../../package.json'), 'utf8'))
@@ -79,6 +80,7 @@ function loadConsumer({
     writeFile: async (target, contents) => {
       written.push({ target, contents })
     },
+    stringify,
     realpath,
     tag: 'snapshot-nightly',
     createNightlyRegistry: () => ({ publication }),
@@ -383,14 +385,13 @@ test('visibility retry runs install only, preserves accepted uploads and isolate
     }
     assert.equal(call.settings.cwd, runtime.directory)
     assert.equal(call.settings.shell, false)
-    assert.deepEqual(runtime.written[attempt], {
-      target: path.join(runtime.directory, 'pnpm-workspace.yaml'),
-      contents: `${JSON.stringify({
-        packages: [],
-        minimumReleaseAgeExclude: batch.packages.map(pkg => `${pkg.name}@${pkg.version}`),
-        cacheDir: path.join(state, 'cache'),
-      }, null, 2)}\n`,
+    assert.equal(runtime.written[attempt].target, path.join(runtime.directory, 'pnpm-workspace.yaml'))
+    assert.deepEqual(parseYaml(runtime.written[attempt].contents), {
+      packages: [],
+      minimumReleaseAgeExclude: batch.packages.map(pkg => `${pkg.name}@${pkg.version}`),
+      cacheDir: path.join(state, 'cache'),
     })
+    assert.match(runtime.written[attempt].contents, /minimumReleaseAgeExclude:\n {2}- /u)
   }
   assert.equal(runtime.written.length, runtime.calls.length)
   assert.deepEqual(runtime.removed, ['node_modules', 'pnpm-lock.yaml', '.pnpm-attempt-0'].map(name => ({

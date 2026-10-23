@@ -1,5 +1,5 @@
 diff --git a/dist/commands-D1KtdxnV.mjs b/dist/commands-D1KtdxnV.mjs
-index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..e57d3428a5726c0031fd524119f2dfe7d37b8ac4 100644
+index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..8628e1bb5d0f2e906b62b3355e89f7e271774937 100644
 --- a/dist/commands-D1KtdxnV.mjs
 +++ b/dist/commands-D1KtdxnV.mjs
 @@ -12521,12 +12521,45 @@ function missingVersionTarget(message, stack) {
@@ -79,11 +79,11 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..e57d3428a5726c0031fd524119f2dfe7
 +}
 +/** Trust only the exact batch already confirmed in the registry. */
 +function nightlyConsumerWorkspace(report, cacheDirectory) {
-+	return `${JSON.stringify({
++	return stringify({
 +		packages: [],
 +		minimumReleaseAgeExclude: report.packages.map((pkg) => `${pkg.name}@${pkg.version}`),
 +		...cacheDirectory ? { cacheDir: cacheDirectory } : {}
-+	}, null, 2)}\n`;
++	}, { collectionStyle: "block", lineWidth: 0 });
 +}
  /** Retry installation only; accepted uploads and subsequent identity checks are never repeated. */
  async function installNightlyConsumer(report, options, directory, run) {
