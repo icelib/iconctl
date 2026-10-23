@@ -1,5 +1,11 @@
 # @iconctl/core
 
+## 0.4.1
+
+### Patch Changes
+
+- Fix conditional declaration exports so CommonJS consumers resolve .d.cts files and ESM consumers resolve .d.mts files, including nightly package validation.
+
 ## 0.4.0
 
 ### Minor Changes

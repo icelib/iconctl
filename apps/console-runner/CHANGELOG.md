@@ -5,6 +5,13 @@
 ### Patch Changes
 
 - Updated dependencies:
+  - @iconctl/core@0.4.1
+
+## 0.0.0
+
+### Patch Changes
+
+- Updated dependencies:
   - @iconctl/core@0.4.0
 
 ## 0.0.0
