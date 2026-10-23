@@ -1,5 +1,5 @@
 diff --git a/dist/commands-D1KtdxnV.mjs b/dist/commands-D1KtdxnV.mjs
-index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb76cadbc12 100644
+index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..e57d3428a5726c0031fd524119f2dfe7d37b8ac4 100644
 --- a/dist/commands-D1KtdxnV.mjs
 +++ b/dist/commands-D1KtdxnV.mjs
 @@ -12521,12 +12521,45 @@ function missingVersionTarget(message, stack) {
@@ -49,7 +49,7 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb7
  		let record;
  		try {
  			record = JSON.parse(line);
-@@ -12548,6 +12581,30 @@ function missingBatchVersion(error, report) {
+@@ -12548,6 +12581,38 @@ function missingBatchVersion(error, report) {
  }
  //#endregion
  //#region src/commands/release/nightly/consumer/install.ts
@@ -77,12 +77,33 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb7
 +	}
 +	return !stale;
 +}
++/** Trust only the exact batch already confirmed in the registry. */
++function nightlyConsumerWorkspace(report, cacheDirectory) {
++	return `${JSON.stringify({
++		packages: [],
++		minimumReleaseAgeExclude: report.packages.map((pkg) => `${pkg.name}@${pkg.version}`),
++		...cacheDirectory ? { cacheDir: cacheDirectory } : {}
++	}, null, 2)}\n`;
++}
  /** Retry installation only; accepted uploads and subsequent identity checks are never repeated. */
  async function installNightlyConsumer(report, options, directory, run) {
  	const budget = report.provider === "npm" ? Math.min(9e5, registrySettings(options).visibilityTimeoutMs) : 6e5;
-@@ -12576,7 +12633,8 @@ async function installNightlyConsumer(report, options, directory, run) {
- 				`--state-dir=${path$1.join(state, "state")}`,
- 				`--config.cache-dir=${path$1.join(state, "cache")}`
+@@ -12561,6 +12626,8 @@ async function installNightlyConsumer(report, options, directory, run) {
+ 		const state = path$1.join(directory, `.pnpm-attempt-${attempt++}`);
+ 		const timeout = Math.floor(Math.min(6e5, remaining()));
+ 		if (timeout <= 0) break;
++		// pnpm 12 ignores --config.cache-dir and can persist automatic age exceptions.
++		await writeFile(path$1.join(directory, "pnpm-workspace.yaml"), nightlyConsumerWorkspace(report, path$1.join(state, "cache")));
+ 		try {
+ 			await run("pnpm", [
+ 				...consumerPnpmOptions,
+@@ -12573,10 +12640,10 @@ async function installNightlyConsumer(report, options, directory, run) {
+ 				"--registry=https://registry.npmjs.org/",
+ 				"--reporter=ndjson",
+ 				`--store-dir=${path$1.join(state, "store")}`,
+-				`--state-dir=${path$1.join(state, "state")}`,
+-				`--config.cache-dir=${path$1.join(state, "cache")}`
++				`--state-dir=${path$1.join(state, "state")}`
  			], timeout);
 -			return;
 +			if (report.provider !== "npm" || await nightlyConsumerVisible(report, directory)) return;
@@ -90,7 +111,16 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb7
  		} catch (error) {
  			if (report.provider !== "npm" || !missingBatchVersion(error, report)) throw error;
  			lastFailure = error;
-@@ -12637,10 +12695,7 @@ async function verifyNightlyConsumer(report, options) {
+@@ -12628,7 +12695,7 @@ async function verifyNightlyConsumer(report, options) {
+ 				dependencies: Object.fromEntries(report.packages.map((pkg) => [pkg.name, report.provider === "npm" ? "snapshot-nightly" : pkg.locator])),
+ 				...!report.packages.some((pkg) => pkg.name === "@types/node") ? { devDependencies: { "@types/node": nodeTypes.version } } : {}
+ 			}, null, 2)}\n`),
+-			writeFile(path$1.join(directory, "pnpm-workspace.yaml"), "packages: []\n"),
++			writeFile(path$1.join(directory, "pnpm-workspace.yaml"), nightlyConsumerWorkspace(report)),
+ 			writeFile(path$1.join(directory, "user.npmrc"), ""),
+ 			writeFile(path$1.join(directory, "global.npmrc"), "")
+ 		]);
+@@ -12637,10 +12704,7 @@ async function verifyNightlyConsumer(report, options) {
  		await installNightlyConsumer(report, options, directory, run);
  		const validated = [];
  		for (const pkg of report.packages) {
@@ -102,7 +132,7 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..1880e8eeddc19b08124c61d370180cb7
  			if (manifest.name !== pkg.name || manifest.version !== pkg.version || !matchesSnapshotMetadata(manifest.repoctlSnapshot, report.snapshot)) throw new Error(`Nightly consumer installed an unexpected version or identity for ${pkg.name}.`);
  			const files = report.snapshot.checks?.find((check) => check.name === pkg.name)?.files;
  			if (!files) throw new Error(`Nightly consumer has no checked artifact manifest for ${pkg.name}.`);
-@@ -12804,12 +12859,20 @@ function validPublishedIdentity(metadata) {
+@@ -12804,12 +12868,20 @@ function validPublishedIdentity(metadata) {
  async function inspectNpmNightly(report, options) {
  	const client = createNightlyRegistry(options);
  	report.latest = {};
