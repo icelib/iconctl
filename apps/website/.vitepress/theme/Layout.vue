@@ -41,28 +41,28 @@ const notFoundBody = computed(() => lang.value === 'zh-CN'
 
 .docs-preview-banner {
   position: fixed;
-  z-index: calc(var(--vp-z-index-nav) + 1);
   top: 0;
   right: 0;
   left: 0;
+  z-index: calc(var(--vp-z-index-nav) + 1);
   display: flex;
+  gap: 4px 16px;
   align-items: center;
   justify-content: center;
-  gap: 4px 16px;
   height: var(--vp-layout-top-height);
   padding: 6px 16px;
-  border-bottom: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
   font-size: 13px;
   line-height: 20px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg-soft);
+  border-bottom: 1px solid var(--vp-c-divider);
 }
 
 .docs-preview-banner a {
   color: var(--vp-c-brand-1);
+  white-space: nowrap;
   text-decoration: underline;
   text-underline-offset: 3px;
-  white-space: nowrap;
 }
 
 @media (max-width: 639px) {
