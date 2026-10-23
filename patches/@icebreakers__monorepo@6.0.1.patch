@@ -1,8 +1,8 @@
 diff --git a/dist/commands-D1KtdxnV.mjs b/dist/commands-D1KtdxnV.mjs
-index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..75b56ed0ce1690ed8699e228740e1aea231fdcf9 100644
+index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..24da651fea65d8d9f207bc61754291f10fa46dea 100644
 --- a/dist/commands-D1KtdxnV.mjs
 +++ b/dist/commands-D1KtdxnV.mjs
-@@ -12521,12 +12521,43 @@ function missingVersionTarget(message, stack) {
+@@ -12521,12 +12521,45 @@ function missingVersionTarget(message, stack) {
  	const resolverMessage = context && message.endsWith(context) ? message.slice(0, -context.length) : message;
  	return (/^No matching version found for (\S+) while fetching it from https:\/\/registry\.npmjs\.org\/(?:\n\nFailed to resolve \1)?\s*$/u.exec(resolverMessage)?.[1])?.replace(/^(?:@[^/@\s]+\/)?[^/@\s]+@npm:/u, "");
  }
@@ -18,17 +18,19 @@ index 79b651dba83031ed6f414bbc9d7afe77d49ab0a1..75b56ed0ce1690ed8699e228740e1aea
 +	if (!expected.has(target)) return false;
 +	if (match[2] !== void 0) {
 +		const name = target.slice(0, target.lastIndexOf("@"));
-+		const help = match[2].replace(/\n        /gu, " ").trim();
-+		const latest = /^The latest release of (\S+) is "([^"]+)"\.(?: Published at \d{1,2}\/\d{1,2}\/\d{4})?\s+(?:Other releases are:\s+(.+?)\s+)?If you need the full list of all \d+ published versions run "pnpm view\s+(\S+) versions"\.$/u.exec(help);
++		// Preserve physical wraps separately from spaces in version strings.
++		if (match[2].includes("\t")) return false;
++		const help = match[2].replace(/\n        /gu, "\t").trim();
++		const latest = /^The\s+latest\s+release\s+of\s+(\S+)\s+is\s+"([^"]+)"\.(?:\s+Published\s+at\s+\d{1,2}\/\d{1,2}\/\d{4})?\s+(?:Other\s+releases\s+are:\s+(.+?)\s+)?If\s+you\s+need\s+the\s+full\s+list\s+of\s+all\s+\d+\s+published\s+versions\s+run\s+"pnpm\s+view\s+(\S+)\s+versions"\.$/u.exec(help);
 +		const version = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-+		if (!latest || latest[1] !== name || latest[4] !== name || !version.test(latest[2].replace(/ /gu, ""))) return false;
++		if (!latest || latest[1] !== name || latest[4] !== name || !version.test(latest[2].replace(/\t/gu, ""))) return false;
 +		if (latest[3] !== void 0) {
 +			if (!latest[3].startsWith("* ")) return false;
 +			for (const release of latest[3].slice(2).split(/\s+\* /u)) {
-+				const parts = release.split(" published at ");
-+				if (parts.length > 2 || parts.length === 2 && !/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2} (?:AM|PM)$/u.test(parts[1])) return false;
-+				const entry = /^([0-9A-Za-z._-]+): ([0-9A-Za-z.+ -]+)$/u.exec(parts[0]);
-+				if (!entry || !version.test(entry[2].replace(/ /gu, ""))) return false;
++				const parts = release.split(/[ \t]+published[ \t]+at[ \t]+/u);
++				if (parts.length > 2 || parts.length === 2 && !/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)$/u.test(parts[1])) return false;
++				const entry = /^([0-9A-Za-z._-]+):[ \t]+([0-9A-Za-z.+\t-]+)$/u.exec(parts[0]);
++				if (!entry || !version.test(entry[2].replace(/\t/gu, ""))) return false;
 +			}
 +		}
 +	}

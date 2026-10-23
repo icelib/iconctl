@@ -201,6 +201,7 @@ const rejectedOutputs = [
   ['malformed other-release date', nativeOtherReleasesFatal.replace('10/23/2026 8:12:51 PM', 'unknown-date')],
   ['malformed other-release bullet', nativeOtherReleasesFatal.replace('* snapshot-nightly:', '- snapshot-nightly:')],
   ['other-release extra cause', nativeOtherReleasesFatal.replace('10/23/2026 8:12:51 PM', '10/23/2026 8:12:51 PM\n        caused by authentication failure')],
+  ['other-release cause before date', nativeOtherReleasesFatal.replace('published at\n        10/23/2026', 'caused by authentication failure published at\n        10/23/2026')],
   ['other-release indented fatal', nativeOtherReleasesFatal.replace('Other releases are:', 'Other releases are:\n        Error: ERR_PNPM_FETCH_401')],
   ['other-release unindented fatal', nativeOtherReleasesFatal.replace('Other releases are:', 'Other releases are:\nError: ERR_PNPM_FETCH_401')],
   ['other-release appended fatal', `${nativeOtherReleasesFatal}Error: ERR_PNPM_TARBALL_INTEGRITY\n`],
